@@ -106,7 +106,7 @@ LED geometry" in this repo.
 | Cmd | Meaning |
 |---|---|
 | `0x8A` (command) | **ResetFifos**, preceded by host `02 04 10 01 84 02`. Not "AcquireLine" |
-| `0x91` (write 3) | scan-line trigger: u16 value + mode byte; also resets the DX position counter. Value per resolution/IR in `docs/TLB_FINDINGS.md` |
+| `0x91` (write 3) | scan-line trigger: u16 value + mode byte; also resets the DX position counter. The engine calls this write `FN_bDrvDxStart` (`0x1000a7b0`) and resends it before every strip in strip mode. Value per resolution/IR in `docs/TLB_FINDINGS.md` |
 | `0x92` (command) | end acquisition / DX window |
 | `0x90` (read 30) | DX sensor block: position, entry count, decoded barcode entries (layout in `docs/PROTOCOL.md`, `pakon_dx.h`); read after each LOW event [C] |
 | `0x93` (read 4) | the four DX detector levels: bytes 0–1 entry sensor, 2–3 exit sensor (film presence); empty ~190–224, film < 170 on serial 3054 [C] |

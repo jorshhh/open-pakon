@@ -195,8 +195,16 @@ What our unit adds to the reference:
 - `frame_raw` is unsigned: a 36-exposure roll reaches 73 (36A), past the
   reference's 7-bit two's-complement reading. Only 124–127 are leader labels
   ("X", "00").
-- The high nibble of each block's first entry varies (`0x3`, `0x2`, `0x1`,
-  `0x9`, `0xb`); the rest are `0`. Meaning unknown.
+- The high nibble of each block's first entry carries the firmware's film
+  flags (2026-10-23; TLB.dll `FN_bDrvGetHardwareStatusDx` `0x10009790`, names
+  and values from the tlx.dll `HARDWARE_CB` enum): `0x20` film at the entry
+  sensor (`FILM_SENSE_ENTRY`), `0x10` film at the exit sensor
+  (`FILM_SENSE_EXIT`), `0x40` emulsion side down (`FILM_EMULSION_DOWN`),
+  `0x80` tail first (`FILM_TAIL_FIRST`). The rest of the entries carry `0`.
+  On both full rolls it runs `0` → `2` → `3` … `3` → `1` → `0` as the film
+  passes; the strip (frames counting down, byte 1 `0x02`) also shows `0xb` /
+  `0x9`, tail first. Emulsion down not seen yet. The sensor flags are
+  thresholded by the firmware (per-unit DX pots).
 - Each scan starts with two type-7 entries, the first with a flag that varies
   (`0x01`, `0x49`, `0x79`), the second with `0x02` (the film start), and ends
   with type-8 entries (flag `0x01` then `0x02`; the strip has only `0x02`).

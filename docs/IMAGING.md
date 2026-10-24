@@ -138,7 +138,17 @@ GM = (2G−R−B)/√6, ILL = (B−R)/√2). The shift both balances colour and 
 frame's density, which the roll balance below never did. Parameters are
 `sba-CN-default.dpi`; the command switches are the constructor's no-metadata
 defaults. With fewer than `mff` (4) frames the OEM falls back to scan history,
-which we lack, so each frame is balanced alone (`Sba()` mode 0). Not yet
+which we lack, so each frame is balanced alone (`Sba()` mode 0).
+
+What the OEM feeds Ansel and we do not yet (2026-10-23, docs/TLB_FINDINGS.md
+"Roll balance"): each strip is its own Ansel roll, and every scene carries
+`dmin` (the strip's leader film base, FN_bFindTmax, through the LUT and
+NegMatrix), `productCode` and `genCode` (the DX code). `sba.map` picks the
+SBA parameters from sourceType 1 + the DX code: 78/13, 79/15, 96/any, 43/any
+have their own `.dpi` (all in `oem/ansel/sba/SbaDPI/`), else `CN-default`.
+The OEM install's `dataPathItems/fos/fos-history-srcType-1.dpi` seeds the
+scan history: per film (product/gen 81/3, 81/2, 78/2, 83/2, 35/2) an FPO,
+AVG, DMIN and the grey-axis slopes/offsets; `srcType-2` (APS) has one entry. Not yet
 modelled: SCPLut (configured on, applied before SBA), DX-code DPI selection,
 the OEM's analysis image size (ours: 192×128, area-averaged in raw space). Not
 checked against OEM output. `PAKON_OEM_SBA=0` turns it off.
