@@ -79,13 +79,18 @@ void pakon_seq_init(pakon_seq *seq);
  * Base 4 dual-tap, height 1000. On the F-135, FN_bSetF135 (FUN_10010760)
  * then overrides only the integration times, so the rest carries over.
  *
- * F-135+: the four captured modes (Base 16 / 8 / 4, Base 4 + IR).
+ * Trigger (TLB.dll FN_bSetF135, docs/TLB_FINDINGS.md): round(23700 * clk *
+ * (0.01, or 0.005 with IR) / (integration * output width)), clk 833333.3 on
+ * the F-135 and 2.5x that on the F-135+.
+ *
+ * F-135+: the four captured modes (Base 16 / 8 / 4, Base 4 + IR); Base 16 / 8
+ * + IR from the same table's IR integration (0x9C2 / 0x850) and the formula,
+ * never captured or run.
  * F-135, IR on: integration 0xC1A / 0x913 / 0x60D at Base 16 / 8 / 4
- * (TLB.dll); trigger 0x10 at Base 16 captured, 28 / 64 predicted and checked
- * on hardware (frame pitch within 1% of the OEM 3:2 pitch, 2026-10-20).
+ * (TLB.dll); trigger 0x10 at Base 16 captured, 28 / 64 checked on hardware
+ * (frame pitch within 1% of the OEM 3:2 pitch, 2026-10-20).
  * F-135, IR off: integration 0xFF0 / 0xD9D / 0x913 (TLB.dll); triggers
- * 24 / 38 / 85 predicted by the same rule (STATUS.md, "Resolution"), not yet
- * run; no F-135 IR-off capture exists.
+ * 24 / 38 / 85, checked on hardware (2026-10-20).
  *
  * Returns PAKON_ERR_PARAM (mode untouched) for any other combination.
  */

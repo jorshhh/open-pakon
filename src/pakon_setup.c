@@ -108,12 +108,12 @@ pakon_result pakon_setup_mode(int plus, int base, int ir, uint16_t eeprom_offset
     m.dual_tap = base == 4;
     m.low89 = base == 8;
     if (plus) {
-        if (base == 16 && !ir) {
-            m.trigger = 0x003C;
-            m.integration = 0x0FFD;
-        } else if (base == 8 && !ir) {
-            m.trigger = 0x0075;
-            m.integration = 0x0AFD;
+        if (base == 16) {
+            m.trigger = ir ? 0x0031 : 0x003C;
+            m.integration = ir ? 0x09C2 : 0x0FFD;
+        } else if (base == 8) {
+            m.trigger = ir ? 0x004D : 0x0075;
+            m.integration = ir ? 0x0850 : 0x0AFD;
         } else if (base == 4) {
             m.trigger = ir ? 0x00C5 : 0x0107;
             m.integration = ir ? 0x04E2 : 0x0753;

@@ -353,12 +353,44 @@ int main(int argc, char **argv)
           m.integration == 0x0D9D && !m.ir && m.low89 == 1, "F-135 Base 8 mode");
     CHECK(pakon_setup_mode(0, 4, 0, 21, &m) == PAKON_OK && m.trigger == 85 &&
           m.integration == 0x0913 && !m.ir && m.dual_tap, "F-135 Base 4 mode");
+    /* F-135+ Base 16 / 8 + IR: the table's IR integration, derived trigger.
+     * Never captured or run. */
+    CHECK(pakon_setup_mode(1, 16, 1, 60, &m) == PAKON_OK && m.trigger == 0x0031 &&
+          m.integration == 0x09C2 && m.ir && !m.dual_tap && !m.low89,
+          "F-135+ Base 16 + IR mode");
+    CHECK(pakon_setup_mode(1, 8, 1, 58, &m) == PAKON_OK && m.trigger == 0x004D &&
+          m.integration == 0x0850 && m.ir && m.low89 == 1, "F-135+ Base 8 + IR mode");
+    /* Every trigger from the OEM formula: round(23700 * clk * (0.01 | 0.005
+     * with IR) / (integration * output width)), clk 833333.3, x2.5 on the
+     * F-135+. Covers the captured 0x0010 (F-135 Base 16 + IR) and 0xC5. */
+    {
+        static const int bases[] = { 16, 8, 4 };
+        int all = 1;
+        for (int plus = 0; plus < 2; plus++)
+            for (int i = 0; i < 3; i++)
+                for (int ir = 0; ir < 2; ir++) {
+                    if (pakon_setup_mode(plus, bases[i], ir, 40, &m) != PAKON_OK) {
+                        all = 0;
+                        continue;
+                    }
+                    double clk = 833333.3 * (plus ? 2.5 : 1.0);
+                    double v = 23700.0 * clk * (ir ? 0.005 : 0.01) /
+                               ((double)m.integration * pakon_setup_scan_px(bases[i]));
+                    if (m.trigger != (uint16_t)(v + 0.5)) {
+                        printf("    %s Base %d%s: trigger %u, formula %.3f\n",
+                               plus ? "F-135+" : "F-135", bases[i], ir ? " + IR" : "",
+                               m.trigger, v);
+                        all = 0;
+                    }
+                }
+        CHECK(all, "every mode's trigger follows the 0x91 formula");
+    }
     {
         pakon_scan_mode keep = m;
-        CHECK(pakon_setup_mode(1, 16, 1, 60, &m) == PAKON_ERR_PARAM &&
+        CHECK(pakon_setup_mode(1, 12, 1, 60, &m) == PAKON_ERR_PARAM &&
               pakon_setup_mode(0, 12, 1, 43, &m) == PAKON_ERR_PARAM &&
               !memcmp(&keep, &m, sizeof m),
-              "unknown modes refused (F-135+ Base 16 + IR, Base 12)");
+              "unknown modes refused (Base 12)");
     }
     CHECK(pakon_setup_led_period(0x0C1A) == 0x742 &&
           pakon_setup_led_period(0x0913) == 1393 &&
