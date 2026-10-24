@@ -286,7 +286,8 @@ async def _detect_model() -> str | None:
 _SCAN_LOG_KEYS = ("calibration:", "calibrated:", "film detected", "end-of-roll", "stream ended",
                   "stop requested",
                   "no film fed", "safety cap", "event service:", "scan-code:",
-                  "teardown", "failed", "did not converge", "insufficient", "] dx:")
+                  "teardown", "failed", "did not converge", "insufficient", "] dx:",
+                  "black means")
 _FEED_KEY = "feed the film now"
 
 
