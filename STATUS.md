@@ -502,9 +502,11 @@ NegMatrix then grey.
   (2026-10-09, `--scan-code`). Still to confirm on the F-135+.
 - ~~Do the LEDs light with the motor stopped?~~ Yes (2026-10-09): with
   non-zero `0x81`/`0x82` the open gate reads full scale, motor stopped.
-- Why our F-135 captures use `0x91` = `0x0010`, outside the reference's
-  per-mode table; and the two unresolved inputs of the `0x91` formula
-  (`FN_bSetF135`).
+- ~~Why our F-135 captures use `0x91` = `0x0010`; the two unresolved inputs
+  of the `0x91` formula.~~ Resolved 2026-10-23 (`docs/TLB_FINDINGS.md`, "0x91
+  value"): 23700 µm image height and the output width; `0x0010` is Base 16 +
+  IR. The same table predicts F-135+ Base 16 + IR (step 6): integration
+  `0x9c2`, `0x91` = 49 (`0x31`); to verify on serial 16402.
 - Row stride at the highest resolution with IR on for the F-135+ (expected 8000).
 
 ## Safety rules (from pakon-reference, apply to every new command path)
