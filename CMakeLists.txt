@@ -98,6 +98,9 @@ if(Python3_Interpreter_FOUND)
   # Skips itself when numpy/Pillow/tifffile are missing.
   add_test(NAME test_dx_metadata
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/test_dx_metadata.py)
+  # Skips itself when numpy/tifffile or the web decoder's imports are missing.
+  add_test(NAME test_planar_raw
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/test_planar_raw.py)
   # Skips itself when numpy/unicorn/pefile are missing.
   add_test(NAME test_oem_sba
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/test_oem_sba.py)

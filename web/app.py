@@ -22,7 +22,7 @@ POST /api/process                 SSE — decode the opened .raw or the last sca
 POST /api/autoframe               place the boxes with the OEM framing (format full|half|pano)
 GET  /api/frames                  list decoded frames
 GET  /api/frames/{n}/thumb        JPEG thumbnail
-POST /api/save                    SSE — save the frames to the work folder (jpeg|tiff|raw|contact)
+POST /api/save                    SSE — save the frames to the work folder (jpeg|tiff|raw|planar|contact)
 POST /api/reveal                  show a saved export folder in Finder (macOS)
 POST /api/update/open             open the newer release's page in the browser
 POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
@@ -46,7 +46,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import dx, eeprom, orders, telemetry, update
 from .decode import (WORK_DIR, PREVIEW_PATH, FILMS, FRAME_FORMATS, prescan, autoframe, export_frames,
-                     make_contact_sheet, find_eeprom_dir, clear_work)
+                     make_contact_sheet, write_planar_raw, find_eeprom_dir, clear_work)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -928,6 +928,8 @@ _SAVE_FMTS = {
     "jpeg": ("jpg",      "jpeg", "jpg", "JPEGs"),          # rendered positive
     "tiff": ("tiff",     "tiff", "tif", "TIFFs"),          # 16-bit positive
     "raw":  ("raw_tiff", "raw",  "tif", "raw negatives"),  # 16-bit, uninverted
+    # TLX planar .raw (PPRC), written from the raw negative at save time
+    "planar": ("raw_tiff", "planar", "raw", "planar raw files"),
 }
 
 
@@ -954,7 +956,11 @@ def _save_frames(frames, fmt: str, raw: Path, progress) -> dict:
     n = len(frames)
     for i, f in enumerate(frames):
         progress(f"Saving frame {i + 1}/{n}", i / n)
-        shutil.copyfile(f[key], folder / f"frame_{f['index']:02d}.{ext}")
+        dest = folder / f"frame_{f['index']:02d}.{ext}"
+        if fmt == "planar":
+            write_planar_raw(f[key], dest)
+        else:
+            shutil.copyfile(f[key], dest)
     progress("Saved", 1.0)
     return {"folder": str(folder), "count": n, "what": what}
 

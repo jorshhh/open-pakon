@@ -476,6 +476,24 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
     return frames
 
 
+def write_planar_raw(tiff_path, raw_path, header=True):
+    """A raw negative TIFF (16-bit RGB, uninverted) as the TLX planar .raw
+    that TLXClientDemo saves and PPRC reads: TLB.dll FN_bSaveToMemory with
+    planar 16 (docs/TLB_FINDINGS.md, "Planar .raw"). Optional 16-byte header
+    of four little-endian u32 (16, width, height, bits per pixel = 48), then
+    the R, G and B planes as little-endian u16, row by row. Values are the
+    OEM's 14-bit pre-LUT range, (raw - black) / 4, the same mapping as
+    oem_rpd."""
+    rgb = tifffile.imread(str(tiff_path))
+    h, w = rgb.shape[:2]
+    v = np.clip((rgb.astype(np.float32) - _RAW_BLACK) / 4.0 + 0.5, 0.0, 16383.0)
+    planes = np.ascontiguousarray(np.moveaxis(v.astype("<u2"), -1, 0))
+    with open(raw_path, "wb") as fh:
+        if header:
+            fh.write(np.array([16, w, h, 48], dtype="<u4").tobytes())
+        fh.write(planes.tobytes())
+
+
 def make_contact_sheet(frames, cols: int = 6, cell_w: int = 480,
                        pad: int = 10, bg=(22, 22, 22), fg=(226, 226, 226)):
     """Tile the rendered frame JPEGs into one labelled contact-sheet image."""
