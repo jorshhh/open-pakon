@@ -140,20 +140,36 @@ frame Dmin, and the near-neutral samples of all frames give the film's grey axis
 GM = (2G−R−B)/√6, ILL = (B−R)/√2). The shift both balances colour and sets each
 frame's density, which the roll balance below never did. Parameters are
 `sba-CN-default.dpi`; the command switches are the constructor's no-metadata
-defaults. With fewer than `mff` (4) frames the OEM falls back to scan history,
-which we lack, so each frame is balanced alone (`Sba()` mode 0).
+defaults. With fewer than `mff` (4) frames each frame is balanced alone
+(`Sba()` mode 0), as the OEM does: its FOS (`FUN_1023ff80`) loads the scan
+history only when `useHistory` is set, and every shipped `.dpi` has it at 0
+(with `mff` frames or more it runs SbaCalcFosResults and then updates the
+history, `FUN_1023fd20`, which nothing reads back).
 
-What the OEM feeds Ansel and we do not yet (2026-10-23, docs/TLB_FINDINGS.md
-"Roll balance"): each strip is its own Ansel roll, and every scene carries
-`dmin` (the strip's leader film base, FN_bFindTmax, through the LUT and
-NegMatrix), `productCode` and `genCode` (the DX code). `sba.map` picks the
-SBA parameters from sourceType 1 + the DX code: 78/13, 79/15, 96/any, 43/any
-have their own `.dpi` (all in `oem/ansel/sba/SbaDPI/`), else `CN-default`.
-The OEM install's `dataPathItems/fos/fos-history-srcType-1.dpi` seeds the
-scan history: per film (product/gen 81/3, 81/2, 78/2, 83/2, 35/2) an FPO,
-AVG, DMIN and the grey-axis slopes/offsets; `srcType-2` (APS) has one entry. Not yet
-modelled: SCPLut (configured on, applied before SBA), DX-code DPI selection,
-the OEM's analysis image size (ours: 192×128, area-averaged in raw space). Not
+What the OEM feeds Ansel (docs/TLB_FINDINGS.md "Roll balance"), and ours
+(2026-10-25): every scene carries `productCode` / `genCode` (the DX code)
+and `dmin` (the strip's film base, FN_bFindTmax, through the LUT and
+NegMatrix).
+- **DX code → parameters:** `sba.map` picks the `.dpi` from sourceType 1 +
+  the DX code: 78/13 and 79/15 (chromogenic B&W), 96/any, 43/any have their
+  own (in `oem/ansel/sba/SbaDPI/`), else `CN-default`. Ours: `oem_sba.dpi_for`
+  from `<raw>.dx.json`.
+- **`dmin`:** the wrapper (`FUN_10218110`) sets the frame's film base to the
+  lower of the scene `dmin` and the frame's own minimum per channel, a scene
+  value at or below the `.dpi`'s `mindmin` counting as none. Ours:
+  `oem_sba.film_base` measures the brightest 0.1% over the central ¾ of the
+  width on the clear film between the film's arrival and the first frame
+  (the OEM's window starts 1 inch in, which on a roll is inside frame 1, and
+  its length is not traced), through `oem_rpd`; the prescan keeps it with the
+  roll. A fogged leader (a roll loaded in daylight) measures dense and
+  changes nothing; on a clear leader most frames move 1–5 RPD, a few up to
+  ~35 (serial 3054, roll 000014). `PAKON_SBA_DMIN=0` leaves it out.
+- **Scan history:** `dataPathItems/fos/fos-history-srcType-1.dpi` exists but
+  is not used (see above).
+
+Not yet modelled: SCPLut (configured on, applied before SBA), the OEM's
+analysis image size (ours: 192×128, area-averaged in raw space), and each
+strip as its own Ansel roll (strip mode, #50). Not
 checked against OEM output. `PAKON_OEM_SBA=0` turns it off.
 
 **Roll balance (stand-in for the OEM's Ansel roll balance), `oem_roll_balance`:**

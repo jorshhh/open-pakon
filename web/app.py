@@ -890,7 +890,9 @@ async def api_export_frames(
                              film=meta.get("film", "c41"),
                              flare=meta.get("flare"),
                              dx_film=dx.for_raw(raw) if raw is not None else None,
-                             ice=ice and bool(meta.get("ice")))
+                             ice=ice and bool(meta.get("ice")),
+                             sba_dpi=meta.get("sba_dpi"),
+                             scene_dmin=meta.get("scene_dmin"))
 
     def _done(result):
         _state["frames"] = result

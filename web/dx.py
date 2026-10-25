@@ -64,6 +64,16 @@ def lookup(product: int, generation: int) -> dict | None:
     return {"name": name, "iso": iso, "product": product, "generation": generation}
 
 
+def code_for_raw(raw: Path) -> tuple[int, int] | None:
+    """(product, generation) read during the scan of `raw`, known to the
+    table or not, or None when no code was read."""
+    try:
+        d = json.loads(raw.with_name(raw.name + ".dx.json").read_text())
+        return int(d["product"]), int(d["generation"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def for_raw(raw: Path) -> dict | None:
     """The film read during the scan of `raw`, or None (no code read, or a
     code the table does not know)."""
