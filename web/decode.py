@@ -51,7 +51,6 @@ from pakon_image import (  # noqa: E402
     load_flat_field,
     oem_roll_balance,
     oem_rpd,
-    _RAW_BLACK,
 )
 import oem_sba  # noqa: E402
 import pakon_ice  # noqa: E402
@@ -415,12 +414,9 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
             return part
         fw = int(widths[i]) if widths else frame_w
         r1 = min(rows, max(0, int(centres[i]) - fw // 2) + fw)
-        ir = np.asarray(ir_rib[max(0, r1 - fw):r1], np.float32)
-        f = np.clip(part.astype(np.float32) - _RAW_BLACK, 0, 65535)
-        k = np.maximum(ir_noise, pakon_ice.ir_tail_factor(ir))
-        out, mask, _ = pakon_ice.clean(f, ir, dpi=dpi, col_noise=k)
+        out, mask = pakon_ice.clean_frame(part, ir_rib[max(0, r1 - fw):r1], ir_noise, dpi)
         print(f"ICE frame {i + 1}: {100 * mask.mean():.2f}% rebuilt", flush=True)
-        return np.clip(out + _RAW_BLACK + 0.5, 0, 65535).astype(np.uint16)
+        return out
 
     # OEM scene balance of the confirmed frames against the whole roll (all
     # crops first); falls back to the prescan roll balance.

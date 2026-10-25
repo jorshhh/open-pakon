@@ -101,6 +101,9 @@ if(Python3_Interpreter_FOUND)
   # Skips itself when numpy/unicorn/pefile are missing.
   add_test(NAME test_oem_sba
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/test_oem_sba.py)
+  # Skips itself when numpy is missing.
+  add_test(NAME test_ice
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/test_ice.py)
 else()
   message(STATUS "Python3 not found: offline EEPROM tests are unavailable")
 endif()
