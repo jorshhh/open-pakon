@@ -1068,7 +1068,7 @@ def main():
                          "crosstalk matrix + sRGB encode, recovered from "
                          "PakonIMAu.dll). Produces a viewable positive.")
     ap.add_argument("--bw", action="store_true",
-                    help="silver B&W film: with --invert-c41, the same "
+                    help="B&W film (silver or C-41): with --invert-c41, the same "
                          "inversion (NegMatrix with --eeprom-dir), then grey; "
                          "writes 16-bit grey TIFFs and grey JPEGs")
     ap.add_argument("--slide", action="store_true",

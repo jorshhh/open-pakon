@@ -225,12 +225,14 @@ unsigned pakon_lc_smear(double black_bright, double black_dark,
 const double pakon_lc_density_c41[PAKON_LC_NCH] = { 0.144, 0.40, 0.715, 0.0 };
 const double pakon_lc_density_other[PAKON_LC_NCH] = { 0.0, 0.03, 0.0, 0.08 };
 const double pakon_lc_density_slide[PAKON_LC_NCH] = { 0.12, 0.12, 0.12, 0.08 };
+const double pakon_lc_density_bwc41[PAKON_LC_NCH] = { 0.10, 0.25, 0.25, 0.08 };
 
 const double *pakon_lc_film_density(pakon_film film)
 {
     switch (film) {
     case PAKON_FILM_BW:    return pakon_lc_density_other;
     case PAKON_FILM_SLIDE: return pakon_lc_density_slide;
+    case PAKON_FILM_BWC41: return pakon_lc_density_bwc41;
     default:               return pakon_lc_density_c41;
     }
 }
@@ -240,13 +242,15 @@ const char *pakon_film_name(pakon_film film)
     switch (film) {
     case PAKON_FILM_BW:    return "bw";
     case PAKON_FILM_SLIDE: return "slide";
+    case PAKON_FILM_BWC41: return "bwc41";
     default:               return "c41";
     }
 }
 
 int pakon_film_parse(const char *name, pakon_film *film)
 {
-    static const pakon_film all[] = { PAKON_FILM_C41, PAKON_FILM_BW, PAKON_FILM_SLIDE };
+    static const pakon_film all[] = { PAKON_FILM_C41, PAKON_FILM_BW, PAKON_FILM_SLIDE,
+                                       PAKON_FILM_BWC41 };
     for (size_t i = 0; i < sizeof all / sizeof all[0]; i++)
         if (!strcmp(name, pakon_film_name(all[i]))) {
             *film = all[i];

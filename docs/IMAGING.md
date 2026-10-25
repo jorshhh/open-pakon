@@ -97,6 +97,9 @@ usable range is about D 3.3, while slides reach D 3.5–4):
   Flare strength: 0.5–0.75 looked right on
   that roll (deeper, neutral shadows, detail kept); 1.0 crushed the shade.
 
+**B&W C-41** (TLB.dll film type 8, `bwc41`) decodes the same way as silver
+B&W below; only the scan differs (its own film-base densities, IR on).
+
 **Silver B&W** (TLB.dll film type 4) goes through the same LUT and NegMatrix
 (FUN_1000d880 treats types 1, 4 and 8 alike; 2 = positive). We then average
 the three RPD channels, render the neutral through `rpd.pf` and keep the

@@ -89,9 +89,9 @@ If a strip stays inside the scanner, press **Advance film** on the Scan page.
 - To update, download the new version, quit Pakon, and drag it into
   Applications to replace the old one. Your scans and settings stay where
   they are.
-- B&W C-41 film (Ilford XP2, Kodak BW400CN) doesn't have its own setting
-  yet. Scan it as colour negative, then switch the roll to B&W on the
-  Process page.
+- For B&W film developed in colour chemistry (Ilford XP2, Kodak BW400CN),
+  pick **B&W C41** as the film type. Dust removal works on it, as it does
+  on colour negative.
 - If the scanner stops responding, switch it off and on, then load the
   firmware again.
 - If something goes wrong, the log is at `~/Library/Logs/Pakon/pakon.log`.

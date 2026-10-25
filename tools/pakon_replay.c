@@ -2593,6 +2593,7 @@ static int do_scan_code(unsigned timeout, const char *eeprom_dir, int scan_base,
     }
     printf("film: %s\n", film == PAKON_FILM_BW ? "B&W (silver)" :
                           film == PAKON_FILM_SLIDE ? "slide (colour reversal)" :
+                          film == PAKON_FILM_BWC41 ? "B&W C-41 (chromogenic)" :
                           "colour negative");
     if (scan_calibrate(dev, &st, t, eeprom_dir, &e, scan_base, offset, period, film,
                        recalibrate, &res)) {
@@ -2800,7 +2801,7 @@ static void usage(const char *argv0)
         "       %s --setup --eeprom-dir DIR [--base N] [--teardown]  controller init + configure, built in code\n"
         "       %s --calib-probe --eeprom-dir DIR [--base N] [--ir on|off]  static dark/lit line levels (F-135, open gate)\n"
         "       %s --light-cal --eeprom-dir DIR [--base N] [--ir on|off] [--flat-out FILE]  light calibration in code (F-135, open gate)\n"
-        "       %s --scan-code --eeprom-dir DIR [--base N] [--ir on|off] [--image OUT] [--film c41|bw|slide] [--recalibrate]  scan with nothing replayed (F-135)\n"
+        "       %s --scan-code --eeprom-dir DIR [--base N] [--ir on|off] [--image OUT] [--film c41|bw|bwc41|slide] [--recalibrate]  scan with nothing replayed (F-135)\n"
         "       %s --film-sense SECONDS --eeprom-dir DIR  run the transport, log DX levels (F-135)\n"
         "       %s --advance-code SECONDS --eeprom-dir DIR  timed film advance in code (F-135)\n"
         "       %s --eject [--eject-seconds N] --eeprom-dir DIR  run until the strip is out (F-135)\n"
@@ -2841,9 +2842,9 @@ static void usage(const char *argv0)
         "                capture and any shorter film just stops earlier\n"
         "  --trace-status  with --scan: log live poll/kick replies + status, with\n"
         "                  the current image-read index (to learn the cadence)\n"
-        "  --film c41|bw|slide  --scan-code film type: colour negative (default),\n"
-        "                silver B&W or slide (the OEM film-base densities for the\n"
-        "                LED duties)\n"
+        "  --film c41|bw|bwc41|slide  --scan-code film type: colour negative\n"
+        "                (default), silver B&W, B&W C-41 (XP2, BW400CN) or slide\n"
+        "                (the OEM film-base densities for the LED duties)\n"
         "  --recalibrate  --scan-code: calibrate from scratch even if the saved\n"
         "                calibration (DIR/calibration-<film>.bin) is recent; it is\n"
         "                reused for an hour, then refreshed, like the OEM software\n"
@@ -2916,7 +2917,7 @@ int main(int argc, char **argv)
         } else if (!strcmp(argv[i], "--film") && i + 1 < argc) {
             const char *f = argv[++i];
             if (pakon_film_parse(f, &film)) {
-                fprintf(stderr, "--film: c41, bw or slide, got '%s'\n", f);
+                fprintf(stderr, "--film: c41, bw, bwc41 or slide, got '%s'\n", f);
                 return 2;
             }
         } else if (!strcmp(argv[i], "--ir") && i + 1 < argc) {
@@ -3005,7 +3006,8 @@ int main(int argc, char **argv)
     if (film_sense_s)
         return do_film_sense(timeout, eeprom_dir, film_sense_s > 120 ? 120 : film_sense_s);
     /* Silver B&W blocks IR, so the IR channel (dust detection) carries no
-     * information there; without it the transport runs ~1.3-1.5x faster. */
+     * information there; without it the transport runs ~1.3-1.5x faster.
+     * B&W C-41 is a dye image like colour negative, so it keeps IR. */
     if (scan_ir < 0)
         scan_ir = !(want_scan_code && film == PAKON_FILM_BW);
     if (want_scan_code)

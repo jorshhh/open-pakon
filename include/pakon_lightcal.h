@@ -146,12 +146,16 @@ extern const double pakon_lc_density_c41[PAKON_LC_NCH];
  * ~1.32x the open-gate light. Slide film never transmits more than ~D 0.15,
  * so nothing on the film clips, and the shadows gain a third of a stop over
  * the noise floor. The decoder divides it back out (the scan duties go in
- * RAW.flat.json). */
-typedef enum { PAKON_FILM_C41 = 0, PAKON_FILM_BW, PAKON_FILM_SLIDE } pakon_film;
+ * RAW.flat.json). B&W C-41 (chromogenic: Ilford XP2, Kodak BW400CN; TLB.dll
+ * film type 8) has its own row 0.10 / 0.25 / 0.25 / 0.08. New types go at the
+ * end: the calibration cache stores the enum value. */
+typedef enum { PAKON_FILM_C41 = 0, PAKON_FILM_BW, PAKON_FILM_SLIDE,
+               PAKON_FILM_BWC41 } pakon_film;
 extern const double pakon_lc_density_other[PAKON_LC_NCH];
 extern const double pakon_lc_density_slide[PAKON_LC_NCH];
+extern const double pakon_lc_density_bwc41[PAKON_LC_NCH];
 const double *pakon_lc_film_density(pakon_film film);
-const char *pakon_film_name(pakon_film film);   /* "c41" / "bw" / "slide" */
+const char *pakon_film_name(pakon_film film);   /* "c41" / "bw" / "slide" / "bwc41" */
 int pakon_film_parse(const char *name, pakon_film *film);   /* 0 if known */
 
 /* Next A/D offset from a black-pixel mean: off + round((mean - 300) * -0.0133929)

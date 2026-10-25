@@ -624,7 +624,8 @@
         <td data-label="Film type">
           <select id="scan-film" aria-label="Film type">
             <option value="c41">Colour negative</option>
-            <option value="bw">B&amp;W (silver)</option>
+            <option value="bw">B&amp;W</option>
+            <option value="bwc41">B&amp;W C41</option>
             <option value="slide">Slide (E-6)</option>
           </select>
         </td>
@@ -686,7 +687,8 @@
     <label class="field">Film
       <select id="proc-film" aria-label="Film type of the raw">
         <option value="c41">Colour negative</option>
-        <option value="bw">B&amp;W (silver)</option>
+        <option value="bw">B&amp;W</option>
+        <option value="bwc41">B&amp;W C41</option>
         <option value="slide">Slide (E-6)</option>
       </select>
     </label>
@@ -1120,7 +1122,7 @@
     setMsg($('scan-msg'), 'Starting…');
     $('scan-prog-wrap').classList.add('show');
     // A roll's raw shrinks with the pixel count: 56% at Base 8, 25% at Base 4,
-    // and by a quarter for B&W, which scans without the IR channel.
+    // and by a quarter for silver B&W, which scans without the IR channel.
     const base = Number($('scan-base').value);
     $('scan-prog').max = Math.round(2200 * { 16: 1, 8: 0.5625, 4: 0.25 }[base] *
                                     ($('scan-film').value === 'bw' ? 0.75 : 1));

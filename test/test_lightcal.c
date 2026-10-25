@@ -294,14 +294,19 @@ int main(void)
      * calibration at 1/10^0.12 of the period and scans 1.32x brighter. */
     CHECK(pakon_lc_film_density(PAKON_FILM_C41) == pakon_lc_density_c41 &&
           pakon_lc_film_density(PAKON_FILM_BW) == pakon_lc_density_other &&
-          pakon_lc_film_density(PAKON_FILM_SLIDE) == pakon_lc_density_slide,
+          pakon_lc_film_density(PAKON_FILM_SLIDE) == pakon_lc_density_slide &&
+          pakon_lc_film_density(PAKON_FILM_BWC41) == pakon_lc_density_bwc41 &&
+          pakon_lc_density_bwc41[0] == 0.10 && pakon_lc_density_bwc41[1] == 0.25 &&
+          pakon_lc_density_bwc41[2] == 0.25 && pakon_lc_density_bwc41[3] == 0.08,
           "film density tables");
     CHECK(!strcmp(pakon_film_name(PAKON_FILM_C41), "c41") &&
           !strcmp(pakon_film_name(PAKON_FILM_BW), "bw") &&
-          !strcmp(pakon_film_name(PAKON_FILM_SLIDE), "slide"), "film names");
+          !strcmp(pakon_film_name(PAKON_FILM_SLIDE), "slide") &&
+          !strcmp(pakon_film_name(PAKON_FILM_BWC41), "bwc41"), "film names");
     {
         pakon_film f = PAKON_FILM_C41;
         CHECK(pakon_film_parse("slide", &f) == 0 && f == PAKON_FILM_SLIDE &&
+              pakon_film_parse("bwc41", &f) == 0 && f == PAKON_FILM_BWC41 &&
               pakon_film_parse("bw", &f) == 0 && f == PAKON_FILM_BW &&
               pakon_film_parse("c41", &f) == 0 && f == PAKON_FILM_C41 &&
               pakon_film_parse("e6", &f) != 0 && f == PAKON_FILM_C41,
