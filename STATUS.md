@@ -401,7 +401,14 @@ NegMatrix then grey.
   and measure stray light
   on the gap rows, capped at D 2. Still to do: slide orientation
   (`--rotate 90` comes out wrong).
-- Left: B&W C-41 (0.10/0.25/0.25/0.08).
+- **B&W C-41 (chromogenic: XP2, BW400CN) — done 2026-10-25, a test roll
+  scanned and processed well in the app (web film type "B&W C41") the same
+  day:** `pakon_replay --scan-code --film bwc41` calibrates and scans with
+  the OEM's B&W C-41 densities 0.10/0.25/0.25/0.08 (`pakon_lc_density_bwc41`,
+  TLB.dll film type 8). The image is dye, so IR stays on and ICE works.
+  Decode as silver B&W (NegMatrix, then grey); web film type "B&W C41"
+  (`GREY_FILMS` in `web/decode.py`). Its calibration has its own cache file
+  (`calibration-bwc41-*.bin`).
 
 ## Feature work (independent of the replay-free steps)
 

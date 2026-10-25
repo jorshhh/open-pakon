@@ -244,7 +244,8 @@ def _build_ribbon(raw_path, emit):
     return rgb, ice
 
 
-FILMS = ("c41", "bw", "slide")   # colour negative, silver B&W, slide (E-6)
+FILMS = ("c41", "bw", "bwc41", "slide")   # colour negative, silver B&W, B&W C-41, slide (E-6)
+GREY_FILMS = ("bw", "bwc41")
 
 
 def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
@@ -252,11 +253,12 @@ def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
     The frames found here only feed the roll's colour balance; the boxes are
     placed in Frames (by hand, or autoframe()). Returns a metadata dict (all
     JSON-able).
-    film="bw" renders silver B&W: the same inversion, then grey; "slide"
+    film="bw" (silver) and "bwc41" (chromogenic) render B&W: the same
+    inversion, then grey; "slide"
     renders reversal film through the OEM positive path (no inversion).
     fmt (full | half | pano) is the picture format the frames are found in
     (the raw's last auto-framing)."""
-    grey = film == "bw"
+    grey = film in GREY_FILMS
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     clear_work()                          # the last roll's frames
 
@@ -365,7 +367,7 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
     weighs the exported frames against the whole roll, so a few similar
     frames exported alone are not pushed toward their own average.
 
-    film="bw" (silver B&W) writes 16-bit grey TIFFs and grey JPEGs; "slide"
+    film="bw" / "bwc41" (B&W) writes 16-bit grey TIFFs and grey JPEGs; "slide"
     renders through the OEM positive path, with no scene balance, minus
     `flare` (the prescan's measure_slide_flare).
 
@@ -374,7 +376,7 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
 
     `ice` removes dust and scratches from each frame with its IR plane
     (tools/pakon_ice.py) before it is rendered, when the prescan cached one."""
-    grey = film == "bw"
+    grey = film in GREY_FILMS
     slide = _slide_path() if film == "slide" else None
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     clear_work()                          # the last export's frames

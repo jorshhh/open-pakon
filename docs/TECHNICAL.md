@@ -418,7 +418,7 @@ Open work is tracked in [GitHub issues](https://github.com/jorshhh/pakon-macos/i
 
 - **F-135+ built in code:** scan (#14), light calibration and flat field
   (#15), film advance and eject (#16).
-- **Scan options:** resolution Base 4 / 8 / 16 (#17); B&W C-41 film (#18).
+- **Scan options:** resolution Base 4 / 8 / 16 (#17).
 - **Image:** Digital ICE dust and scratch removal (#26, prototype in #37); the
   remaining OEM scene-balance stages (#22).
 - **Distribution:** installable release builds for macOS, Windows and Linux
