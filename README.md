@@ -102,8 +102,7 @@ If a strip stays inside the scanner, press **Advance film** on the Scan page.
 
 ## Coming next
 
-Dust and scratch removal (Digital ICE), more resolutions, and
-everything the F-135+ still lacks. Follow along in the
+More resolutions and everything the F-135+ still lacks. Follow along in the
 [issues](https://github.com/jorshhh/pakon-macos/issues).
 
 ## For developers
@@ -148,8 +147,8 @@ pakon stands on other people's work:
 - **Mats Fagerberg** ([thetalkingdrum](https://github.com/thetalkingdrum)):
   the base F-135 EEPROM dump (serial 2233) used as a test fixture, via
   pakon-reference, and pointing us to nkscan for Digital ICE.
-- **Digital ICE** ([#37](https://github.com/jorshhh/pakon-macos/pull/37), in
-  progress): a numpy port of the dust removal in
+- **Digital ICE** ([#37](https://github.com/jorshhh/pakon-macos/pull/37)): a
+  numpy port of the dust removal in
   [nkscan](https://github.com/activexray/nkscan) (`src/dust.rs`, MIT OR
   Apache-2.0, © the nkscan authors), which implements the pipeline documented
   by [openICE](https://github.com/a6o/openICE) (a6o, GPL-3.0).

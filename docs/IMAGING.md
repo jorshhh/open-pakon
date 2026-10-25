@@ -292,7 +292,7 @@ Data-driven: ~48 stages of ASCII LUT/param files (`dataPathItems/<stage>/`,
 Our `--jpeg` path reproduces the *practical* result (RPD profile + balance/tone)
 without re-implementing the whole cascade.
 
-## Digital ICE (dust/scratch removal) — NOT implemented
+## Digital ICE (dust/scratch removal)
 
 The scanner captures an **IR channel** (separate Ir lamp/exposure;
 `WaitForLamp_Ir`, `Current_Ir`, `CcdExposure_Ir`; the IR is a defect map — IR
@@ -300,9 +300,15 @@ passes through dye but is blocked by physical dust/scratches). The OEM applies
 Digital ICE via **`DMLDICELib.dll`** (loaded by `CN_CiDLLDigitalIce`; PSI "Use
 Scratch Removal"; `IrChannelSavedInPlanarFile`, `IrCrossTalkFactor`).
 
-**We do neither.** The decoder drops the trailing IR block (one IR sample per
-pixel, `width` samples per row). A clean-room ICE (IR plane → defect mask →
-inpaint) is a possible future feature; the IR data is captured but discarded.
+**Ours** (`tools/pakon_ice.py`, not the OEM library): a numpy port of
+nkscan's `dust.rs` (the openICE pipeline) on the trailing IR block (one IR
+sample per pixel, `width` samples per row), flat-fielded against the
+calibration's open-gate IR. `pakon_ice.clean_frame` cleans one registered,
+flat-fielded frame before rendering; the web export (Frames, "Remove dust")
+and `pakon_image.py --ice` both call it. The Pakon-specific parts (gate
+margin, the line-start noise, confidence over rows) are in `STATUS.md`;
+`test/test_ice.py` covers them on synthetic frames. Raws scanned with IR off
+(silver B&W) have no IR block and cannot be cleaned.
 
 ## PROVENANCE
 

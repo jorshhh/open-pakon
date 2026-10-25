@@ -1071,6 +1071,10 @@ def main():
                     help="B&W film (silver or C-41): with --invert-c41, the same "
                          "inversion (NegMatrix with --eeprom-dir), then grey; "
                          "writes 16-bit grey TIFFs and grey JPEGs")
+    ap.add_argument("--ice", action="store_true",
+                    help="remove dust and scratches with the scan's IR channel "
+                         "(tools/pakon_ice.py) before rendering; needs a raw "
+                         "scanned with IR and a flat field with the IR table")
     ap.add_argument("--slide", action="store_true",
                     help="slide (colour reversal) film: no inversion; density "
                          "LUT -> PosMatrix (the unit's with --eeprom-dir, else "
@@ -1130,6 +1134,9 @@ def main():
         sys.exit("--slide is a positive: no --invert, --invert-c41 or --bw")
     if args.bw and not args.invert_c41:
         sys.exit("--bw requires --invert-c41")
+    if args.ice and (args.invert or args.no_flat or args.order.lower() != "rgb"):
+        sys.exit("--ice works on the flat-fielded linear scan in R,G,B order: "
+                 "no --invert, --no-flat or --order")
     if args.eeprom_dir and not (args.invert_c41 or args.slide):
         sys.exit("--eeprom-dir requires --invert-c41 or --slide")
     if (args.jpeg or args.eeprom_dir) and not args.slide:
@@ -1239,6 +1246,27 @@ def main():
     elif not args.no_flat:
         print("flat field: none found (run pakon_replay --light-cal); the "
               "edge falloff is left in")
+    # IR plane for dust removal: register_zones keeps red as the row
+    # reference, so ribbon row y is raw row y (IR/visible offset measured 0).
+    ice = None
+    if args.ice:
+        import json
+        import pakon_ice
+        if not args.ir_lane:
+            sys.exit("--ice: this raw has no IR channel (scanned with IR off, "
+                     "e.g. silver B&W)")
+        if not flat_path:
+            sys.exit("--ice needs a flat field with the IR table (the raw's "
+                     ".flat.json, or --flat)")
+        try:
+            with open(flat_path) as fh:
+                flat_ir = json.load(fh)
+            ir_noise = pakon_ice.ir_noise_factor(flat_ir, width)
+            pakon_ice.ir_plane(img, flat_ir, np.arange(1), 0)
+        except (OSError, ValueError, KeyError, IndexError) as exc:
+            sys.exit(f"--ice: no IR plane from {flat_path}: {exc}")
+        ice = (flat_ir, ir_noise, pakon_ice.pakon_dpi(width))
+        print(f"ICE: IR plane from {flat_path}")
     order_idx = {"r": 0, "g": 1, "b": 2}
     perm = [order_idx[c] for c in args.order.lower()]
     if perm != [0, 1, 2]:
@@ -1297,6 +1325,11 @@ def main():
     fr = len(starts)
     for i, r_start in enumerate(starts):
         part = rgb[r_start:r_start + frame_w]
+        if ice is not None:
+            ir = pakon_ice.ir_plane(img, ice[0], np.arange(r_start, r_start + part.shape[0]), 0)
+            cw = part.shape[1]
+            part, mask = pakon_ice.clean_frame(part, ir[:, :cw], ice[1][:cw], ice[2])
+            print(f"ICE frame {i + 1}: {100 * mask.mean():.2f}% rebuilt")
         if slide is not None:
             part = render_slide(part, *slide, flare=flare)
         elif oem is not None:

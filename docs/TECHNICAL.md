@@ -231,9 +231,9 @@ as 37+ usable frames). The decoder automatically handles:
   a highlight roll-off that keeps detail the OEM blows out. See `docs/IMAGING.md`.
 - **Flat field** — the per-column dark and gain correction from the light
   calibration (see [Flat field](#flat-field)).
-- **IR (Digital ICE) block** — the trailing IR samples of each row are dropped
-  (no dust and scratch removal yet: a prototype is in
-  [#37](https://github.com/jorshhh/pakon-macos/pull/37), see `docs/IMAGING.md`).
+- **Dust and scratch removal** (`--ice`) — Digital ICE from the trailing IR
+  samples of each row (`tools/pakon_ice.py`, see `docs/IMAGING.md`); needs a
+  raw scanned with IR and its flat field.
 - **Marker-bit row alignment** (fixes the R,G,B phase per scan) and **trilinear
   registration** of the R/G/B sensor lines.
 - **Frame detection** — autocorrelation pitch → count → phase-locked comb →
@@ -244,7 +244,8 @@ Key decoder options:
 | Flag | Default | Effect |
 |------|---------|--------|
 | `--invert-c41` | off | OEM-faithful C-41 positive (ColNeg log LUT + Dmin) |
-| `--bw` | off | silver B&W: with `--invert-c41`, the same inversion then grey (16-bit grey TIFF, grey JPEG) |
+| `--bw` | off | B&W (silver or C-41): with `--invert-c41`, the same inversion then grey (16-bit grey TIFF, grey JPEG) |
+| `--ice` | off | remove dust and scratches with the IR channel (raws scanned with IR) |
 | `--slide` | off | slide film: no inversion; OEM positive path (PosMatrix → `ColRevLut1.pf` → `romm.pf`) |
 | `--jpeg` | off | also write the `rpd.pf`-rendered JPEG (needs `profiles/rpd.pf`) |
 | `--rotate {90,180,270}` | 0 | rotate each output frame |
@@ -419,7 +420,7 @@ Open work is tracked in [GitHub issues](https://github.com/jorshhh/pakon-macos/i
 - **F-135+ built in code:** scan (#14), light calibration and flat field
   (#15), film advance and eject (#16).
 - **Scan options:** resolution Base 4 / 8 / 16 (#17).
-- **Image:** Digital ICE dust and scratch removal (#26, prototype in #37); the
+- **Image:** the
   remaining OEM scene-balance stages (#22).
 - **Distribution:** installable release builds for macOS, Windows and Linux
   (#25).

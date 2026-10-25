@@ -483,8 +483,19 @@ NegMatrix then grey.
   max(light fall-off from the calibration, the frame's own dark tail); the
   edge share fell to 7-22%, the middle unchanged, real hairs and scratches
   still removed (C-41 Base 4 / 8, slide Base 16; ~0.4 / 1.1 / 2.4 s a
-  frame). Cause of the dark tail unknown (a dark scan would tell). Left:
-  `pakon_image.py --ice`, unit tests, a dusty roll. The plan it follows:
+  frame). Cause of the dark tail unknown (a dark scan would tell).
+  **2026-10-25:** `pakon_image.py --ice` (the web export and the CLI share
+  `pakon_ice.clean_frame`); `test/test_ice.py` (synthetic frames: a clean
+  frame untouched, a speck and a hair rebuilt to within 5%, black kept, the
+  IR plane's gain and duty ratio, the line-start noise and tail factors, a
+  scratch along the scan not raising its own margin). B&W C-41 (XP2, Base 16,
+  36 frames, `bwc41`): 0.31-0.80% of each frame rebuilt, 1-4% of it in the
+  first 3% of columns, ~20% in the darkest quarter of the picture (no image
+  ghost); hairs, specks and lint removed cleanly. Most hits are 3-20 px
+  specks spread evenly over the frame, which at 1:1 are grain replaced by
+  grain (no visible change): the IR of this film is grainier than colour
+  negative's, a candidate for a wider margin if it ever shows. The plan it
+  followed:
   1. Split the IR block per row; align it to the visible image (the OEM
      calibrates an "IR lag", so it may be offset; measure it like the
      trilinear R/G/B leads).

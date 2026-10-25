@@ -421,6 +421,21 @@ def clean(rgb, ir, cal=None, dpi=PAKON_BASE16_DPI, model="ls5000", quality="norm
 
 # ----- the Pakon side: the IR plane
 
+def clean_frame(raw, ir, ir_noise, dpi):
+    """One frame of a Pakon scan, cleaned: raw (H, W, 3) 16-bit registered,
+    flat-fielded samples (black at 300), ir (H, W) from ir_plane, ir_noise
+    from ir_noise_factor. The black comes off for the pipeline and goes back
+    on after; the gate margin is the larger of the calibration's fall-off and
+    the frame's own dark tail. Returns (uint16 (H, W, 3), mask of rebuilt
+    pixels)."""
+    from pakon_image import _RAW_BLACK
+    ir = np.asarray(ir, np.float32)
+    f = np.clip(np.asarray(raw, np.float32) - _RAW_BLACK, 0, M)
+    k = np.maximum(ir_noise, ir_tail_factor(ir))
+    out, mask, _ = clean(f, ir, dpi=dpi, col_noise=k)
+    return np.clip(out + _RAW_BLACK + 0.5, 0, 65535).astype(np.uint16), mask
+
+
 def measure_ir_shift(red, ir, search=40):
     """Row offset s such that ir[y + s] lines up with red[y] (the IR line
     sits at its own place on the sensor, like the R/G/B leads). Measured on
