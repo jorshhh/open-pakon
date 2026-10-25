@@ -1905,6 +1905,43 @@ static void lc_panel(pakon_dev *dev, const pakon_setup_state *st, unsigned t,
  * LED current search and starts from its currents, duties and A/D settings,
  * as TLB.dll's calibration between full ones does (pakon_calcache.h).
  * Returns 0 on convergence. */
+#define LAMP_WAIT_MS 300000u   /* TLB.dll FN_bLampTemperatureStable */
+
+static void lamp_progress(double lamp_c, unsigned waited_ms, void *user)
+{
+    (void)user;
+    if (waited_ms < 1000 || waited_ms / 1000 % 5 == 0) {
+        printf("lamp: warming up, %.1f C (%u s)\n", lamp_c, waited_ms / 1000);
+        fflush(stdout);
+    }
+}
+
+/* Calibrate only on a stable lamp, as the OEM does (docs/TLB_FINDINGS.md
+ * "Lamp gate"). Returns 0 when stable. */
+static int lamp_wait(pakon_dev *dev, const pakon_setup_state *st, unsigned t,
+                     const char *who)
+{
+    double lamp = 0, board = 0;
+    pakon_result r = pakon_cmd_wait_lamp(dev, st->low, st->scn, t, LAMP_WAIT_MS,
+                                         lamp_progress, NULL);
+    if (r == PAKON_OK) {
+        if (pakon_cmd_lamp_temps(dev, st->low, t, &lamp, &board) == PAKON_OK)
+            printf("lamp: stable, %.1f C\n", lamp);
+        else
+            printf("lamp: stable\n");
+        fflush(stdout);
+        return 0;
+    }
+    if (r == PAKON_ERR_TIMEOUT)
+        fprintf(stderr, "%s: the lamp did not settle in %u s; switch the scanner "
+                "off and on and try again\n", who, LAMP_WAIT_MS / 1000);
+    else if (r == PAKON_ERR_STATUS)
+        fprintf(stderr, "%s: the scanner reports a lamp fault\n", who);
+    else
+        fprintf(stderr, "%s: lamp check failed (%s)\n", who, pakon_result_str(r));
+    return 1;
+}
+
 static int light_cal_run(pakon_dev *dev, pakon_setup_state *st, unsigned t,
                          unsigned offset, uint16_t period, pakon_film film,
                          int with_tables, const lc_result *prior, lc_result *res)
@@ -2225,6 +2262,8 @@ static int do_light_cal(unsigned timeout, const char *eeprom_dir, int scan_base,
         fprintf(stderr, "light-cal: F-135 only for now\n");
         goto out;
     }
+    if (lamp_wait(dev, &st, t, "light-cal"))
+        goto stop;
     if (light_cal_run(dev, &st, t, offset, period, PAKON_FILM_C41, 1, NULL, &res))
         goto stop;
     printf("\n=== light calibration (serial %u, Base %d%s) ===\n", e.serial,
@@ -2595,6 +2634,8 @@ static int do_scan_code(unsigned timeout, const char *eeprom_dir, int scan_base,
                           film == PAKON_FILM_SLIDE ? "slide (colour reversal)" :
                           film == PAKON_FILM_BWC41 ? "B&W C-41 (chromogenic)" :
                           "colour negative");
+    if (lamp_wait(dev, &st, t, "scan-code"))
+        goto stop;
     if (scan_calibrate(dev, &st, t, eeprom_dir, &e, scan_base, offset, period, film,
                        recalibrate, &res)) {
         fprintf(stderr, "scan-code: calibration failed\n");

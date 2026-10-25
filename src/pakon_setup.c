@@ -447,6 +447,37 @@ int pakon_event_parse(const pakon_packet *reply, uint8_t addr, uint8_t *status)
     return 1;
 }
 
+void pakon_lamp_flags_frame(pakon_packet *pkt, uint8_t low)
+{
+    const uint8_t d[3] = { low, 0x01, 0x83 };
+    pakon_packet_build(pkt, PH_READ, d, sizeof d);
+}
+
+void pakon_lamp_temps_frame(pakon_packet *pkt, uint8_t low)
+{
+    const uint8_t d[3] = { low, 0x04, 0x88 };
+    pakon_packet_build(pkt, PH_READ, d, sizeof d);
+}
+
+int pakon_lamp_flags_parse(const pakon_packet *reply, uint8_t low, uint8_t *flags)
+{
+    if (reply->type != PH_READ || reply->count < 3 || reply->data[0] != low)
+        return 0;
+    *flags = reply->data[2];
+    return 1;
+}
+
+int pakon_lamp_temps_parse(const pakon_packet *reply, uint8_t low, double *lamp,
+                           double *board)
+{
+    if (reply->type != PH_READ || reply->count < 6 || reply->data[0] != low)
+        return 0;
+    const uint8_t *d = reply->data + 2;
+    *lamp = (int16_t)(d[0] | d[1] << 8) / 16.0;
+    *board = (int16_t)(d[2] | d[3] << 8) / 16.0;
+    return 1;
+}
+
 pakon_result pakon_event_followup(pakon_seq *seq, uint8_t addr, uint8_t status,
                                   int is_low)
 {

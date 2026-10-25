@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static int failures = 0;
 
@@ -280,6 +281,35 @@ static void seq_hex(const pakon_seq *seq, char *out, size_t cap)
         out[o - 1] = 0;
 }
 
+/* One frame as hex. */
+static const char *frame_hex(const pakon_packet *pkt, char *out, size_t cap)
+{
+    uint8_t wire[PAKON_PACKET_SIZE];
+    size_t wl = 0, o = 0;
+    out[0] = 0;
+    pakon_packet_serialize(pkt, wire, sizeof wire, &wl);
+    for (size_t k = 0; k < wl && o + 3 < cap; k++)
+        o += (size_t)snprintf(out + o, cap - o, "%02x", wire[k]);
+    return out;
+}
+
+/* 1 if capture `name` in `dir` has a line equal to `line`. */
+static int capture_has(const char *dir, const char *name, const char *line)
+{
+    char path[1024], buf[512];
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    FILE *f = fopen(path, "r");
+    int found = 0;
+    if (!f)
+        return 0;
+    while (!found && fgets(buf, sizeof buf, f)) {
+        buf[strcspn(buf, "\r\n")] = 0;
+        found = !strcasecmp(buf, line);
+    }
+    fclose(f);
+    return found;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
@@ -415,6 +445,36 @@ int main(int argc, char **argv)
         pakon_packet_parse(&reply, idle, sizeof idle);
         CHECK(!pakon_event_parse(&reply, AD_PICL, &st), "no event when flag clear");
         CHECK(!pakon_event_parse(&reply, AD_PICM, &st), "wrong address ignored");
+
+        /* Lamp gate reads, as the OEM sends them in calib_prelude.pakscan. */
+        char hx[64];
+        pakon_lamp_flags_frame(&pkt, AD_PICL);
+        CHECK(!strcmp(frame_hex(&pkt, hx, sizeof hx), "0103200183"), "lamp flags read 01 03 20 01 83");
+        pakon_lamp_temps_frame(&pkt, AD_PICL);
+        CHECK(!strcmp(frame_hex(&pkt, hx, sizeof hx), "0103200488"), "lamp temps read 01 03 20 04 88");
+        CHECK(capture_has(dir, "calib_prelude.pakscan", "O 0103200183") &&
+              capture_has(dir, "calib_prelude.pakscan", "O 0103200488"),
+              "both reads appear in the OEM capture");
+
+        uint8_t lf = 0;
+        const uint8_t flags_reply[] = { 0x01, 0x03, 0x20, 0x00, 0x02 };
+        pakon_packet_parse(&reply, flags_reply, sizeof flags_reply);
+        CHECK(pakon_lamp_flags_parse(&reply, AD_PICL, &lf) && lf == PAKON_LAMP_STABLE,
+              "lamp flags parsed");
+        CHECK(!pakon_lamp_flags_parse(&reply, AD_PICM, &lf), "lamp flags: wrong address");
+
+        /* 641 / 16 = 40.0625 C lamp, 461 / 16 = 28.8125 C board; and a
+         * negative reading, -24 / 16 = -1.5 (the band encoding). */
+        double lamp = 0, board = 0;
+        const uint8_t temps_reply[] = { 0x01, 0x06, 0x20, 0x00, 0x81, 0x02, 0xCD, 0x01 };
+        pakon_packet_parse(&reply, temps_reply, sizeof temps_reply);
+        CHECK(pakon_lamp_temps_parse(&reply, AD_PICL, &lamp, &board) &&
+              lamp == 40.0625 && board == 28.8125, "lamp temps parsed (1/16 C, LE)");
+        const uint8_t neg_reply[] = { 0x01, 0x06, 0x20, 0x00, 0xE8, 0xFF, 0x00, 0x00 };
+        pakon_packet_parse(&reply, neg_reply, sizeof neg_reply);
+        CHECK(pakon_lamp_temps_parse(&reply, AD_PICL, &lamp, &board) && lamp == -1.5,
+              "lamp temps signed");
+        CHECK(!pakon_lamp_temps_parse(&reply, AD_PICM, &lamp, &board), "lamp temps: wrong address");
 
         size_t acks = 0, matched = 0;
         const char *caps[] = { "scan.pakscan", "scan_fullroll.pakscan",

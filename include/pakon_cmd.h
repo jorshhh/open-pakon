@@ -93,6 +93,26 @@ pakon_result pakon_cmd_service_events_dx(pakon_dev *dev, uint8_t low,
                                          uint8_t *host_flags, unsigned *serviced,
                                          pakon_dx_roll *dx);
 
+/* LOW `0x88`: lamp and motherboard temperatures, degC. */
+pakon_result pakon_cmd_lamp_temps(pakon_dev *dev, uint8_t low, unsigned timeout_ms,
+                                  double *lamp, double *board);
+
+/* Called about once a second while waiting: lamp temperature, ms waited. */
+typedef void (*pakon_lamp_progress)(double lamp_c, unsigned waited_ms, void *user);
+
+/*
+ * Wait for a stable lamp before calibrating, as TLB.dll does
+ * (FN_bLampTemperatureStable, up to 300 s): service events every 200 ms and
+ * read the lamp flags (`0x83`) once a second; stable when a LOW event status
+ * or the flags have bit 0x02 (PAKON_LAMP_STABLE). Read-only apart from the
+ * event acks. Returns PAKON_OK when stable, PAKON_ERR_TIMEOUT after
+ * `limit_ms`, PAKON_ERR_STATUS on a lamp fault (flags bit 0x40), or the
+ * transfer error. `progress` may be NULL.
+ */
+pakon_result pakon_cmd_wait_lamp(pakon_dev *dev, uint8_t low, uint8_t scn,
+                                 unsigned timeout_ms, unsigned limit_ms,
+                                 pakon_lamp_progress progress, void *user);
+
 #ifdef __cplusplus
 }
 #endif

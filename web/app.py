@@ -31,6 +31,7 @@ POST /api/telemetry/page|error    a page opened / a page error (web/telemetry.py
 import asyncio
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -287,8 +288,19 @@ _SCAN_LOG_KEYS = ("calibration:", "calibrated:", "film detected", "end-of-roll",
                   "stop requested",
                   "no film fed", "safety cap", "event service:", "scan-code:",
                   "teardown", "failed", "did not converge", "insufficient", "] dx:",
-                  "black means")
+                  "black means", "lamp:")
 _FEED_KEY = "feed the film now"
+_LAMP_WARMING = re.compile(r"lamp: warming up, (-?[\d.]+) C")
+_LAMP_STABLE = re.compile(r"lamp: stable(?:, (-?[\d.]+) C)?")
+
+
+def _plain(line: str) -> str:
+    """pakon_replay's lamp lines in the words the Scan page shows."""
+    if m := _LAMP_WARMING.match(line):
+        return f"Warming up the lamp ({m[1]} °C)…"
+    if m := _LAMP_STABLE.match(line):
+        return f"Lamp ready ({m[1]} °C)" if m[1] else "Lamp ready"
+    return line
 
 
 async def _run_streaming(args: list[str], out_path: Path | None, keys=None,
@@ -327,7 +339,7 @@ async def _run_streaming(args: list[str], out_path: Path | None, keys=None,
                        "message": "Motor running — feed the film now"}
             elif keys is None or any(k in line for k in keys):
                 if line and "0x81: timeout" not in line:
-                    yield {"type": "log", "message": line}
+                    yield {"type": "log", "message": _plain(line)}
         if out_path is not None:
             size = out_path.stat().st_size if out_path.exists() else 0
             yield {"type": "progress", "bytes": size,

@@ -412,6 +412,22 @@ NegMatrix then grey.
 
 ## Feature work (independent of the replay-free steps)
 
+- **Lamp gate (#54) — done 2026-10-25:** `--scan-code`
+  and `--light-cal` wait for a stable lamp after setup, before calibrating,
+  as TLB.dll does (docs/TLB_FINDINGS.md, "Lamp gate"): host poll every
+  200 ms, the lamp flags `0x83` and temperatures `0x88` once a second;
+  stable on a LOW event status or flags with bit 0x02, a lamp fault (flags
+  0x40) or 300 s ends the run with a message. `pakon_cmd_wait_lamp`; the web
+  app shows "Warming up the lamp (xx.x °C)". On serial 3054, 2026-10-25
+  (firmware just loaded, scanner on for a while): the first `--light-cal`
+  got the LOW 0x02 event on the first poll (40.3 °C, run 12 s); straight
+  after, the lamp read 40.5-40.6 °C from the previous calibration and the
+  scanner held the event back ~14 s until 40.3 °C (flags `0x83` stayed
+  0x00 throughout, so the event is what ends the wait). Byte order of
+  `0x88` confirmed (lamp 40.3, board 29.1 °C). Both calibrations agree
+  (offsets -39/-31/-31, currents 2/2/3/2, duties within 0.4%). The 300 s
+  is only the OEM's ceiling; the lamp settles in seconds.
+
 - **Ansel scene balance (SBA + FOS)** — done 2026-10-09: the web export runs
   the OEM's own code from `oem/PakonIMAu.dll` under emulation
   (`tools/oem_sba.py`, `docs/IMAGING.md`). Left: SCPLut, DX-code DPI
