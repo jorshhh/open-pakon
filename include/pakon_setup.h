@@ -253,6 +253,30 @@ int pakon_event_parse(const pakon_packet *reply, uint8_t addr, uint8_t *status);
 pakon_result pakon_event_followup(pakon_seq *seq, uint8_t addr, uint8_t status,
                                   int is_low);
 
+/*
+ * Lamp warm-up (TLB.dll FN_bLampTemperatureStable / FUN_1000b890,
+ * docs/TLB_FINDINGS.md "Lamp gate"). The OEM calibrates only once the lamp
+ * is stable: a LOW event status, or the lamp flags `0x83`, with bit 0x02.
+ * Bit 0x40 of the flags is a lamp fault.
+ */
+#define PAKON_LAMP_STABLE  0x02
+#define PAKON_LAMP_WARNING 0x20
+#define PAKON_LAMP_FAULT   0x40
+
+/* `01 03 LOW 01 83`: read the lamp flags; `01 03 LOW 04 88`: the lamp and
+ * motherboard temperatures. Both are reads the OEM makes (calib_prelude). */
+void pakon_lamp_flags_frame(pakon_packet *pkt, uint8_t low);
+void pakon_lamp_temps_frame(pakon_packet *pkt, uint8_t low);
+
+/* Reply `01 03 LOW <flags> <lamp flags>`: returns 1 and sets `*flags`. */
+int pakon_lamp_flags_parse(const pakon_packet *reply, uint8_t low, uint8_t *flags);
+
+/* Reply `01 06 LOW <flags> <lamp lo hi> <board lo hi>`: signed 16-bit
+ * little-endian, 1/16 degC (the encoding of the bands written at setup).
+ * Returns 1 and sets both in degC. */
+int pakon_lamp_temps_parse(const pakon_packet *reply, uint8_t low, double *lamp,
+                           double *board);
+
 #ifdef __cplusplus
 }
 #endif

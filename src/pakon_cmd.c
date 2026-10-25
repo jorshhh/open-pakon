@@ -236,10 +236,12 @@ pakon_result pakon_cmd_service_events(pakon_dev *dev, uint8_t low, uint8_t scn,
                                        serviced, NULL);
 }
 
-pakon_result pakon_cmd_service_events_dx(pakon_dev *dev, uint8_t low,
-                                         uint8_t scn, unsigned timeout_ms,
-                                         uint8_t *host_flags, unsigned *serviced,
-                                         pakon_dx_roll *dx)
+/* The event service; `low_status` (may be NULL) collects the bits of every
+ * LOW event status acknowledged. */
+static pakon_result service_events(pakon_dev *dev, uint8_t low, uint8_t scn,
+                                   unsigned timeout_ms, uint8_t *host_flags,
+                                   unsigned *serviced, pakon_dx_roll *dx,
+                                   uint8_t *low_status)
 {
     const uint8_t poll[1] = { AD_HOST };
     pakon_packet pkt, reply;
@@ -278,6 +280,89 @@ pakon_result pakon_cmd_service_events_dx(pakon_dev *dev, uint8_t low,
                    addrs[i], status);
         if (serviced)
             (*serviced)++;
+        if (low_status && addrs[i] == low)
+            *low_status |= status;
     }
     return PAKON_OK;
+}
+
+pakon_result pakon_cmd_service_events_dx(pakon_dev *dev, uint8_t low,
+                                         uint8_t scn, unsigned timeout_ms,
+                                         uint8_t *host_flags, unsigned *serviced,
+                                         pakon_dx_roll *dx)
+{
+    return service_events(dev, low, scn, timeout_ms, host_flags, serviced, dx, NULL);
+}
+
+pakon_result pakon_cmd_lamp_temps(pakon_dev *dev, uint8_t low, unsigned timeout_ms,
+                                  double *lamp, double *board)
+{
+    pakon_packet pkt, reply;
+    pakon_result r;
+
+    if (!dev)
+        return PAKON_ERR_PARAM;
+    pakon_lamp_temps_frame(&pkt, low);
+    if ((r = pakon_cmd(dev, &pkt, &reply, timeout_ms)) != PAKON_OK)
+        return r;
+    return pakon_lamp_temps_parse(&reply, low, lamp, board) ? PAKON_OK : PAKON_ERR_PROTO;
+}
+
+static unsigned elapsed_ms(const struct timespec *t0)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (unsigned)((now.tv_sec - t0->tv_sec) * 1000 +
+                      (now.tv_nsec - t0->tv_nsec) / 1000000);
+}
+
+pakon_result pakon_cmd_wait_lamp(pakon_dev *dev, uint8_t low, uint8_t scn,
+                                 unsigned timeout_ms, unsigned limit_ms,
+                                 pakon_lamp_progress progress, void *user)
+{
+    pakon_packet pkt, reply;
+    pakon_result r;
+    struct timespec t0;
+    unsigned next_flags = 0;
+
+    if (!dev)
+        return PAKON_ERR_PARAM;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (;;) {
+        uint8_t status = 0, flags = 0;
+        if ((r = service_events(dev, low, scn, timeout_ms, NULL, NULL, NULL,
+                                &status)) != PAKON_OK)
+            return r;
+        if (status & PAKON_LAMP_STABLE) {
+            pakon_logf(PAKON_LOG_INFO, "lamp: stable (event status 0x%02x)", status);
+            return PAKON_OK;
+        }
+        unsigned ms = elapsed_ms(&t0);
+        if (ms >= next_flags) {          /* the flags and temperatures, once a second */
+            next_flags = ms + 1000;
+            pakon_lamp_flags_frame(&pkt, low);
+            if ((r = pakon_cmd(dev, &pkt, &reply, timeout_ms)) != PAKON_OK)
+                return r;
+            if (!pakon_lamp_flags_parse(&reply, low, &flags))
+                return PAKON_ERR_PROTO;
+            if (flags & PAKON_LAMP_FAULT) {
+                pakon_logf(PAKON_LOG_ERROR, "lamp: fault (flags 0x%02x)", flags);
+                return PAKON_ERR_STATUS;
+            }
+            if (flags & PAKON_LAMP_STABLE) {
+                pakon_logf(PAKON_LOG_INFO, "lamp: stable (flags 0x%02x)", flags);
+                return PAKON_OK;
+            }
+            double lamp = 0, board = 0;
+            if (pakon_cmd_lamp_temps(dev, low, timeout_ms, &lamp, &board) == PAKON_OK) {
+                pakon_logf(PAKON_LOG_INFO, "lamp: %.2f degC, board %.2f degC, flags 0x%02x",
+                           lamp, board, flags);
+                if (progress)
+                    progress(lamp, ms, user);
+            }
+        }
+        if (ms >= limit_ms)
+            return PAKON_ERR_TIMEOUT;
+        sleep_ms(200);                   /* the OEM's idle poll */
+    }
 }

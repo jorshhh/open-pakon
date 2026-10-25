@@ -94,11 +94,13 @@ LED drives only the IR block, and the visible LEDs leave it unchanged [C].
 | `0x8F` / `0x8C` | lamp warning / fault band |
 | `0x8B` / `0x8D` | motherboard warning / fault band |
 | `0xD0 00`, `0xD1 01` | TEC setup, sent on both models; replay as-is, never sweep |
-| `0x83` (read 1) | lamp status flags |
+| `0x83` (read 1) | lamp status flags: `0x02` stable (TLB.dll calibrates only after it, or after a LOW event status with `0x02`), `0x20` warning, `0x40` fault |
 | `0x84` (read 2) | setpoint read-back |
 | `0x88` (read 4) | lamp + motherboard temperatures |
 
-Units: 0.0625 °C per count. These were previously mislabelled "CCD exposure /
+Units: 0.0625 °C per count, signed 16-bit little-endian (the bands are
+offsets from the setpoint: `0x8F` `E8 FF 18 00` = -1.5 / +1.5 °C). `0x88`
+replies lamp, then motherboard. These were previously mislabelled "CCD exposure /
 LED geometry" in this repo.
 
 ## LOW — scan, FIFOs, DX [C]
