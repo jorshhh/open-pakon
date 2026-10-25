@@ -139,10 +139,28 @@ def _sba_on():
     return os.environ.get("PAKON_OEM_SBA", "1") != "0" and oem_sba.available()
 
 
-def _sba_shifts(crops, oem, roll=None):
+def _sba_inputs(raw_path, rgb, first_frame, oem):
+    """What the OEM gives Ansel besides the pictures (docs/TLB_FINDINGS.md
+    "Roll balance"): the SBA parameter file sba.map picks for the raw's DX
+    code, and the strip's film base in RPD (None when the leader is too
+    short to measure; PAKON_SBA_DMIN=0 leaves it out)."""
+    code = dx.code_for_raw(Path(raw_path))
+    sba_dpi = oem_sba.dpi_for(*code) if code else oem_sba.dpi_for()
+    dmin = None
+    if (oem is not None and first_frame is not None and
+            os.environ.get("PAKON_SBA_DMIN", "1") != "0"):
+        rows_per_mm = tlx_geometry(rgb.shape[1], "full")[1] / 36.0
+        base = oem_sba.film_base(rgb, int(first_frame), rows_per_mm)
+        if base is not None:
+            dmin = oem_sba.film_base_rpd(base, oem[0], oem[1], oem_rpd)
+    return sba_dpi, dmin
+
+
+def _sba_shifts(crops, oem, roll=None, sba_dpi=None, dmin=None):
     """OEM SBA per-frame RPD shifts (n, 3) for raw frame crops, balanced
-    against `roll` (raw crops of the whole roll; default the crops), or None
-    when it is unavailable or fails (the caller falls back to the roll
+    against `roll` (raw crops of the whole roll; default the crops), with
+    the parameter file `sba_dpi` and the strip's film base `dmin` (RPD), or
+    None when it is unavailable or fails (the caller falls back to the roll
     balance)."""
     if not crops or oem is None or not _sba_on():
         return None
@@ -151,7 +169,8 @@ def _sba_shifts(crops, oem, roll=None):
             return oem_sba.analysis_image(c, oem[0], oem[1], oem_rpd)
         imgs = [analysis(c) for c in crops]
         return oem_sba.roll_shifts(
-            imgs, roll=None if roll is None else [analysis(c) for c in roll])
+            imgs, dpi=sba_dpi or oem_sba.dpi_for(),
+            roll=None if roll is None else [analysis(c) for c in roll], dmin=dmin)
     except Exception as exc:                       # never block an export
         print(f"OEM SBA failed, using the roll balance: {exc}", file=sys.stderr)
         return None
@@ -297,13 +316,16 @@ def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
     oem = _oem_path()
     balance = None
     flare = None
+    sba_dpi, scene_dmin = (_sba_inputs(raw_path, rgb, starts[0] if starts else None, oem)
+                           if film != "slide" else (None, None))
     if film == "slide":
         flare = measure_slide_flare(rgb)                 # stray light, per roll
         pos = render_slide(small, *_slide_path(), flare=flare)
     elif oem is not None:                                # OEM colour path
         balance = oem_roll_balance(small, oem[0], oem[1])  # once per roll
         fw = int(min(frame_w, pitch))
-        shifts = _sba_shifts([rgb[max(0, c - fw // 2):c + fw // 2] for c in centres], oem)
+        shifts = _sba_shifts([rgb[max(0, c - fw // 2):c + fw // 2] for c in centres], oem,
+                             sba_dpi=sba_dpi, dmin=scene_dmin)
         # The strip gets the roll's mean OEM shift; the export applies each
         # frame's own.
         pos = render_oem(small, *oem, balance=(
@@ -336,6 +358,8 @@ def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
         "film": film,
         "flare": None if flare is None else [float(x) for x in flare],
         "ice": ice is not None,            # an IR plane to remove dust with
+        "sba_dpi": sba_dpi,                # OEM scene balance parameters (DX code)
+        "scene_dmin": scene_dmin,          # the strip's film base, RPD
     }
 
 
@@ -352,7 +376,7 @@ def autoframe(ribbon_path, film="c41", fmt="full") -> dict:
 def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
                   frame_w=_FRAME_W, progress=None, rpd_balance=None,
                   roll_centres=None, film="c41", flare=None,
-                  dx_film=None, ice=False) -> list[dict]:
+                  dx_film=None, ice=False, sba_dpi=None, scene_dmin=None) -> list[dict]:
     """Stage 2. Crop the cached ribbon at each confirmed centre, invert and
     render, write TIFF/JPEG. With the scanner's EEPROM archive and rpd.pf this
     is the OEM F-135 colour path (density LUT -> NegMatrix -> rpd.pf), for both
@@ -371,7 +395,8 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
     `flare` (the prescan's measure_slide_flare).
 
     `dx_film` (web/dx.py lookup) puts the film's name and ISO in every file's
-    metadata; None writes none.
+    metadata; None writes none. `sba_dpi` and `scene_dmin` are the prescan's
+    OEM scene balance inputs.
 
     `ice` removes dust and scratches from each frame with its IR plane
     (tools/pakon_ice.py) before it is rendered, when the prescan cached one."""
@@ -425,7 +450,7 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
         if oem is not None and _sba_on():
             emit("OEM scene balance", 0.0)
         roll = [crop_at(c, frame_w) for c in roll_centres] if roll_centres else None
-        shifts = _sba_shifts([crop(i) for i in range(n)], oem, roll)
+        shifts = _sba_shifts([crop(i) for i in range(n)], oem, roll, sba_dpi, scene_dmin)
 
     for i in range(n):
         emit(f"Exporting frame {i + 1}/{n}" + (" (removing dust)" if ir_rib is not None

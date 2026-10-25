@@ -287,6 +287,53 @@ class Emulator:
 
 # -- SBA / FOS -------------------------------------------------------------------
 
+SOURCE_NEGATIVE_35 = 1     # Ansel sourceType for 35 mm colour neg and B&W (sba.map)
+
+
+def _map_rows():
+    """sba.map's selector rows as (path, scanner, sourceType, product, gen,
+    key), in file order (the first match wins)."""
+    rows, on = [], False
+    with open(os.path.join(SBA_DIR, 'SbaDPI', 'sba.map'), encoding='latin1') as f:
+        for line in f:
+            line = line.split('#')[0].strip()
+            if line.startswith('mapping'):
+                on = True
+                continue
+            w = line.split()
+            if on and len(w) == 7 and not w[0].startswith('_'):
+                rows.append((w[0], w[1], w[2], w[3], w[4], w[6]))
+    return rows
+
+
+def _dpi_files():
+    """Each .dpi's own key -> its file name."""
+    out = {}
+    folder = os.path.join(SBA_DIR, 'SbaDPI')
+    for name in sorted(os.listdir(folder)):
+        if name.endswith('.dpi'):
+            key = read_dpi(os.path.join(folder, name)).get('key')
+            if key:
+                out[key[0]] = name
+    return out
+
+
+def dpi_for(product=None, generation=None, source_type=SOURCE_NEGATIVE_35):
+    """The SBA parameter file sba.map picks for a film: the first row whose
+    sourceType, product code and generation match (`any` matches anything; no
+    DX code matches only `any`), on the default path and scanner. 78/13 and
+    79/15 (chromogenic B&W), 96 and 43 have their own files; the rest get
+    sba-CN-default.dpi, which is also the answer when the key has no file."""
+    def ok(sel, val):
+        return sel == 'any' or (val is not None and val >= 0 and sel == str(val))
+    files = _dpi_files()
+    for path, scanner, src, prod, gen, key in _map_rows():
+        if path == 'any' and scanner == 'any' and ok(src, source_type) and \
+                ok(prod, product) and ok(gen, generation):
+            return files.get(key, 'sba-CN-default.dpi')
+    return 'sba-CN-default.dpi'
+
+
 def read_dpi(path):
     """An Ansel .dpi file as {lower-case key: [values]}."""
     vals = {}
@@ -361,9 +408,10 @@ class Sba:
         struct.pack_into('<h', b, 0x46, int(((v + 50000) if v >= 0 else (v - 50000)) / 100000))
         return self.e.alloc(0x48, b)
 
-    def pass1(self, rpd, fos_on=True):
+    def pass1(self, rpd, fos_on=True, dmin=None):
         """createAlgData + Sba() for one frame. rpd: (rows, cols, 3) 12-bit RPD,
-        landscape. Returns the frame's object address."""
+        landscape. dmin: the scene's film base in RPD (the strip's, as TLB.dll
+        passes it), or None. Returns the frame's object address."""
         e = self.e
         rows, cols = rpd.shape[:2]
         impl = e.alloc(IMPL_SIZE)
@@ -382,11 +430,23 @@ class Sba:
         self._check(e.call(F_CREATE_ALG, image, impl + 0x10, 0, 0, impl + DMIN_STATS,
                            geometry, offsets, e.alloc(64), impl + 0x14, 0, 0, aim),
                     'createAlgData')
-        e.write(impl + FRAME_DMIN, e.read(impl + DMIN_STATS, 6))
+        e.write(impl + FRAME_DMIN, struct.pack('<3h', *self.frame_dmin(
+            e.s16(impl + DMIN_STATS, 3), dmin)))
         self._check(e.call(F_SBA, impl + ALG, impl + FRAME_DMIN, impl + INFO,
                            1 if fos_on else 0, 0, self.block, self.pcode, self.sfs + 0x2C,
                            0, 0, e.alloc(64), impl + WORK, impl + RESULT), 'Sba() pass 1')
         return impl
+
+    def frame_dmin(self, stats, dmin=None):
+        """The frame's film base as the OEM wrapper sets it (FUN_10218110):
+        the frame's own minimum (createAlgData), or with a scene dmin, per
+        channel the lower of the two, a scene value at or below the .dpi's
+        `mindmin` counting as none (0xfff)."""
+        if dmin is None:
+            return list(stats)
+        aim = [int(x) for x in self.dpi['mindmin'][:3]]
+        return [min(0xFFF if int(d) <= a else int(d), int(s))
+                for d, a, s in zip(dmin, aim, stats)]
 
     def fos(self, impls):
         """SbaCalcFosResults over the frames. Returns the result address."""
@@ -416,28 +476,64 @@ class Sba:
         return self.e.s16(impl + SHIFTS, 3)
 
 
-def roll_shifts(frames, dpi='sba-CN-default.dpi', roll=None):
+def roll_shifts(frames, dpi='sba-CN-default.dpi', roll=None, dmin=None):
     """OEM per-frame RPD shifts (n, 3) for analysis images (12-bit RPD,
     landscape). `roll` is the whole roll's analysis images, for the roll
     stage (FOS); it defaults to `frames`. The OEM balances against the roll,
     not against the frames picked for export: three warm frames on their own
     come out red. With at least `mff` roll frames: pass 1, FOS over the first
-    `maxFramesToFos`, pass 2. With fewer, the OEM would use its scan history,
-    which we do not have, so each frame is balanced on its own (FOS off)."""
+    `maxFramesToFos`, pass 2. With fewer, each frame is balanced on its own
+    (FOS off), as the OEM does: its FOS (AnsFosCapabilityImpl, FUN_1023ff80)
+    falls back to the scan history only with `useHistory`, which every
+    shipped .dpi has at 0.
+    `dpi` is the parameter file (dpi_for: from the DX code); `dmin` the
+    strip's film base in RPD (film_base), given to every scene."""
     s = Sba(dpi)
     mff = s._dpi_short(0x3C)
     max_fos = s._dpi_short(0x3E)
     roll = frames if roll is None else roll
     if len(roll) < max(mff, 1):
-        return np.array([s.preference(s.pass1(f, fos_on=False)) for f in frames], np.float32)
+        return np.array([s.preference(s.pass1(f, fos_on=False, dmin=dmin)) for f in frames],
+                        np.float32)
     if roll is frames:
-        impls = [s.pass1(f) for f in frames]
+        impls = [s.pass1(f, dmin=dmin) for f in frames]
         roll_impls = impls[:max_fos]
     else:
-        roll_impls = [s.pass1(f) for f in roll[:max_fos]]
-        impls = [s.pass1(f) for f in frames]
+        roll_impls = [s.pass1(f, dmin=dmin) for f in roll[:max_fos]]
+        impls = [s.pass1(f, dmin=dmin) for f in frames]
     out = s.fos(roll_impls)
     return np.array([s.pass2(i, out) for i in impls], np.float32)
+
+
+def film_base(ribbon, first_frame, rows_per_mm, margin_mm=1.0, min_mm=2.0):
+    """The strip's film base like TLB.dll's FN_bFindTmax: per channel the
+    level the brightest 0.1% of samples exceed, over the central 3/4 of the
+    width. The OEM starts 1 inch past the strip start for a window whose
+    inputs are not traced; on a roll that lands in frame 1, so this measures
+    the clear film between the film's arrival (the first row below 90% of the
+    open gate) and the first frame instead. Returns the raw 16-bit (R, G, B),
+    or None when that stretch is shorter than `min_mm`."""
+    w = ribbon.shape[1]
+    cols = slice(w // 8, w - w // 8)
+    level = np.asarray(ribbon[:first_frame, cols, 1], np.float32).mean(axis=1)
+    if level.size == 0:
+        return None
+    gate = float(level[:max(1, int(2 * rows_per_mm))].max())
+    film = np.nonzero(level < 0.9 * gate)[0]
+    if film.size == 0:
+        return None
+    m = int(margin_mm * rows_per_mm)
+    r0, r1 = int(film[0]) + m, first_frame - m
+    if r1 - r0 < min_mm * rows_per_mm:
+        return None
+    seg = np.asarray(ribbon[r0:r1, cols], np.float32)
+    return [float(np.percentile(seg[..., c], 99.9)) for c in range(3)]
+
+
+def film_base_rpd(base, negmat, lut, rpd_fn):
+    """A raw (R, G, B) film base -> 12-bit RPD, the frames' conversion."""
+    px = np.clip(np.rint(np.asarray(base, np.float32)), 0, 65535).astype(np.uint16)
+    return [int(round(float(v))) for v in rpd_fn(px.reshape(1, 1, 3), negmat, lut)[0, 0]]
 
 
 def analysis_image(raw16, negmat, lut, rpd_fn):

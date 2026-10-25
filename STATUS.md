@@ -430,9 +430,13 @@ NegMatrix then grey.
 
 - **Ansel scene balance (SBA + FOS)** — done 2026-10-09: the web export runs
   the OEM's own code from `oem/PakonIMAu.dll` under emulation
-  (`tools/oem_sba.py`, `docs/IMAGING.md`). Left: SCPLut, DX-code DPI
-  selection, the CLI (`pakon_image.py`), a Python port verified against the
-  emulator, and a TLX reference scan to check against.
+  (`tools/oem_sba.py`, `docs/IMAGING.md`). 2026-10-25 (#51): the `.dpi`
+  is picked from the DX code through `sba.map`, and every scene gets the
+  strip's measured film base as `dmin`; the FOS scan history needs
+  `useHistory`, off in every shipped `.dpi`, so short rolls stay balanced
+  frame by frame, as the OEM does. Left: SCPLut, the CLI (`pakon_image.py`),
+  a Python port verified against the emulator, and a TLX reference scan to
+  check against.
 - **Web UI: show that RAW/TIFF exports are being generated.** Exporting raw
   negatives or TIFFs takes a while with no feedback: each button just
   navigates to `/api/export?fmt=…`, and the server builds the whole zip
