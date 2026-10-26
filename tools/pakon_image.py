@@ -445,6 +445,8 @@ class RpdLut:
                                      "RGB", "RGB", renderingIntent=0)
         out = np.asarray(ImageCms.applyTransform(img, tr), dtype=np.float32)
         self.table = out.reshape(self.n, self.n, self.n, 3) / 255.0
+        self.path = rpd_path
+        self.adjusted = {}           # (saturation, tone) -> table, adjusted_table
 
     def apply(self, x01, chunk_rows=256):
         """(H, W, 3) float in [0, 1] -> sRGB float in [0, 1]."""
@@ -546,23 +548,126 @@ def oem_roll_balance(rgb16, negmat, lut, strength=OEM_BALANCE):
     return gain.astype(np.float32), (base * (1.0 - gain)).astype(np.float32)
 
 
-def render_oem(rgb16, negmat, lut, rpd_lut, balance=None, grey=False):
+# ---- Per-picture adjustments (TLX: PakonIMAu PIColorAdjustPlanar) -----------
+# docs/IMAGING.md "Per-picture adjustments". Units are TLX's: one slider click
+# is 25 for red, green, blue, brightness and contrast and ~67 for sharpness
+# (Defaults.ini); saturation is -5..5 steps of satPlusNN / satMinusNN.pf;
+# tone is a B&W effect profile.
+ADJUST_DEFAULTS = {"red": 0, "green": 0, "blue": 0, "brightness": 0, "contrast": 0,
+                   "sharpness": 0, "saturation": 0, "tone": "none"}
+ADJUST_TONES = {"warm": "warm_bw_ld0_1_4-5.pf", "cold": "cold_bw.pf",
+                "sepia": "sepia_ld0_9_22.pf"}
+_CONTRAST_PIVOT = 0x60E     # RPD the contrast slope turns about
+
+
+def clean_adjust(adj):
+    """A frame's adjustments with defaults filled in and values clamped, or
+    None when they change nothing."""
+    if not adj:
+        return None
+    out = dict(ADJUST_DEFAULTS)
+    for k in ("red", "green", "blue", "brightness", "contrast", "sharpness"):
+        out[k] = int(max(-1000, min(1000, round(float(adj.get(k, 0) or 0)))))
+    out["saturation"] = int(max(-5, min(5, round(float(adj.get("saturation", 0) or 0)))))
+    out["tone"] = adj.get("tone") if adj.get("tone") in ADJUST_TONES else "none"
+    return None if out == ADJUST_DEFAULTS else out
+
+
+def _unsharp(x, amount):
+    """PakonIMAu's ImaUnsharpMaskOperation: x + amount * (x - blur), blur the
+    separable 3x3 [1/4, 1/2, 1/4] kernel, edges repeated."""
+    p = np.pad(x, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    rows = 0.25 * p[:-2] + 0.5 * p[1:-1] + 0.25 * p[2:]
+    blur = 0.25 * rows[:, :-2] + 0.5 * rows[:, 1:-1] + 0.25 * rows[:, 2:]
+    return x + amount * (x - blur)
+
+
+def _lab_to_srgb(v):
+    """mft2-encoded Lab (ICC v2 lut16, [0, 1]) -> sRGB [0, 1] (D50, Bradford)."""
+    L = v[..., 0] * 65535.0 / 0xFF00 * 100.0
+    a = v[..., 1] * 65535.0 / 256.0 - 128.0
+    b = v[..., 2] * 65535.0 / 256.0 - 128.0
+    fy = (L + 16.0) / 116.0
+    fx, fz = fy + a / 500.0, fy - b / 200.0
+    f = lambda t: np.where(t > 6 / 29, t ** 3, 3 * (6 / 29) ** 2 * (t - 4 / 29))
+    xyz = np.stack([0.9642 * f(fx), f(fy), 0.8249 * f(fz)], -1)
+    m = np.array([[3.1338561, -1.6168667, -0.4906146],
+                  [-0.9787684, 1.9161415, 0.0334540],
+                  [0.0719453, -0.2289914, 1.4052427]], np.float32)
+    lin = np.clip(np.einsum("ij,...j->...i", m, xyz), 0.0, 1.0)
+    return np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * lin ** (1 / 2.4) - 0.055)
+
+
+def adjusted_table(rpd_lut, saturation=0, tone="none"):
+    """RpdLut's table with the OEM's saturation and B&W tone profiles
+    (abstract Lab -> Lab, between rpd.pf and the output, as
+    PIColorAdjustPlanar chains them). Applied as a correction to the
+    LittleCMS table: our own rpd.pf evaluation with the profile minus
+    without, so 0 / "none" leaves the table exactly as it was."""
+    if not saturation and tone == "none":
+        return rpd_lut.table
+    key = (saturation, tone)
+    if key not in rpd_lut.adjusted:
+        folder = os.path.dirname(rpd_lut.path)
+        nodes = np.linspace(0.0, 1.0, rpd_lut.n, dtype=np.float32)
+        g = np.stack(np.meshgrid(nodes, nodes, nodes, indexing="ij"), -1)
+        lab = ColRevLink(rpd_lut.path).apply(g.reshape(1, -1, 3))
+        steps = []
+        if saturation:
+            steps.append(f"sat{'plus' if saturation > 0 else 'minus'}{3 * abs(saturation):02d}.pf")
+        if tone != "none":
+            steps.append(ADJUST_TONES[tone])
+        out = lab
+        for name in steps:
+            out = ColRevLink(os.path.join(folder, name)).apply(out)
+        delta = (_lab_to_srgb(out) - _lab_to_srgb(lab)).reshape(rpd_lut.table.shape)
+        rpd_lut.adjusted[key] = np.clip(rpd_lut.table + delta, 0.0, 1.0).astype(np.float32)
+    return rpd_lut.adjusted[key]
+
+
+def _adjust_12bit(v, adj, balance=None):
+    """PIColorAdjustPlanar's arithmetic on 12-bit data (RPD for negatives,
+    ROMM for slides), with the scene balance where the OEM adds it: contrast
+    about 1550, then the balance and the red / green / blue + brightness
+    offsets (x 4096 / 4000), then the unsharp mask (sharpness x 0.01)."""
+    if adj and adj["contrast"]:
+        v = np.clip((v - _CONTRAST_PIVOT) * (1000 + adj["contrast"] / 2) / 1000
+                    + _CONTRAST_PIVOT, 0.0, 4095.0)
+    if balance is not None:
+        v = np.clip(v * balance[0] + balance[1], 0.0, 4095.0)
+    if adj:
+        off = np.array([adj[c] + adj["brightness"] for c in ("red", "green", "blue")],
+                       np.float32) * 4096 / 4000
+        v = np.clip(v + off, 0.0, 4095.0)
+        if adj["sharpness"]:
+            v = np.clip(_unsharp(v, adj["sharpness"] * 0.01), 0.0, 4095.0)
+    return v
+
+
+def render_oem(rgb16, negmat, lut, rpd_lut, balance=None, grey=False, adjust=None):
     """Raw 16-bit RGB frame -> OEM-path positive, 16-bit sRGB. `balance` is
     the (gain, offset) pair from oem_roll_balance (None = none).
+
+    `adjust` is the frame's per-picture adjustments (clean_adjust), in the
+    OEM's order: contrast about RPD 1550, then the balance shift, red /
+    green / blue + brightness (x 4096 / 4000, PIColorAdjustPlanar's LUT),
+    the unsharp mask (sharpness x 0.01), and saturation / tone in the
+    colour conversion. A B&W tone keeps the grey picture in colour.
 
     grey=True is silver B&W: TLB.dll runs B&W through the same NegMatrix as
     colour negative; the three RPD channels are then averaged (silver is
     neutral, so they carry the same picture and the mean halves the noise)
     and the neutral rendered through rpd.pf, giving the OEM tone curve. Returns
     (H, W) 16-bit grey instead of (H, W, 3)."""
-    rpd = oem_rpd(rgb16, negmat, lut)
-    if balance is not None:
-        rpd = np.clip(rpd * balance[0] + balance[1], 0.0, 4095.0)
+    adj = clean_adjust(adjust)
+    rpd = _adjust_12bit(oem_rpd(rgb16, negmat, lut), adj, balance)
     if grey:
         rpd = np.repeat(rpd.mean(axis=-1, keepdims=True), 3, axis=-1)
-    srgb = rpd_lut.apply(rpd / 4095.0)
+    table = (adjusted_table(rpd_lut, adj["saturation"], adj["tone"]) if adj
+             else rpd_lut.table)
+    srgb = _interp3(table, rpd / 4095.0)
     out = np.clip(srgb * 65535.0 + 0.5, 0.0, 65535.0).astype(np.uint16)
-    return to_grey(out) if grey else out
+    return to_grey(out) if grey and not (adj and adj["tone"] != "none") else out
 
 
 SLIDE_FLARE = 0.5         # default share of the measured veil to remove
@@ -612,7 +717,7 @@ def measure_slide_flare(rgb, strength=SLIDE_FLARE, gaps=None):
     return (strength * np.maximum(level - floor, 0.0)).astype(np.float32)
 
 
-def render_slide(rgb16, posmat, lut, link, romm_lut, flare=None):
+def render_slide(rgb16, posmat, lut, link, romm_lut, flare=None, adjust=None):
     """Raw 16-bit RGB frame of slide film -> 16-bit sRGB, the OEM positive
     path (TLB.dll film type 2): the same density LUT, the unit's PosMatrix
     (0.25 * density, 875 codes per decade, no inversion), the ColRevLut1.pf
@@ -622,12 +727,22 @@ def render_slide(rgb16, posmat, lut, link, romm_lut, flare=None):
 
     Two departures from the OEM, both for the shadows: the density is
     computed in floating point (oem_rpd exact=True), and `flare` (per-channel
-    raw counts from measure_slide_flare) is subtracted first."""
+    raw counts from measure_slide_flare) is subtracted first.
+
+    `adjust` (clean_adjust) applies the per-picture adjustments to the
+    12-bit ROMM values, where the OEM runs PIColorAdjustPlanar for slides
+    (after PIColorCorrectColRevPlanar), with romm.pf as the input profile."""
     x = rgb16.astype(np.float32)
     if flare is not None:
         x = x - np.asarray(flare, np.float32)
     cmy = oem_rpd(x, posmat, lut, exact=True) / 4095.0
-    srgb = romm_lut.apply(link.apply(cmy))
+    romm = link.apply(cmy)
+    adj = clean_adjust(adjust)
+    if adj is None:
+        srgb = romm_lut.apply(romm)
+    else:
+        romm = _adjust_12bit(romm * 4095.0, adj) / 4095.0
+        srgb = _interp3(adjusted_table(romm_lut, adj["saturation"], adj["tone"]), romm)
     return np.clip(srgb * 65535.0 + 0.5, 0.0, 65535.0).astype(np.uint16)
 
 

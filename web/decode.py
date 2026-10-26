@@ -264,6 +264,9 @@ def _build_ribbon(raw_path, emit):
 
 FILMS = ("c41", "bw", "bwc41", "slide")   # colour negative, silver B&W, B&W C-41, slide (E-6)
 GREY_FILMS = ("bw", "bwc41")
+# Export sharpening: the OEM's unsharp mask (pakon_image.render_oem
+# "sharpness") at 1, 2 and 3 TLX slider clicks (3 clicks = 200).
+SHARPEN_LEVELS = {"off": 0, "low": 67, "medium": 133, "high": 200}
 
 
 def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
@@ -376,7 +379,8 @@ def autoframe(ribbon_path, film="c41", fmt="full") -> dict:
 def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
                   frame_w=_FRAME_W, progress=None, rpd_balance=None,
                   roll_centres=None, film="c41", flare=None,
-                  dx_film=None, ice=False, sba_dpi=None, scene_dmin=None) -> list[dict]:
+                  dx_film=None, ice=False, sba_dpi=None, scene_dmin=None,
+                  adjustments=None) -> list[dict]:
     """Stage 2. Crop the cached ribbon at each confirmed centre, invert and
     render, write TIFF/JPEG. With the scanner's EEPROM archive and rpd.pf this
     is the OEM F-135 colour path (density LUT -> NegMatrix -> rpd.pf), for both
@@ -396,7 +400,9 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
 
     `dx_film` (web/dx.py lookup) puts the film's name and ISO in every file's
     metadata; None writes none. `sba_dpi` and `scene_dmin` are the prescan's
-    OEM scene balance inputs.
+    OEM scene balance inputs. `adjustments` (parallel to `centres`, each a
+    dict or None) are the per-picture adjustments (pakon_image.clean_adjust),
+    applied on the OEM colour path and the slide path.
 
     `ice` removes dust and scratches from each frame with its IR plane
     (tools/pakon_ice.py) before it is rendered, when the prescan cached one."""
@@ -460,7 +466,8 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
             part = np.ascontiguousarray(np.rot90(part, k=rot_k))
 
         if slide is not None:                         # positive, no inversion
-            pos = render_slide(part, *slide, flare=flare)
+            pos = render_slide(part, *slide, flare=flare,
+                               adjust=adjustments[i] if adjustments else None)
             rendered = (pos >> 8).astype(np.uint8)
         elif oem is not None:                         # OEM colour path
             if shifts is not None:
@@ -468,7 +475,8 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
             else:
                 bal = (None if rpd_balance is None else
                        tuple(np.asarray(v, np.float32) for v in rpd_balance))
-            pos = render_oem(part, *oem, balance=bal, grey=grey)
+            pos = render_oem(part, *oem, balance=bal, grey=grey,
+                             adjust=adjustments[i] if adjustments else None)
             rendered = (pos >> 8).astype(np.uint8)
         else:
             pos = invert_c41(part, base, lut)         # 16-bit sRGB positive
@@ -485,7 +493,7 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
         tifffile.imwrite(str(raw_tiff), part, photometric="rgb",
                          **dx.tiff_kwargs(dx_film))
         tifffile.imwrite(str(pos_tiff), pos,
-                         photometric="minisblack" if grey else "rgb",
+                         photometric="minisblack" if pos.ndim == 2 else "rgb",
                          **dx.tiff_kwargs(dx_film))
         Image.fromarray(rendered).save(str(jpg_path), "JPEG", quality=92,
                                        **dx.jpeg_kwargs(dx_film))

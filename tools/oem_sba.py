@@ -476,33 +476,39 @@ class Sba:
         return self.e.s16(impl + SHIFTS, 3)
 
 
+class RollBalance:
+    """One roll's OEM scene balance, frame by frame: the roll stage (FOS
+    over the first `maxFramesToFos` roll frames) runs once, then each
+    frame's shift costs one pass 1 + pass 2. With fewer than `mff` roll
+    frames each frame is balanced on its own (FOS off), as the OEM does: its
+    FOS (AnsFosCapabilityImpl, FUN_1023ff80) falls back to the scan history
+    only with `useHistory`, which every shipped .dpi has at 0.
+    `dpi` is the parameter file (dpi_for: from the DX code); `dmin` the
+    strip's film base in RPD (film_base), given to every scene."""
+
+    def __init__(self, roll, dpi='sba-CN-default.dpi', dmin=None):
+        self.s = s = Sba(dpi)
+        self.dmin = dmin
+        mff, max_fos = s._dpi_short(0x3C), s._dpi_short(0x3E)
+        self.fos_out = (s.fos([s.pass1(f, dmin=dmin) for f in roll[:max_fos]])
+                        if len(roll) >= max(mff, 1) else None)
+
+    def shift(self, frame):
+        """The frame's RPD shift (R, G, B) for its analysis image."""
+        s = self.s
+        if self.fos_out is None:
+            return s.preference(s.pass1(frame, fos_on=False, dmin=self.dmin))
+        return s.pass2(s.pass1(frame, dmin=self.dmin), self.fos_out)
+
+
 def roll_shifts(frames, dpi='sba-CN-default.dpi', roll=None, dmin=None):
     """OEM per-frame RPD shifts (n, 3) for analysis images (12-bit RPD,
     landscape). `roll` is the whole roll's analysis images, for the roll
     stage (FOS); it defaults to `frames`. The OEM balances against the roll,
     not against the frames picked for export: three warm frames on their own
-    come out red. With at least `mff` roll frames: pass 1, FOS over the first
-    `maxFramesToFos`, pass 2. With fewer, each frame is balanced on its own
-    (FOS off), as the OEM does: its FOS (AnsFosCapabilityImpl, FUN_1023ff80)
-    falls back to the scan history only with `useHistory`, which every
-    shipped .dpi has at 0.
-    `dpi` is the parameter file (dpi_for: from the DX code); `dmin` the
-    strip's film base in RPD (film_base), given to every scene."""
-    s = Sba(dpi)
-    mff = s._dpi_short(0x3C)
-    max_fos = s._dpi_short(0x3E)
-    roll = frames if roll is None else roll
-    if len(roll) < max(mff, 1):
-        return np.array([s.preference(s.pass1(f, fos_on=False, dmin=dmin)) for f in frames],
-                        np.float32)
-    if roll is frames:
-        impls = [s.pass1(f, dmin=dmin) for f in frames]
-        roll_impls = impls[:max_fos]
-    else:
-        roll_impls = [s.pass1(f, dmin=dmin) for f in roll[:max_fos]]
-        impls = [s.pass1(f, dmin=dmin) for f in frames]
-    out = s.fos(roll_impls)
-    return np.array([s.pass2(i, out) for i in impls], np.float32)
+    come out red. See RollBalance."""
+    rb = RollBalance(frames if roll is None else roll, dpi, dmin)
+    return np.array([rb.shift(f) for f in frames], np.float32)
 
 
 def film_base(ribbon, first_frame, rows_per_mm, margin_mm=1.0, min_mm=2.0):

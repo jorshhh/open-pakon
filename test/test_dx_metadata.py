@@ -31,6 +31,12 @@ class LookupTest(unittest.TestCase):
         # The label already carries the speed: not repeated.
         self.assertEqual(dx.lookup(96, 1)["name"], "Kodak Gold 400 Gen 9")
 
+    def test_label_typos_fixed(self):
+        # The OEM table's own spelling: ILLFORD, FUJICOLOHR, KODAKCOLGOLD.
+        self.assertEqual(dx.lookup(110, 4)["name"], "Ilford 400")
+        self.assertEqual(dx.lookup(10, 2)["name"].split()[:2], ["Fujicolor", "Reala"])
+        self.assertTrue(dx.lookup(80, 6)["name"].startswith("Kodacolor Gold"))
+
     def test_unknown_codes_give_nothing(self):
         # The two full rolls in our captures: after the 2006 table.
         self.assertIsNone(dx.lookup(97, 10))
