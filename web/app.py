@@ -47,7 +47,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import dx, eeprom, orders, telemetry, update
 from .decode import (WORK_DIR, PREVIEW_PATH, FILMS, FRAME_FORMATS, prescan, autoframe, export_frames,
-                     make_contact_sheet, find_eeprom_dir, clear_work)
+                     make_contact_sheet, find_eeprom_dir, clear_work, SHARPEN_LEVELS)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -864,8 +864,12 @@ async def api_export_frames(
     centres: list[int] = Body(..., embed=True),
     widths: list[int] | None = Body(default=None, embed=True),
     ice: bool = Body(default=False, embed=True),
+    sharpen: str = Body(default="off", embed=True),
 ):
     meta = _state["prescan"]
+    # Sharpening at export, the OEM's unsharp mask at 1 / 2 / 3 TLX clicks.
+    amount = SHARPEN_LEVELS.get(sharpen, 0)
+    adjust = [{"sharpness": amount}] * len(centres) if amount else None
     if not meta:
         async def _no_scan():
             yield _sse({"type": "error", "message": "Run a scan/process first"})
@@ -892,7 +896,8 @@ async def api_export_frames(
                              dx_film=dx.for_raw(raw) if raw is not None else None,
                              ice=ice and bool(meta.get("ice")),
                              sba_dpi=meta.get("sba_dpi"),
-                             scene_dmin=meta.get("scene_dmin"))
+                             scene_dmin=meta.get("scene_dmin"),
+                             adjustments=adjust)
 
     def _done(result):
         _state["frames"] = result

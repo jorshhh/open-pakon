@@ -135,6 +135,20 @@ class SlideTests(unittest.TestCase):
         r, g, b = out[3]
         self.assertTrue(g > r and b > r)                     # cyan dye -> cyan
 
+    def test_slide_adjustments(self):
+        # Neutral settings leave the slide as it was; sharpening steepens an
+        # edge (darker on the dark side, lighter on the light side).
+        dens = np.full((6, 8), 1.5)
+        dens[:, 4:] = 0.5
+        raw = self.raw_for_density(np.repeat(dens[..., None], 3, 2))
+        base = img.render_slide(raw, *self.path).astype(np.int64)
+        np.testing.assert_array_equal(
+            img.render_slide(raw, *self.path, adjust={"sharpness": 0}), base)
+        sharp = img.render_slide(raw, *self.path, adjust={"sharpness": 133}).astype(np.int64)
+        self.assertLess(sharp[2, 3, 1], base[2, 3, 1])
+        self.assertGreater(sharp[2, 4, 1], base[2, 4, 1])
+        np.testing.assert_array_equal(sharp[:, 0], base[:, 0])   # flat away from the edge
+
     def test_exact_density_has_no_14_bit_steps(self):
         # Raw 300 + 64..67: one 14-bit code, four distinct exact densities.
         raw = (300 + np.arange(64, 68, dtype=np.uint16))[None, :, None].repeat(3, 2)
@@ -195,6 +209,84 @@ class SlideTests(unittest.TestCase):
         rgb = np.full((1, lp - px0, 3), 300 + int(64000 * 1.318 / 4), np.uint16)
         img.apply_flat_field(rgb, (np.full((lp - px0, 3), 300, np.float32), g_slide))
         self.assertAlmostEqual(float(rgb.mean()), 300 + 16000, delta=3)
+
+
+class _IdentityLut:
+    """A colour table that passes RPD / 4095 straight through."""
+    n = 18
+
+    def __init__(self):
+        g = np.linspace(0.0, 1.0, self.n, dtype=np.float32)
+        self.table = np.stack(np.meshgrid(g, g, g, indexing="ij"), -1)
+        self.path, self.adjusted = "", {}
+
+
+@unittest.skipIf(img is None, "numpy/Pillow not installed")
+class AdjustTests(unittest.TestCase):
+    """Per-picture adjustments, PakonIMAu PIColorAdjustPlanar's arithmetic."""
+
+    def render(self, rpd, adjust=None, shift=(0, 0, 0)):
+        # Diagonal NegMatrix 1, no offset, and a LUT that is the identity on
+        # 12 bits: the frame's RPD is the "raw" value, rendered as RPD / 4095.
+        m = np.zeros((3, 10), np.float32)
+        for c in range(3):
+            m[c, c] = 1.0
+        lut = np.arange(16384, dtype=np.float32)
+        raw = (np.asarray(rpd, np.float32) * 4 + 300).astype(np.uint16)
+        bal = (np.ones(3, np.float32), np.asarray(shift, np.float32))
+        out = img.render_oem(raw, m, lut, _IdentityLut(), balance=bal, adjust=adjust)
+        return out.astype(np.float32) / 65535.0 * 4095.0
+
+    def test_neutral_settings_change_nothing(self):
+        rpd = np.random.default_rng(1).uniform(200, 3800, (8, 8, 3))
+        base = self.render(rpd)
+        for adj in (None, {}, dict(img.ADJUST_DEFAULTS)):
+            np.testing.assert_array_equal(self.render(rpd, adj), base)
+        self.assertIsNone(img.clean_adjust({"red": 0, "tone": "none"}))
+
+    def test_colour_and_brightness_offsets(self):
+        # One TLX click (25) moves RPD by 25 * 4096 / 4000; brightness adds to all.
+        rpd = np.full((4, 4, 3), 1500.0)
+        base = self.render(rpd)
+        d = (self.render(rpd, {"red": 100, "brightness": 25}) - base)[0, 0]
+        np.testing.assert_allclose(d, np.array([125, 25, 25]) * 4096 / 4000, atol=0.6)
+
+    def test_contrast_turns_about_the_pivot(self):
+        rpd = np.array([[[1550.0] * 3, [2550.0] * 3, [550.0] * 3]])
+        out = self.render(rpd, {"contrast": 200})          # 8 clicks: x 1.1
+        np.testing.assert_allclose(out[0, :, 0], [1550, 2650, 450], atol=0.6)
+
+    def test_contrast_before_the_scene_balance_shift(self):
+        rpd = np.full((2, 2, 3), 1550.0)
+        out = self.render(rpd, {"contrast": 200}, shift=(100, 0, 0))
+        self.assertAlmostEqual(float(out[0, 0, 0]), 1650.0, delta=0.6)
+
+    def test_sharpness_is_the_oem_unsharp_mask(self):
+        flat = np.full((6, 6, 3), 2000.0)
+        np.testing.assert_allclose(self.render(flat, {"sharpness": 200}), flat, atol=0.6)
+        step = np.full((6, 6, 3), 1000.0)
+        step[:, 3:] = 3000.0
+        out = self.render(step, {"sharpness": 100})        # amount 1.0
+        # column 2 beside the edge: blur = 1500, x + (x - blur) = 500
+        self.assertAlmostEqual(float(out[2, 2, 0]), 500.0, delta=0.6)
+        self.assertAlmostEqual(float(out[2, 3, 0]), 3500.0, delta=0.6)
+
+    def test_clean_adjust_clamps(self):
+        a = img.clean_adjust({"red": 5000, "saturation": 9, "tone": "purple", "contrast": "50"})
+        self.assertEqual((a["red"], a["saturation"], a["tone"], a["contrast"]), (1000, 5, "none", 50))
+
+    @unittest.skipUnless((ROOT / "profiles/rpd.pf").exists() and
+                         (ROOT / "profiles/satplus15.pf").exists(), "profiles missing")
+    def test_saturation_and_tone_tables(self):
+        lut = img.RpdLut(str(ROOT / "profiles/rpd.pf"))
+        self.assertIs(img.adjusted_table(lut, 0, "none"), lut.table)
+        def chroma(t):
+            return float(np.abs(t - t.mean(axis=-1, keepdims=True)).mean())
+        self.assertGreater(chroma(img.adjusted_table(lut, 5)), chroma(lut.table))
+        self.assertLess(chroma(img.adjusted_table(lut, -5)), chroma(lut.table))
+        sepia = img.adjusted_table(lut, 0, "sepia")
+        mid = sepia[lut.n // 2, lut.n // 2, lut.n // 2]
+        self.assertGreater(mid[0], mid[2])                 # a grey turns warm
 
 
 if __name__ == "__main__":

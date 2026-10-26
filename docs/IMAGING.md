@@ -308,6 +308,41 @@ Data-driven: ~48 stages of ASCII LUT/param files (`dataPathItems/<stage>/`,
 Our `--jpeg` path reproduces the *practical* result (RPD profile + balance/tone)
 without re-implementing the whole cascade.
 
+## Per-picture adjustments (TLX), `render_oem(adjust=...)` [C] (2026-10-25)
+
+TLB.dll `FN_bApplyColorAdjustments` (0x10024010) builds the argument block
+for PakonIMAu `PIColorAdjustPlanar` (0x10013bc0). Six controls are each the
+sum of an automatic and a user value (picture +0x08..+0x1c plus
++0x20..+0x34): red, green, blue, brightness, contrast, sharpness. Then
+picture +0x38..+0x4c, the B&W effect (+0x4c), saturation (+0x50), the film
+mode and the per-picture option. In PIColorAdjustPlanar, on 12-bit RPD:
+
+- **Contrast:** a 4096-entry table `(i − 1550) · (1000 + contrast / 2) / 1000
+  + 1550`, clipped. One TLX click (25) is 1.25 % of slope.
+- **Red / green / blue + brightness:** `(channel + brightness) · 4096 / 4000`
+  added to that channel's table. One click is 25.6 RPD codes (~0.025 D).
+- **Sharpness:** `ImaUnsharpMaskOperation`, `x + amount · (x − blur)` with a
+  separable 3×3 [¼, ½, ¼] blur, `amount = sharpness × 0.01`, after the tables.
+  The Defaults.ini example gives 3 clicks = 200, so a click is ~67.
+- **Saturation** (−5..5) picks `satMinus15.pf` … `unity.pf` … `satPlus15.pf`,
+  and the **B&W effect** (1 warm, 2 cold, 3 sepia) `warm_bw_ld0_1_4-5.pf`,
+  `cold_bw.pf`, `sepia_ld0_9_22.pf`. All are abstract Lab→Lab profiles,
+  chained between the input profile (rpd.pf for negatives) and the output.
+
+Ours (`tools/pakon_image.py`): the same arithmetic in the same order
+(contrast, then the scene-balance shift and the offsets, then the unsharp
+mask). Saturation and tone are applied as a correction to the LittleCMS
+rpd.pf table: our own rpd.pf → profile → sRGB evaluation minus the same
+without the profile, so the unadjusted table is untouched (the two
+evaluations differ by a few levels, mostly outside sRGB). The automatic
+brightness, contrast and sharpness are taken as 0 (Defaults.ini ships
+empty; where TLB.dll fills the automatic half is not traced). The web app
+exposes only sharpening, for the whole export: Low / Medium / High = 1 / 2 /
+3 clicks (67 / 133 / 200). At Base 16 the 3×3 mask mostly lifts the grain;
+High is strong. Slides get the same arithmetic on their 12-bit ROMM values
+(after the ColRevLut1 link, before romm.pf), where the OEM runs
+PIColorAdjustPlanar for film type 2.
+
 ## Digital ICE (dust/scratch removal)
 
 The scanner captures an **IR channel** (separate Ir lamp/exposure;

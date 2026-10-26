@@ -180,8 +180,9 @@
     .file-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
     /* ── Spaces: one page per step, switched from the bar along the bottom ── */
-    body { padding-bottom: 110px; }
+    body { padding-bottom: 110px; }        /* the bar's room; fitBar() sets it exactly */
     .space { display: none; }
+    .space > .card:last-child { margin-bottom: 0; }
     .space.active { display: block; }
     .space-empty { text-align: center; padding: 48px 24px; }
     .space-empty p { color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
@@ -402,12 +403,18 @@
       padding-bottom: 10px;
     }
     .frames-header h2 { margin-bottom: 0; }
-    /* Frames: the box tools under the header's line, keys left, buttons right */
+    /* Frames: export options above the strip (right), the keys and the box
+       buttons under it */
     .frames-tools {
       display: flex; align-items: center; justify-content: space-between;
       gap: 12px; flex-wrap: wrap;
-      margin: -8px 0 8px;
     }
+    .frames-tools-top { justify-content: flex-end; margin: -8px 0 0; }
+    .frames-tools-below { margin-top: 10px; min-height: 42px; }
+    .frames-tools-below .progress-wrap { margin-top: 0; flex: 1; min-width: 0; }
+    .frames-tools-below .progress-label { white-space: nowrap; overflow: hidden;
+                                          text-overflow: ellipsis; }
+    #exp-prog-wrap.show ~ #confirm-hint { display: none; }
     .frames-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -731,14 +738,20 @@
       <button class="ghost" id="frame-auto" title="Put a box on every frame of this format">Auto-frame</button>
     </div>
   </div>
-  <div class="frames-tools">
-    <span class="msg" id="confirm-hint">← → nudge · ↑ ↓ prev/next · Enter add · Delete remove · click to place</span>
+  <div class="frames-tools frames-tools-top">
     <div class="row">
-      <button class="ghost" id="frame-add">+ Add</button>
-      <button class="ghost" id="frame-del">− Remove</button>
       <label class="ice-opt" id="ice-label"
              title="Rebuild dust and scratches from the scan's infrared channel">
         <input type="checkbox" id="ice-on"> Remove dust (ICE)</label>
+      <label class="ice-opt" id="sharpen-label"
+             title="Sharpen the exported frames (stronger also sharpens the film grain)">
+        Sharpen
+        <select id="sharpen" aria-label="Sharpening">
+          <option value="off">Off</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select></label>
       <button id="export-btn">Export <span id="export-count"></span> frames</button>
     </div>
   </div>
@@ -749,9 +762,18 @@
       <!-- crop boxes injected here -->
     </div>
   </div>
-  <div class="progress-wrap" id="exp-prog-wrap">
-    <progress id="exp-prog" value="0" max="1"></progress>
-    <div class="progress-label" id="exp-prog-label"></div>
+  <div class="frames-tools frames-tools-below">
+    <!-- while exporting, the progress takes the hints' place: the page
+         height does not change, so the strip still fits -->
+    <div class="progress-wrap" id="exp-prog-wrap">
+      <progress id="exp-prog" value="0" max="1"></progress>
+      <div class="progress-label" id="exp-prog-label"></div>
+    </div>
+    <span class="msg" id="confirm-hint">← → nudge · ↑ ↓ prev/next · Enter add · Delete remove · click to place</span>
+    <div class="row">
+      <button class="ghost" id="frame-add">+ Add</button>
+      <button class="ghost" id="frame-del">− Remove</button>
+    </div>
   </div>
 </div>
 
@@ -1358,6 +1380,10 @@
          ? 'B&W is scanned without the infrared channel, so there is nothing to find dust with'
          : 'This scan has no infrared channel to find dust with');
   }
+  try { $('sharpen').value = localStorage.getItem('pakon-sharpen') || 'off'; } catch {}
+  $('sharpen').addEventListener('change', () => {
+    try { localStorage.setItem('pakon-sharpen', $('sharpen').value); } catch {}
+  });
   try { $('ice-on').checked = localStorage.getItem('pakon-ice') === '1'; } catch {}
   $('ice-on').addEventListener('change', () => {
     try { localStorage.setItem('pakon-ice', $('ice-on').checked ? '1' : '0'); } catch {}
@@ -1435,18 +1461,30 @@
 
   // The strip is drawn `zoom` times the preview JPEG, so it fills most of the
   // window height whatever the preview's own size.
+  // It starts at its largest and shrinks by whatever then runs past the
+  // window (the bar along the bottom has its room in the body's padding), so
+  // Frames fits without scrolling whatever sits below the strip.
   let zoom = 1;
+  // The body keeps room for the bar along the bottom: its height and a gap.
+  function fitBar() {
+    document.body.style.paddingBottom =
+      (document.querySelector('.spaces').offsetHeight + 16) + 'px';
+  }
+  fitBar();
+  window.addEventListener('resize', fitBar);
   function fitStrip() {
     if (!meta) return;
-    // from the strip's top on the page down to the space bar, less the
-    // strip's own padding, the card's bottom padding and the scrollbar
-    const top = $('strip-wrap').getBoundingClientRect().top + window.scrollY;
-    const bar = document.querySelector('.spaces').offsetHeight;
-    const target = Math.max(200, Math.min(560, window.innerHeight - top - bar - 100));
-    zoom = target / meta.preview_h;
-    $('strip-img').style.height = Math.round(meta.preview_h * zoom) + 'px';
-    $('strip-img').style.width = Math.round(meta.preview_w * zoom) + 'px';
-    $('strip-inner').style.width = Math.round(meta.preview_w * zoom) + 'px';
+    fitBar();
+    const size = h => {
+      zoom = h / meta.preview_h;
+      $('strip-img').style.height = Math.round(meta.preview_h * zoom) + 'px';
+      $('strip-img').style.width = Math.round(meta.preview_w * zoom) + 'px';
+      $('strip-inner').style.width = Math.round(meta.preview_w * zoom) + 'px';
+    };
+    const MIN = 160, MAX = 560;
+    size(MAX);
+    const over = document.documentElement.scrollHeight - window.innerHeight;
+    if (over > 0) size(Math.max(MIN, MAX - over));
     renderStrip();
   }
   window.addEventListener('resize', () => {
@@ -1560,6 +1598,7 @@
   // Enter adds a box, Delete/Backspace removes the current one
   window.addEventListener('keydown', e => {
     if (currentSpace !== 'frames' || $('confirm-card').classList.contains('hidden')) return;
+    if (e.target.closest && e.target.closest('select, input, textarea')) return;  // a form control has the keys
     const k = e.key, big = e.shiftKey ? 6 : 1;
     if (k === 'ArrowLeft')       { nudge(-step() * big * pxPerRow()); }
     else if (k === 'ArrowRight') { nudge(step() * big * pxPerRow()); }
@@ -1584,7 +1623,8 @@
     await postSSE('/api/export_frames',
       { centres: crops.map(c => Math.round(c.c)),
         widths: crops.map(c => Math.round(c.w)),
-        ice: $('ice-on').checked && !$('ice-on').disabled },
+        ice: $('ice-on').checked && !$('ice-on').disabled,
+        sharpen: $('sharpen').value },
       ev => {
         if (ev.type === 'progress') {
           $('exp-prog').value = ev.pct;
@@ -1592,7 +1632,10 @@
         } else if (ev.type === 'done') {
           $('exp-prog').value = 1;
           $('exp-prog-label').textContent = 'Done';
-          loadFrames().then(() => showSpace('export'));
+          loadFrames().then(() => {
+            $('exp-prog-wrap').classList.remove('show');   // the hints come back
+            showSpace('export');
+          });
         } else if (ev.type === 'error') {
           $('exp-prog-label').textContent = ev.message;
         }

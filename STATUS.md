@@ -412,6 +412,15 @@ NegMatrix then grey.
 
 ## Feature work (independent of the replay-free steps)
 
+- **Per-picture adjustments (#55) — partly done 2026-10-25:** the TLX
+  adjustment arithmetic traced (PIColorAdjustPlanar: contrast about RPD 1550,
+  R/G/B + brightness offsets, 3×3 unsharp mask, saturation and B&W tone
+  profiles; docs/IMAGING.md) and implemented in `render_oem(adjust=...)`,
+  with tests. The web app has only an export option, **Sharpen** Off / Low /
+  Medium / High (1 / 2 / 3 TLX clicks). On hold: the per-frame sliders on
+  Frames (the preview needs one frame's scene balance: `oem_sba.RollBalance`
+  runs the roll stage once and then each frame).
+
 - **Lamp gate (#54) — done 2026-10-25:** `--scan-code`
   and `--light-cal` wait for a stable lamp after setup, before calibrating,
   as TLB.dll does (docs/TLB_FINDINGS.md, "Lamp gate"): host poll every
