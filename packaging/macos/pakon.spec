@@ -65,7 +65,7 @@ exe = EXE(
     exclude_binaries=True,
     name="Pakon",
     console=False,
-    target_arch="arm64",
+    target_arch=os.environ.get("PAKON_TARGET_ARCH", "arm64"),
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="Pakon")
 app = BUNDLE(

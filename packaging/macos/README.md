@@ -4,7 +4,8 @@ A double-clickable app for people who don't use the command line. It runs the
 web service from `web/` and shows it in its own window with
 [pywebview](https://pywebview.flowrl.com) (WKWebView); closing the window quits.
 PyInstaller freezes it with its own Python, the C tools, libusb and the
-firmware, so the Mac needs nothing installed. Apple silicon, macOS 13 or later.
+firmware, so the Mac needs nothing installed. macOS 13 or later: one app for
+Apple silicon and a universal one that also runs on Intel Macs.
 
 | File                 | What it is |
 |----------------------|------------|
@@ -21,8 +22,20 @@ firmware, so the Mac needs nothing installed. Apple silicon, macOS 13 or later.
 packaging/macos/build.sh 0.2.0        # version number
 ```
 
-Output goes to `dist/macos/`: `Pakon.app` and `Pakon.dmg`. Downloads and
-intermediate files are cached in `packaging/macos/.cache/` (both git-ignored).
+Output goes to `dist/macos/`: `Pakon.app` + `Pakon.dmg` (Apple silicon) and
+`Pakon-Universal.app` + `Pakon-Universal.dmg` (Apple silicon and Intel; the
+app inside the dmg is still `Pakon.app`). Downloads and intermediate files are
+cached in `packaging/macos/.cache/<arch>/` (all git-ignored).
+
+The app is frozen once per architecture: the Intel half with
+python-build-standalone's x86_64 Python (run under Rosetta) and x86_64 wheels,
+libusb and the C tools cross-compiled. The universal app fuses the two
+bundles: every Mach-O pair goes through `lipo`, every other file must match
+(PyInstaller's signature, a wheel's `RECORD` / `WHEEL` and a zip whose members
+match are allowed to differ); anything else stops the build. For a quicker
+Apple-silicon-only build: `PAKON_ARCH=arm64 packaging/macos/build.sh 0.2.0`.
+Check the Intel half on an Apple silicon Mac with
+`arch -x86_64 dist/macos/Pakon-Universal.app/Contents/MacOS/Pakon`.
 Needs Xcode's command-line tools, CMake and pkg-config. Python and libusb are
 downloaded at pinned versions and checked against their SHA-256.
 
@@ -52,10 +65,11 @@ Then:
 PAKON_NOTARY_PROFILE=pakon-notary packaging/macos/build.sh 0.2.0
 ```
 
-This submits the `.dmg`, waits for Apple, staples the ticket and checks it with
-`spctl`. Upload `dist/macos/Pakon.dmg` to a GitHub release under that exact
-name: the website's Download button points at
-`releases/latest/download/Pakon.dmg`.
+This submits each `.dmg`, waits for Apple, staples the ticket and checks it
+with `spctl`. Upload `dist/macos/Pakon.dmg` and `dist/macos/Pakon-Universal.dmg`
+to a GitHub release under those exact names: the website's and the README's
+Download links point at `releases/latest/download/Pakon.dmg` and
+`.../Pakon-Universal.dmg`.
 
 ### Crash reports and usage statistics (Rybbit)
 
