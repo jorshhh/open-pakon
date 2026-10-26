@@ -19,6 +19,10 @@ from PIL import Image
 TABLE_PATH = (Path(__file__).resolve().parent.parent / "oem" / "ansel" / "common"
               / "common-ProdCodeTable.dpi")
 
+# Spelling fixes for the table's labels (after title case).
+_LABEL_FIXES = {"Illford": "Ilford", "Fujicolohr": "Fujicolor",
+                "Kodakcolgold": "Kodacolor Gold"}
+
 _EXIF_IFD = 0x8769
 _IMAGE_DESCRIPTION = 0x010E
 _ISO_SPEED = 0x8827
@@ -59,6 +63,8 @@ def lookup(product: int, generation: int) -> dict | None:
     label, speeds = row
     iso = speeds[generation]
     name = label.title() if label else None
+    for wrong, right in _LABEL_FIXES.items():
+        name = name.replace(wrong, right) if name else name
     if name and str(iso) not in name.split():
         name = f"{name} {iso}"
     return {"name": name, "iso": iso, "product": product, "generation": generation}
