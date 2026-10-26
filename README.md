@@ -11,8 +11,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon.dmg"><b>⬇ Download for Mac</b></a>
-  &nbsp;·&nbsp; Apple silicon, macOS 13 or later
+  <a href="https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon.dmg"><b>⬇ Download for Apple silicon</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon-Universal.dmg"><b>⬇ Download for Intel</b></a>
+  <br>macOS 13 or later
 </p>
 
 ![Pakon's Frames page: a colour roll laid out as a strip, with a box around each picture](docs/images/frames.jpg)
@@ -62,8 +64,10 @@ It's an independent project, not made or supported by Kodak.
 
 ## Getting started
 
-1. **Install.** Download `Pakon.dmg`, open it, and drag Pakon to
-   Applications. It's signed and notarized, so it opens like any other app.
+1. **Install.** Download `Pakon.dmg` for an Apple silicon Mac, or
+   `Pakon-Universal.dmg` for an Intel Mac (it runs on both). Open it and drag
+   Pakon to Applications. It's signed and notarized, so it opens like any
+   other app.
 2. **Connect the scanner.** Plug it into your Mac with USB and switch it on.
 3. **Open Pakon** and go to **Scan**. The first time after the scanner is
    switched on, press **Load firmware** (the scanner forgets it when it's
