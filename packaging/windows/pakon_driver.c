@@ -31,7 +31,7 @@
 #define INF_NAME   L"pakon-winusb.inf"
 #define CAT_NAME   L"pakon-winusb.cat"
 #define MARKER     L"installed-1"        /* installer.nsi; bump with the INF */
-#define ZADIG_HELP L"https://github.com/jorshhh/pakon-macos/blob/main/packaging/windows/README.md#the-usb-driver"
+#define ZADIG_HELP L"https://github.com/jorshhh/open-pakon/blob/main/packaging/windows/README.md#the-usb-driver"
 
 static const wchar_t *const HWIDS[] = {           /* lower case, as Inf2Cat */
     L"usb\\vid_0f05&pid_f235",    /* before the firmware load */

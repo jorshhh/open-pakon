@@ -156,7 +156,7 @@ def _scanner_state() -> tuple[str, str | None]:
 # for each of its two USB IDs (before and after the firmware load).
 _DRIVER_HINT = ("" if os.name != "nt" else
                 ". On Windows the scanner needs the WinUSB driver: see "
-                "https://github.com/jorshhh/pakon-macos/blob/main/packaging/windows/"
+                "https://github.com/jorshhh/open-pakon/blob/main/packaging/windows/"
                 "README.md#the-usb-driver")
 
 

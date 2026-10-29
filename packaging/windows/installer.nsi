@@ -56,7 +56,7 @@ Section "Pakon"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\Pakon.exe"
   WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "Pakon"
-  WriteRegStr HKCU "${UNINST_KEY}" "URLInfoAbout" "https://github.com/jorshhh/pakon-macos"
+  WriteRegStr HKCU "${UNINST_KEY}" "URLInfoAbout" "https://github.com/jorshhh/open-pakon"
   WriteRegStr HKCU "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
