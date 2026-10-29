@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.request
 
-REPO = "jorshhh/pakon-macos"
+REPO = "jorshhh/open-pakon"
 _API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES = f"https://github.com/{REPO}/releases"
 _EVERY = 6 * 3600          # seconds between checks

@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon.dmg"><b>⬇ Download for Apple silicon</b></a>
+  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon.dmg"><b>⬇ Download for Apple silicon</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon-Universal.dmg"><b>⬇ Download for Intel</b></a>
+  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon-Universal.dmg"><b>⬇ Download for Intel</b></a>
   <br>macOS 13 or later
 </p>
 
@@ -101,7 +101,7 @@ If a strip stays inside the scanner, press **Advance film** on the Scan page.
 - If the scanner stops responding, switch it off and on, then load the
   firmware again.
 - If something goes wrong, the log is at `~/Library/Logs/Pakon/pakon.log`.
-  Please [open an issue](https://github.com/jorshhh/pakon-macos/issues) with
+  Please [open an issue](https://github.com/jorshhh/open-pakon/issues) with
   it.
 - **Linux, or a scanner shared on your network:** run Pakon from source. See
   the [technical guide](docs/TECHNICAL.md). A Windows build is planned.
@@ -109,7 +109,7 @@ If a strip stays inside the scanner, press **Advance film** on the Scan page.
 ## Coming next
 
 More resolutions and everything the F-135+ still lacks. Follow along in the
-[issues](https://github.com/jorshhh/pakon-macos/issues).
+[issues](https://github.com/jorshhh/open-pakon/issues).
 
 ## For developers
 
@@ -153,7 +153,7 @@ pakon stands on other people's work:
 - **Mats Fagerberg** ([thetalkingdrum](https://github.com/thetalkingdrum)):
   the base F-135 EEPROM dump (serial 2233) used as a test fixture, via
   pakon-reference, and pointing us to nkscan for Digital ICE.
-- **Digital ICE** ([#37](https://github.com/jorshhh/pakon-macos/pull/37)): a
+- **Digital ICE** ([#37](https://github.com/jorshhh/open-pakon/pull/37)): a
   numpy port of the dust removal in
   [nkscan](https://github.com/activexray/nkscan) (`src/dust.rs`, MIT OR
   Apache-2.0, © the nkscan authors), which implements the pipeline documented

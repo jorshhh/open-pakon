@@ -40,8 +40,8 @@ In **Settings → Design & branding → Site design**:
 
 | Setting        | Default |
 |----------------|---------|
-| Download URL   | `https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon.dmg` |
-| Repo URL       | `https://github.com/jorshhh/pakon-macos` |
+| Download URL   | `https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon.dmg` |
+| Repo URL       | `https://github.com/jorshhh/open-pakon` |
 | Version label  | `Free and open source · macOS` |
 
 **Download for Mac** links straight to a `Pakon.dmg` asset on the latest

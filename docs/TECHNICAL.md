@@ -414,7 +414,7 @@ the rendered JPEGs.
 
 ## Roadmap
 
-Open work is tracked in [GitHub issues](https://github.com/jorshhh/pakon-macos/issues);
+Open work is tracked in [GitHub issues](https://github.com/jorshhh/open-pakon/issues);
 `STATUS.md` has the background. In short:
 
 - **F-135+ built in code:** scan (#14), light calibration and flat field

@@ -25,7 +25,7 @@ its bootloader address still counts as present.
 | NegMatrix unused / F-235 LUT+3×4 path | F-135 path = density LUT then per-unit 3×10 NegMatrix in density space |
 
 
-## TLB.dll 3.1.0.28 — scan flow (X = matches pakon-macos resources/scan*.pakscan)
+## TLB.dll 3.1.0.28 — scan flow (X = matches open-pakon resources/scan*.pakscan)
 Addresses: FUN_1000afd0 probes 0x44, then 0x46 -> Plus; else 0x24/0x26 -> base.
 SCN = 0x24/0x44 (FPGA banks + motor). LOW = 0x20/0x40 (LEDs, temps, DX, FIFOs).
 
@@ -131,7 +131,7 @@ Reply status 3/6/9 and flags 0x01/0x10 -> retry; 1/2/4/5/7 hard error; 0/8 OK.
 No motor-speed write before 0xa2, but FN_iScanStrips has already cleared FPGA bank 0x82 reg 0 bit 0 (acquire). The F-135+ captures show the same order (0x61 → 0x60, then a2). The August "write the idle speed register 0" fix was this FPGA write, so the finding and the OEM agree.
 
 ## TLB.dll 3.1.0.28 — calibration (read from code unless [INF])
-- STATIC: open gate, motor stopped. No film-drive cmd anywhere under CalibrateBefore/FindCorrections (1001daa0/10021590); only optional focus steppers (flag 0x40, addr 0x28). Light switched on explicitly by FN_bDrvLampOn. "light only while motor runs" is wrong for TLB. pakon-macos likely never wrote 0x81/0x82 [INF].
+- STATIC: open gate, motor stopped. No film-drive cmd anywhere under CalibrateBefore/FindCorrections (1001daa0/10021590); only optional focus steppers (flag 0x40, addr 0x28). Light switched on explicitly by FN_bDrvLampOn. "light only while motor runs" is wrong for TLB. open-pakon likely never wrote 0x81/0x82 [INF].
 - Preconditions: wait <= 300 s for lamp temp stable (1002cf10) else EC_LampWarmUpFailure; refuses positive film (colour 2) and non-35mm.
 - Full LED search only if flag bit0 or > 72000 s (20 h) since FullLightCorrections (FUN_10010250); else reuse stored currents/duties.
 ### Phases (CalibrateLEDs 10020dc0)
@@ -175,7 +175,7 @@ Gain_R/G/B, Offset_R/G/B, Current_R/G/B/Ir, DutyCycle_* (film), DutyCycleOpenGat
 
 ### Offset = CCD pixel-window start (FN_bDrvPutCcdFpgaSettings 0x1002c340, scanner PIC) [C]
 - FPGA bank 0x82: reg4 = Offset, reg5 = Offset + height, reg6 = line period (<= 0xFFD).
-- reg6 is NOT height (pakon-macos REGISTERS.md is wrong): 0x0C1A = base-16 IR line period.
+- reg6 is NOT height (open-pakon REGISTERS.md is wrong): 0x0C1A = base-16 IR line period.
 - Checks: Offset >= 6 (>= 3 half mode), Offset + height <= 0x848. Default: height 2000, offset 62, period 0xFFD.
 
 ### Motor speed (FN_bBeforeScan 0x1002dbd0 -> FN_bDriveMotorAdvanceFilm 0x1000b6d0) [C]

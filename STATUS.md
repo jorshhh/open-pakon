@@ -45,7 +45,7 @@ capture (e.g. F-135+ Base 16 + IR) have no script.
 
 Laid out side by side in `~/Desktop/Code/pakon/` (see `../repos.md`):
 
-- **pakon-macos** (this repo): our driver, decoder and web app. AGPL-3.0.
+- **open-pakon** (this repo): our driver, decoder and web app. AGPL-3.0.
 - **pakon-reference**: Ali Bosworth's public, implementation-agnostic
   reference for the F-X35 family (CC BY 4.0). Cites this project for the
   reply direction, per-resolution strides and motor stop behaviour. Source of
