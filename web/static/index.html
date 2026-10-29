@@ -1654,7 +1654,8 @@
 
   async function loadFrames() {
     const { folder, frames, reveal } = await fetch('/api/frames').then(r => r.json());
-    canReveal = reveal;
+    canReveal = !!reveal;
+    if (reveal) $('save-reveal').textContent = reveal;
     if (!frames.length) return;
     $('export-folder').textContent = folder || 'the work folder';
     $('export-folder').title = folder || '';
@@ -1683,8 +1684,8 @@
 
   // ── Export zip / contact sheet ─────────────────────────────────────────────
   // ── Save to the work folder ────────────────────────────────────────────────
-  let savedPath = null;      // what Show in Finder opens
-  let canReveal = false;     // only when the server runs on a Mac
+  let savedPath = null;      // what Show in Finder / Open folder opens
+  let canReveal = false;     // only when the server can open a folder here (Mac, Linux desktop)
   document.querySelectorAll('[data-save]').forEach(b => b.addEventListener('click', async () => {
     const all = document.querySelectorAll('[data-save]');
     all.forEach(x => x.disabled = true);

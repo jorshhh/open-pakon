@@ -17,8 +17,8 @@
 #
 # Crash reports and usage statistics (web/telemetry.py, opt-in) go to a Rybbit
 # instance only when PAKON_RYBBIT_URL, PAKON_RYBBIT_SITE_ID and
-# PAKON_RYBBIT_DOMAIN are set, from the environment or from release.env next to
-# this script (git-ignored; see release.env.example). Without them the app
+# PAKON_RYBBIT_DOMAIN are set, from the environment or from packaging/release.env
+# (git-ignored; see release.env.example there). Without them the app
 # never sends any.
 #
 # Output: dist/macos/Pakon.app + Pakon.dmg (Apple silicon) and
@@ -27,8 +27,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$HERE/release.env" ]; then
-    set -a; . "$HERE/release.env"; set +a
+if [ -f "$HERE/../release.env" ]; then
+    set -a; . "$HERE/../release.env"; set +a
 fi
 if [ -n "${PAKON_RYBBIT_URL:-}" ] && [ -n "${PAKON_RYBBIT_SITE_ID:-}" ] \
         && [ -n "${PAKON_RYBBIT_DOMAIN:-}" ]; then

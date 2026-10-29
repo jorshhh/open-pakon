@@ -76,8 +76,9 @@ Download links point at `releases/latest/download/Pakon.dmg` and
 The app can send opt-in crash reports and usage statistics to a
 [Rybbit](https://rybbit.com) instance (`web/telemetry.py`). Where they go is
 set when building, never in the code, so a build anyone makes from this repo
-sends nothing and never asks. For a release, copy `release.env.example` to
-`release.env` (git-ignored) and fill in:
+sends nothing and never asks. For a release, copy
+`packaging/release.env.example` to `packaging/release.env` (git-ignored; the
+Linux build reads it too) and fill in:
 
 | Variable | What |
 |---|---|

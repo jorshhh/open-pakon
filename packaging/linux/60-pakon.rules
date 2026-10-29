@@ -1,0 +1,4 @@
+# Kodak/Pakon F-135 / F-135+: cold (0f05:f235, needs firmware) and warm
+# (0f05:f135). Lets the logged-in user drive the scanner without sudo.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0f05", ATTR{idProduct}=="f235", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0f05", ATTR{idProduct}=="f135", MODE="0660", TAG+="uaccess"

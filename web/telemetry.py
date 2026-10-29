@@ -4,8 +4,8 @@ Crash reports and usage statistics, sent to a Rybbit instance
 
 Where they go is set by the build, not the code: PAKON_RYBBIT_URL (the
 instance), PAKON_RYBBIT_SITE_ID and PAKON_RYBBIT_DOMAIN (the Rybbit site and
-its domain). Release builds bake them into the app's Info.plist (build.sh,
-packaging/macos/release.env) and pakon_app.py puts them back in the
+its domain). Release builds bake them into the Mac app's Info.plist (build.sh,
+packaging/release.env) and pakon_app.py puts them back in the
 environment; a build or checkout without them never sends anything and does
 not ask.
 
@@ -42,8 +42,9 @@ HOSTNAME = os.environ.get("PAKON_RYBBIT_DOMAIN", "").strip()
 ENDPOINT = RYBBIT_URL + "/api/track"
 _TIMEOUT = 8
 # A hard crash in native code (numpy, unicorn) kills Python before it can
-# report; faulthandler writes it here and the next launch sends it.
-CRASH_LOG = Path.home() / "Library/Logs/Pakon/crash.log"
+# report; faulthandler writes it here and the next launch sends it. Beside
+# the app's log: ~/Library/Logs/Pakon, or PAKON_LOGS (the Linux launcher).
+CRASH_LOG = Path(os.environ.get("PAKON_LOGS") or "~/Library/Logs/Pakon").expanduser() / "crash.log"
 
 _q: queue.Queue = queue.Queue(maxsize=200)
 _started = False
@@ -118,10 +119,26 @@ def _context():
 
 
 def _user_agent() -> str:
-    mac = platform.mac_ver()[0] or "10.15.7"
-    return (f"Mozilla/5.0 (Macintosh; Intel Mac OS X {mac.replace('.', '_')}) "
+    # Rybbit reads the OS from the user agent: a Mac's, or Linux's (X11, as
+    # WebKitGTK sends it, with the machine's architecture)
+    if sys.platform.startswith("linux"):
+        osinfo = f"X11; Linux {platform.machine() or 'x86_64'}"
+    else:
+        mac = platform.mac_ver()[0] or "10.15.7"
+        osinfo = f"Macintosh; Intel Mac OS X {mac.replace('.', '_')}"
+    return (f"Mozilla/5.0 ({osinfo}) "
             f"AppleWebKit/605.1.15 (KHTML, like Gecko) "
             f"Pakon/{os.environ.get('PAKON_VERSION', 'dev')}")
+
+
+def _linux_release() -> str | None:
+    """'Linux Mint 22' from /etc/os-release, on Linux; else None."""
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        return platform.freedesktop_os_release().get("PRETTY_NAME")
+    except OSError:
+        return None
 
 
 def _sender():
@@ -212,5 +229,6 @@ def start() -> None:
         faulthandler.enable(open(CRASH_LOG, "a"))
     except OSError:
         pass
-    event("app_open", "home", macos=platform.mac_ver()[0] or None)
+    event("app_open", "home", macos=platform.mac_ver()[0] or None,
+          linux=_linux_release())
 
