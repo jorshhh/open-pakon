@@ -23,7 +23,7 @@ POST /api/autoframe               place the boxes with the OEM framing (format f
 GET  /api/frames                  list decoded frames
 GET  /api/frames/{n}/thumb        JPEG thumbnail
 POST /api/save                    SSE — save the frames to the work folder (jpeg|tiff|raw|contact)
-POST /api/reveal                  show a saved export folder in Finder (macOS)
+POST /api/reveal                  show a saved export folder (Finder, or xdg-open)
 POST /api/update/open             open the newer release's page in the browser
 POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
 POST /api/telemetry/page|error    a page opened / a page error (web/telemetry.py)
@@ -917,7 +917,7 @@ async def api_export_frames(
 async def api_frames():
     raw = _state["scan_path"]
     return {"folder": str(orders.export_dir(raw)) if raw else None,
-            "reveal": sys.platform == "darwin",          # /api/reveal works
+            "reveal": _reveal_label(),                   # /api/reveal works
             "frames": [{"index": f["index"]} for f in _state["frames"]]}
 
 
@@ -1001,16 +1001,33 @@ async def api_save(fmt: str = Body(..., embed=True)):
                     lambda r: {"format": fmt, "frames": r["count"]})
 
 
+def _reveal_label():
+    """The Save page's button for /api/reveal, or None where it can't work:
+    Finder on macOS; on Linux xdg-open, only with a desktop session here (a
+    headless service would open the folder on the wrong machine)."""
+    if sys.platform == "darwin":
+        return "Show in Finder"
+    if (sys.platform.startswith("linux") and shutil.which("xdg-open")
+            and (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))):
+        return "Open folder"
+    return None
+
+
 @app.post("/api/reveal")
 async def api_reveal(path: str = Body(..., embed=True)):
-    """Show a saved export in Finder. Only inside the work folder, macOS only."""
+    """Show a saved export in the file manager. Only inside the work folder."""
     target = Path(path).resolve()
     base = orders.work_dir().expanduser().resolve()
-    if sys.platform != "darwin" or not (target == base or base in target.parents):
+    if not _reveal_label() or not (target == base or base in target.parents):
         return JSONResponse({"error": "not available"}, status_code=400)
-    # a file is selected in its folder; a folder is opened
-    subprocess.Popen(["open", "-R", str(target)] if target.is_file()
-                     else ["open", str(target)])
+    if sys.platform == "darwin":
+        # a file is selected in its folder; a folder is opened
+        subprocess.Popen(["open", "-R", str(target)] if target.is_file()
+                         else ["open", str(target)])
+    else:
+        # xdg-open can't select a file: open the folder it is in
+        subprocess.Popen(["xdg-open", str(target.parent if target.is_file() else target)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return {"ok": True}
 
 
