@@ -92,12 +92,12 @@ cat > "$STAGE/DEBIAN/control" <<CONTROL
 Package: pakon
 Version: $VERSION
 Architecture: $ARCH
-Maintainer: Pakon <https://github.com/jorshhh/pakon-macos>
+Maintainer: Pakon <https://github.com/jorshhh/open-pakon>
 Installed-Size: $SIZE
 Depends: python$PYVER, python3-gi, gir1.2-webkit2-4.1, libusb-1.0-0
 Section: graphics
 Priority: optional
-Homepage: https://github.com/jorshhh/pakon-macos
+Homepage: https://github.com/jorshhh/open-pakon
 Description: Driver and app for the Kodak Pakon F-135 / F-135+ film scanner
  Scan film on a Kodak Pakon F-135 or F-135+ without the original Windows
  software: firmware load, scan, framing and export, with Kodak's colour.

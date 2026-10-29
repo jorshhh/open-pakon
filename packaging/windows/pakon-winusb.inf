@@ -1,0 +1,44 @@
+; Windows' own WinUSB driver for the Kodak Pakon F-135 / F-135+, before
+; (0F05:F235) and after (0F05:F135) the firmware load, so libusb reaches it.
+; Nothing of ours runs in the kernel: winusb.sys is part of Windows.
+; pakon_driver.exe signs it on the PC it is installed on (pakon-winusb.cat).
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = USBDevice
+ClassGUID   = {88BAE032-5A81-49f0-BC3D-A4FF138216D6}
+Provider    = %Provider%
+CatalogFile = pakon-winusb.cat
+DriverVer   = 10/29/2026,1.0.0.0
+PnpLockdown = 1
+
+[Manufacturer]
+%Provider% = Pakon, NTamd64, NTarm64
+
+[Pakon.NTamd64]
+%Cold% = Pakon_Install, USB\VID_0F05&PID_F235
+%Warm% = Pakon_Install, USB\VID_0F05&PID_F135
+
+[Pakon.NTarm64]
+%Cold% = Pakon_Install, USB\VID_0F05&PID_F235
+%Warm% = Pakon_Install, USB\VID_0F05&PID_F135
+
+[Pakon_Install]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[Pakon_Install.Services]
+Include = winusb.inf
+Needs   = WINUSB.NT.Services
+
+[Pakon_Install.HW]
+AddReg = Pakon_AddReg
+
+[Pakon_AddReg]
+; libusb finds the device by this interface
+HKR,,DeviceInterfaceGUIDs,0x10000,"{46890380-4257-48B0-8FE7-A678354E6243}"
+
+[Strings]
+Provider = "Pakon (open-source driver)"
+Cold     = "Kodak Pakon F-135 (firmware not loaded)"
+Warm     = "Kodak Pakon F-135"
