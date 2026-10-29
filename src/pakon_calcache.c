@@ -84,6 +84,11 @@ int pakon_cal_save(const char *path, const pakon_cal_record *rec)
     bad |= fwrite(rec->dark, sizeof *rec->dark, nt, f) != nt;
     bad |= fwrite(rec->bright, sizeof *rec->bright, nt, f) != nt;
     bad |= ferror(f);
+#ifdef _WIN32
+    /* Windows' rename() does not replace an existing file */
+    if (!bad)
+        remove(path);
+#endif
     if (fclose(f) || bad || rename(tmp, path)) {
         remove(tmp);
         return -1;

@@ -21,6 +21,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <libusb.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <timeapi.h>
+#endif
 
 /* Per-control-transfer timeout when replaying the firmware script. */
 #define FX2_TIMEOUT_MS  2000
@@ -59,6 +63,11 @@ pakon_result pakon_usb_init(pakon_ctx **out_ctx)
         return PAKON_ERR_USB;
     }
 
+#ifdef _WIN32
+    /* Windows sleeps in 15.6 ms ticks by default; the event service polls
+     * every 1 ms while scanning. */
+    timeBeginPeriod(1);
+#endif
     pakon_logf(PAKON_LOG_DEBUG, "libusb context initialized");
     *out_ctx = ctx;
     return PAKON_OK;
@@ -70,6 +79,9 @@ void pakon_usb_exit(pakon_ctx *ctx)
         return;
     if (ctx->usb)
         libusb_exit(ctx->usb);
+#ifdef _WIN32
+    timeEndPeriod(1);
+#endif
     free(ctx);
 }
 

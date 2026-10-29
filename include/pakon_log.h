@@ -53,7 +53,9 @@ int pakon_log_enabled(pakon_log_level level);
 
 /* printf-style log line, emitted to stderr if `level` is enabled. */
 void pakon_logf(pakon_log_level level, const char *fmt, ...)
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__MINGW32__)
+    __attribute__((format(gnu_printf, 2, 3)))   /* C99 formats, as stdio */
+#elif defined(__GNUC__) || defined(__clang__)
     __attribute__((format(printf, 2, 3)))
 #endif
     ;

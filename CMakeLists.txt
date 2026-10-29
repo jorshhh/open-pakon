@@ -9,6 +9,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 add_compile_options(-Wall -Wextra -Wshadow)
+if(MINGW)
+  # C99 printf (%zu, %llu) on Windows' msvcrt
+  add_compile_definitions(__USE_MINGW_ANSI_STDIO=1)
+endif()
 
 # --- libusb-1.0 via pkg-config -------------------------------------------
 find_package(PkgConfig REQUIRED)
@@ -37,6 +41,10 @@ target_link_libraries(pakon PRIVATE PkgConfig::LIBUSB)
 # pakon_calib uses libm (gain linearization); expose it on the interface so the
 # tools and tests that link the static archive resolve the math symbols.
 target_link_libraries(pakon PUBLIC m)
+if(WIN32)
+  # timeBeginPeriod; clock_gettime and nanosleep (MinGW's winpthreads)
+  target_link_libraries(pakon PUBLIC winmm pthread)
+endif()
 
 # --- tools (standalone) ---------------------------------------------------
 add_executable(pakon_probe tools/pakon_probe.c)
