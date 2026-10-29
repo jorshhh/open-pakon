@@ -6,15 +6,19 @@
 
 <p align="center">
   <b>Your Pakon, back in service.</b><br>
-  Scan film on your Kodak Pakon F-135 or F-135+ from your Mac.<br>
+  Scan film on your Kodak Pakon F-135 or F-135+ on a Mac, a Windows PC or Linux.<br>
   No old Windows PC needed.
 </p>
 
 <p align="center">
-  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon.dmg"><b>⬇ Download for Apple silicon</b></a>
+  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon.dmg"><b>⬇ Mac (Apple silicon)</b></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon-Universal.dmg"><b>⬇ Download for Intel</b></a>
-  <br>macOS 13 or later
+  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon-Universal.dmg"><b>⬇ Mac (Intel)</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon-Setup.exe"><b>⬇ Windows</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/pakon_amd64.deb"><b>⬇ Linux (.deb)</b></a>
+  <br>macOS 13 or later · Windows 10 or 11 (64-bit) · Ubuntu 24.04, Linux Mint 22
 </p>
 
 ![Pakon's Frames page: a colour roll laid out as a strip, with a box around each picture](docs/images/frames.jpg)
@@ -25,7 +29,7 @@ The Kodak Pakon F-135 is a film scanner that photo labs used to scan 35 mm
 rolls quickly. Lots of them are now in the hands of film photographers, but
 the original software only runs on old versions of Windows.
 
-**Pakon** is a free app that replaces it. Plug the scanner into your Mac, feed
+**Pakon** is a free app that replaces it. Plug the scanner into your computer, feed
 a strip of film, and get finished pictures: JPEGs ready to share, 16-bit TIFFs
 for editing, or the raw negatives. It uses Kodak's own colour processing, so
 your scans look the way a Pakon scan should.
@@ -34,10 +38,11 @@ It's an independent project, not made or supported by Kodak.
 
 ## Features
 
-- **Runs on a modern Mac.** One app: no Windows, no virtual machine, no
-  drivers to install.
+- **Runs on a modern computer.** macOS, Windows 10 and 11, and Linux. No
+  old PC, no virtual machine; on Windows the installer sets up the scanner's
+  USB driver for you.
 - **Kodak's colour.** The same colour inversion, scene balance and rendering
-  as the original software, reproduced on your Mac.
+  as the original software, reproduced in the app.
 - **Colour negative, black & white and slide film.** Slides are scanned as
   unmounted strips.
 - **Check every frame before you save.** Pakon finds the pictures on the
@@ -64,16 +69,25 @@ It's an independent project, not made or supported by Kodak.
 
 ## Getting started
 
-1. **Install.** Download `Pakon.dmg` for an Apple silicon Mac, or
-   `Pakon-Universal.dmg` for an Intel Mac (it runs on both). Open it and drag
-   Pakon to Applications. It's signed and notarized, so it opens like any
-   other app.
-2. **Connect the scanner.** Plug it into your Mac with USB and switch it on.
+1. **Install.**
+   - **Mac:** download `Pakon.dmg` for an Apple silicon Mac, or
+     `Pakon-Universal.dmg` for an Intel Mac (it runs on both). Open it and
+     drag Pakon to Applications. It's signed and notarized, so it opens like
+     any other app.
+   - **Windows:** run `Pakon-Setup.exe`. It isn't signed yet, so Windows may
+     warn you: click **More info**, then **Run anyway**. When Windows asks for
+     administrator permission, say yes: that's the installer setting up the
+     scanner's USB driver (once; it replaces Kodak's driver if you had it).
+   - **Linux:** install `pakon_amd64.deb` with
+     `sudo apt install ./pakon_amd64.deb`. It's built for Ubuntu 24.04 and
+     Linux Mint 22, and lets you use the scanner without `sudo`.
+2. **Connect the scanner.** Plug it into your computer with USB and switch it
+   on.
 3. **Open Pakon** and go to **Scan**. The first time after the scanner is
    switched on, press **Load firmware** (the scanner forgets it when it's
    powered off). The first time Pakon sees your scanner, it saves a copy of
-   the scanner's factory settings in `~/Library/Application Support/Pakon`.
-   Keep a backup of that folder somewhere safe: it exists nowhere else.
+   the scanner's factory settings ([where](#where-pakon-keeps-things)). Keep
+   a backup of that folder somewhere safe: it exists nowhere else.
 4. **Scan.** Pick the film type and press **Scan**. Pakon calibrates for
    about a minute: **keep the film out** until it says *"Motor running — feed
    the film now"*, then feed the strip. The scan stops by itself after the
@@ -86,25 +100,37 @@ It's an independent project, not made or supported by Kodak.
    next to **Sharpen** (the stronger settings also sharpen the film grain).
    Press **Export**, then choose what to save: JPEGs, TIFFs, raw
    negatives or a contact sheet. Everything lands in your work folder
-   (`~/pakon` unless you pick another), one folder per roll.
+   (a `pakon` folder in your home folder unless you pick another), one
+   folder per roll.
 
 If a strip stays inside the scanner, press **Advance film** on the Scan page.
 
 ## Good to know
 
-- To update, download the new version, quit Pakon, and drag it into
-  Applications to replace the old one. Your scans and settings stay where
-  they are.
+- To update, quit Pakon and install the new version over the old one: drag
+  it into Applications on a Mac, run the new installer on Windows, install
+  the new `.deb` on Linux. Your scans and settings stay where they are.
 - For B&W film developed in colour chemistry (Ilford XP2, Kodak BW400CN),
   pick **B&W C41** as the film type. Dust removal works on it, as it does
   on colour negative.
 - If the scanner stops responding, switch it off and on, then load the
   firmware again.
-- If something goes wrong, the log is at `~/Library/Logs/Pakon/pakon.log`.
-  Please [open an issue](https://github.com/jorshhh/open-pakon/issues) with
-  it.
-- **Linux, or a scanner shared on your network:** run Pakon from source. See
-  the [technical guide](docs/TECHNICAL.md). A Windows build is planned.
+- If something goes wrong, please
+  [open an issue](https://github.com/jorshhh/open-pakon/issues) with the
+  log ([where](#where-pakon-keeps-things)).
+- **Another Linux, or a scanner shared on your network:** run Pakon from
+  source. See the [technical guide](docs/TECHNICAL.md).
+
+## Where Pakon keeps things
+
+| | Mac | Windows | Linux |
+|---|---|---|---|
+| Scans (the work folder) | `~/pakon` | `%USERPROFILE%\pakon` | `~/pakon` |
+| Settings and the scanner's factory settings | `~/Library/Application Support/Pakon` | `%LOCALAPPDATA%\Pakon` | `~/.local/share/pakon` |
+| Log | `~/Library/Logs/Pakon/pakon.log` | `%LOCALAPPDATA%\Pakon\Logs\pakon.log` | `~/.local/state/pakon/pakon.log` |
+
+The work folder can be changed in the app. Temporary files (about 1 GB per
+roll) go to the system's temp folder and are cleared when Pakon starts.
 
 ## Coming next
 
@@ -119,7 +145,7 @@ design and the scanner's protocol are all in the
 
 ## Privacy
 
-The first time it opens, the Mac app asks whether it may send anonymous
+The first time it opens, the app asks whether it may send anonymous
 **crash reports** and **usage statistics**. Nothing is sent unless you say
 yes, each has its own switch, and you can change your mind any time on the
 **Settings** page. They go to the developer's own server running
@@ -177,7 +203,10 @@ pakon stands on other people's work:
   [PyUSB](https://github.com/pyusb/pyusb),
   [Unicorn](https://www.unicorn-engine.org) and
   [pefile](https://github.com/erocarrera/pefile) (to run the OEM scene
-  balance), [pywebview](https://pywebview.flowrl.com) (the Mac app),
+  balance), [pywebview](https://pywebview.flowrl.com) (the app's window),
+  [NSIS](https://nsis.sourceforge.io) and [MinGW-w64](https://www.mingw-w64.org)
+  (the Windows installer and tools), [libwdi](https://github.com/pbatard/libwdi)
+  (a reference for setting up the Windows USB driver),
   [Ghidra](https://ghidra-sre.org) (reverse engineering) and
   [Rybbit](https://rybbit.com) (opt-in analytics).
 

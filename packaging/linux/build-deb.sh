@@ -17,7 +17,7 @@
 # PAKON_VERSION, which the launcher loads; without them the app never sends any.
 #
 # Needs: build-essential cmake pkg-config libusb-1.0-0-dev python3-venv
-# dpkg-dev. Output: dist/linux/pakon_<VERSION>_<arch>.deb
+# dpkg-dev. Output: dist/linux/pakon_<arch>.deb
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -113,7 +113,8 @@ POSTINST
 chmod 755 "$STAGE/DEBIAN/postinst"
 
 step "deb"
-DEB="$OUT/pakon_${VERSION}_${ARCH}.deb"
+# no version in the name: the README links to releases/latest/download/
+DEB="$OUT/pakon_${ARCH}.deb"
 dpkg-deb --root-owner-group --build "$STAGE" "$DEB" >/dev/null
 rm -rf "$STAGE"
 du -sh "$DEB"
