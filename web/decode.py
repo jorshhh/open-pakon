@@ -14,6 +14,7 @@ This mirrors a dedicated minilab: detect → operator confirms frames → export
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -57,7 +58,8 @@ import pakon_ice  # noqa: E402
 
 from . import dx, eeprom  # noqa: E402
 
-WORK_DIR = Path("/tmp/pakon_web")
+# /tmp on macOS and Linux; on Windows the user's %TEMP%
+WORK_DIR = Path("/tmp" if os.name != "nt" else tempfile.gettempdir()) / "pakon_web"
 # What an export leaves in WORK_DIR; replaced by the next export or roll.
 _FRAME_FILES = ("frame_*", "thumb_*", "contact_sheet.jpg", "export_*.zip")
 
@@ -524,11 +526,15 @@ def make_contact_sheet(frames, cols: int = 6, cell_w: int = 480,
     H = rows * (cell_h + label_h) + (rows + 1) * pad
     sheet = Image.new("RGB", (W, H), bg)
     draw = ImageDraw.Draw(sheet)
-    try:
-        font = ImageFont.truetype(
-            "/System/Library/Fonts/Supplemental/Arial.ttf", 16)
-    except OSError:
-        font = ImageFont.load_default()
+    font = None
+    for path in ("/System/Library/Fonts/Supplemental/Arial.ttf",
+                 os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf")):
+        try:
+            font = ImageFont.truetype(path, 16)
+            break
+        except OSError:
+            pass
+    font = font or ImageFont.load_default()
     for k, f in enumerate(items):
         r, c = divmod(k, cols)
         x = pad + c * (cell_w + pad)

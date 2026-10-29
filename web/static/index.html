@@ -1253,6 +1253,8 @@
     const d = await fetch('/api/browse?' + q).then(r => r.json());
     browsePath = d.path;
     $('browse-cur').textContent = d.path;
+    // Windows' list of drives is not a folder to pick or make one in
+    $('browse-use').disabled = $('browse-new').disabled = !!d.virtual;
 
     const list = $('browse-list');
     list.innerHTML = '';
@@ -1264,22 +1266,22 @@
       up.onclick = () => browseTo(d.parent);
       list.appendChild(up);
     }
-    for (const name of d.dirs) {
+    d.dirs.forEach((name, i) => {
       const it = document.createElement('div');
       it.className = 'browse-item';
       it.innerHTML = '<span class="ic">▸</span><span></span>';
       it.querySelector('span:last-child').textContent = name;
-      it.onclick = () => browseTo(d.path.replace(/\/$/, '') + '/' + name);
+      it.onclick = () => browseTo(d.dir_paths[i]);
       list.appendChild(it);
-    }
-    for (const name of d.files || []) {
+    });
+    (d.files || []).forEach((name, i) => {
       const it = document.createElement('div');
       it.className = 'browse-item';
       it.innerHTML = '<span class="ic">◆</span><span></span>';
       it.querySelector('span:last-child').textContent = name;
-      it.onclick = () => openRaw(d.path.replace(/\/$/, '') + '/' + name);
+      it.onclick = () => openRaw(d.file_paths[i]);
       list.appendChild(it);
-    }
+    });
     if (!d.parent && !d.dirs.length && !(d.files || []).length) {
       const e = document.createElement('div');
       e.className = 'browse-empty';

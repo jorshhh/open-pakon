@@ -23,7 +23,7 @@ POST /api/autoframe               place the boxes with the OEM framing (format f
 GET  /api/frames                  list decoded frames
 GET  /api/frames/{n}/thumb        JPEG thumbnail
 POST /api/save                    SSE — save the frames to the work folder (jpeg|tiff|raw|contact)
-POST /api/reveal                  show a saved export folder (Finder, or xdg-open)
+POST /api/reveal                  show a saved export folder (Finder, Explorer, xdg-open)
 POST /api/update/open             open the newer release's page in the browser
 POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
 POST /api/telemetry/page|error    a page opened / a page error (web/telemetry.py)
@@ -55,8 +55,9 @@ _REPO = Path(__file__).resolve().parent.parent
 _BUILD = Path(os.environ.get("PAKON_BUILD", str(_REPO / "build")))
 _RES = Path(os.environ.get("PAKON_RESOURCES", str(_REPO / "resources")))
 
-PROBE_BIN  = _BUILD / "pakon_probe"
-REPLAY_BIN = _BUILD / "pakon_replay"
+_EXE = ".exe" if os.name == "nt" else ""
+PROBE_BIN  = _BUILD / f"pakon_probe{_EXE}"
+REPLAY_BIN = _BUILD / f"pakon_replay{_EXE}"
 PAKFW      = _RES / "f135.pakfw"      # same FX2 image for F-135 and F-135+
 # Firmware from the OEM Intel HEX files when present (firmware/README.md);
 # otherwise the captured load above is replayed.
@@ -109,7 +110,7 @@ async def _eeprom_sync_events():
                "message": f"EEPROM read from {st['model']} serial {st['serial']}"
                           f" and archived as backups/eeprom/{st['archive']}"}
     elif st["error"] and st["error"] != before["error"]:
-        yield {"type": "log", "message": st["error"]}
+        yield {"type": "log", "message": st["error"] + _DRIVER_HINT}
 
 
 @app.on_event("startup")
@@ -148,6 +149,40 @@ def _scanner_state() -> tuple[str, str | None]:
         return "disconnected", None
     except Exception as exc:
         return "unknown", f"USB detection failed: {exc}"
+
+
+# Windows reaches the scanner only through the WinUSB driver, installed once
+# for each of its two USB IDs (before and after the firmware load).
+_DRIVER_HINT = ("" if os.name != "nt" else
+                ". On Windows the scanner needs the WinUSB driver: see "
+                "https://github.com/jorshhh/pakon-macos/blob/main/packaging/windows/"
+                "README.md#the-usb-driver")
+
+
+# ── The C tools ───────────────────────────────────────────────────────────────
+
+async def _spawn(*args, stoppable=False, **kw):
+    """Start a C tool. On Windows without a console window, and a `stoppable`
+    one (a scan) reads "stop" on stdin as Ctrl-C (_stop): Windows cannot
+    send SIGINT to it."""
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NO_WINDOW
+        if stoppable:
+            kw["stdin"] = asyncio.subprocess.PIPE
+            kw["env"] = {**os.environ, "PAKON_STOP_STDIN": "1"}
+    return await asyncio.create_subprocess_exec(*args, **kw)
+
+
+async def _stop(proc) -> None:
+    """Ctrl-C for a running scan: it tears down as at the end of the roll."""
+    if os.name == "nt":
+        try:
+            proc.stdin.write(b"stop\n")
+            await proc.stdin.drain()
+        except (ConnectionError, OSError):   # it has just ended
+            pass
+    else:
+        proc.send_signal(signal.SIGINT)
 
 
 # ── SSE helper ────────────────────────────────────────────────────────────────
@@ -234,7 +269,7 @@ async def _firmware_stream():
             return
     yield _sse({"type": "log", "message": f"Loading firmware from {source}"})
 
-    proc = await asyncio.create_subprocess_exec(
+    proc = await _spawn(
         str(PROBE_BIN), *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
@@ -253,7 +288,8 @@ async def _firmware_stream():
         yield _sse({"type": "done"})
     else:
         yield _sse({"type": "error",
-                    "message": f"firmware load failed (exit {proc.returncode})"})
+                    "message": f"firmware load failed (exit {proc.returncode})"
+                               + _DRIVER_HINT})
 
 
 @app.post("/api/firmware")
@@ -268,7 +304,7 @@ async def api_firmware():
 async def _detect_model() -> str | None:
     """Run pakon_replay --open and parse the detected model. Returns
     "F-135+"/"F-135", or None when detection fails (device cold/absent)."""
-    proc = await asyncio.create_subprocess_exec(
+    proc = await _spawn(
         str(REPLAY_BIN), "--open",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
@@ -309,10 +345,11 @@ async def _run_streaming(args: list[str], out_path: Path | None, keys=None,
     as 'log', the feed prompt as 'feed', and the image size as 'progress'
     every 0.5 s when `out_path` is given. Ends with the exit code. A `scan`
     can be ended with the Stop button (POST /api/scan/stop)."""
-    proc = await asyncio.create_subprocess_exec(
+    proc = await _spawn(
         str(REPLAY_BIN), *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        stoppable=scan,
     )
     if scan:
         _state["scan_proc"], _state["scan_stop"] = proc, False
@@ -411,11 +448,12 @@ async def _scan_stream(film: str, base: int = 16):
     yield _sse({"type": "order", "path": str(out_path),
                 "order": out_path.parent.name})
 
-    proc = await asyncio.create_subprocess_exec(
+    proc = await _spawn(
         str(REPLAY_BIN), "--scan", str(pakscan), "--image", str(out_path),
         "--autostop",
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
+        stoppable=True,
     )
     _state["scan_proc"], _state["scan_stop"] = proc, False
 
@@ -547,7 +585,7 @@ async def api_scan_stop():
     if proc is None or proc.returncode is not None:
         return JSONResponse({"error": "no scan is running"}, status_code=409)
     _state["scan_stop"] = True
-    proc.send_signal(signal.SIGINT)
+    await _stop(proc)
     return {"ok": True}
 
 
@@ -585,10 +623,22 @@ async def api_workdir(path: str = Body(..., embed=True)):
 
 # ── Host directory browser (work folder picker) ─────────────────────────────────
 
+# On Windows, the level above the drive roots: the drives, to browse to
+# another one (D:, a mapped network drive) from C:\.
+_DRIVES = "This PC"
+
+
 @app.get("/api/browse")
 async def api_browse(path: str | None = None, raws: bool = False):
     """List subdirectories of a host directory, for picking the work folder
-    (and its .raw files with raws=true, for opening one)."""
+    (and its .raw files with raws=true, for opening one). With full paths
+    (dir_paths, file_paths) to browse to; "virtual" for a list that is not a
+    folder (Windows' drives)."""
+    if os.name == "nt" and path == _DRIVES:
+        drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                  if os.path.isdir(f"{d}:\\")]
+        return {"path": _DRIVES, "parent": None, "virtual": True,
+                "dirs": drives, "dir_paths": drives, "files": [], "file_paths": []}
     base = Path(path).expanduser() if path else Path.home()
     try:
         base = base.resolve()
@@ -614,8 +664,11 @@ async def api_browse(path: str | None = None, raws: bool = False):
         except PermissionError:
             pass
 
-    parent = str(base.parent) if base.parent != base else None
-    return {"path": str(base), "parent": parent, "dirs": dirs, "files": files}
+    parent = (str(base.parent) if base.parent != base
+              else _DRIVES if os.name == "nt" else None)
+    return {"path": str(base), "parent": parent, "virtual": False,
+            "dirs": dirs, "dir_paths": [str(base / d) for d in dirs],
+            "files": files, "file_paths": [str(base / f) for f in files]}
 
 
 @app.post("/api/mkdir")
@@ -1003,10 +1056,13 @@ async def api_save(fmt: str = Body(..., embed=True)):
 
 def _reveal_label():
     """The Save page's button for /api/reveal, or None where it can't work:
-    Finder on macOS; on Linux xdg-open, only with a desktop session here (a
-    headless service would open the folder on the wrong machine)."""
+    Finder on macOS, Explorer on Windows; on Linux xdg-open, only with a
+    desktop session here (a headless service would open the folder on the
+    wrong machine)."""
     if sys.platform == "darwin":
         return "Show in Finder"
+    if sys.platform == "win32":
+        return "Show in Explorer"
     if (sys.platform.startswith("linux") and shutil.which("xdg-open")
             and (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))):
         return "Open folder"
@@ -1024,6 +1080,11 @@ async def api_reveal(path: str = Body(..., embed=True)):
         # a file is selected in its folder; a folder is opened
         subprocess.Popen(["open", "-R", str(target)] if target.is_file()
                          else ["open", str(target)])
+    elif sys.platform == "win32":
+        if target.is_file():
+            subprocess.Popen(["explorer", f"/select,{target}"])
+        else:
+            os.startfile(target)
     else:
         # xdg-open can't select a file: open the folder it is in
         subprocess.Popen(["xdg-open", str(target.parent if target.is_file() else target)],
@@ -1040,6 +1101,9 @@ async def api_update_open():
     telemetry.event("update_download", latest=st["latest"] if st else None)
     if sys.platform == "darwin":
         subprocess.Popen(["open", url])
+        return {"opened": True, "url": url}
+    if sys.platform == "win32":
+        os.startfile(url)
         return {"opened": True, "url": url}
     return {"opened": False, "url": url}
 
