@@ -1,0 +1,73 @@
+<!--
+{
+ "title": "Pakon Software for Mac (Apple Silicon & Intel)",
+ "description": "Scan with your Kodak Pakon F-135 on a Mac. A free app for Apple silicon and Intel Macs on macOS 13 or later. No Windows, no virtual machine, no TLX.",
+ "app": true,
+ "faq": [
+  ["Can I run TLX (TLXClientDemo) on a Mac?", "Not directly. TLX only runs on old Windows, so on a Mac it needs a Windows XP virtual machine, which is slow and fiddly and very hard on Apple silicon Macs. OpenPakon replaces TLX with a normal Mac app."],
+  ["Does it work on M1, M2, M3 and M4 Macs?", "Yes. Download the Apple silicon version (<code>Pakon.dmg</code>)."],
+  ["Does it work on an Intel Mac?", "Yes. Download the Intel version (<code>Pakon-Universal.dmg</code>). It also runs on Apple silicon Macs."],
+  ["Which macOS do I need?", "macOS 13 Ventura or later."],
+  ["My Mac only has USB-C ports. Is that OK?", "Yes. Plug the scanner's USB cable into a USB-C to USB-A adapter."],
+  ["Will my Mac say the app is unsafe?", "No. The app is signed and checked by Apple, so it opens like any other app."],
+  ["Where do my scans go?", "Into a folder called <code>pakon</code> in your home folder, one folder per roll. You can pick another folder in the app."]
+ ]
+}
+-->
+<section class="hero hero--page">
+    <div class="wrap hero__inner">
+        <div>
+            <p class="tag-pill">macOS 13 or later</p>
+            <h1 class="hero__title">Pakon scanner software <span class="red">for Mac</span></h1>
+            <p class="hero__lede">
+                A real Mac app for the Kodak Pakon F-135 and F-135+. Works on Apple
+                silicon and Intel Macs. Free.
+            </p>
+            <div class="get-row">
+{{download:mac}}
+{{download:mac-intel ghost}}
+</div>
+            <p class="hero__meta">Not sure which Mac you have? Apple menu → About This Mac. "Chip: Apple M…" means Apple silicon.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="wrap wrap--text prose">
+        <h2>No more TLX in a Windows XP virtual machine</h2>
+        <p>
+            Until now, scanning with a Pakon on a Mac meant running TLXClientDemo
+            inside a Windows XP virtual machine: buying or finding XP, setting up the
+            virtual machine, getting the USB connection to pass through, and hoping
+            it held for a whole roll. On Apple silicon Macs it barely works at all.
+        </p>
+        <p>
+            OpenPakon is a normal Mac app. Plug in the scanner, open the app and scan.
+        </p>
+
+        <h2>Install</h2>
+        <ol class="steps">
+            <li><strong>Download</strong> the right version for your Mac, above.</li>
+            <li><strong>Open the download</strong> and drag the app (it's called Pakon) into your Applications folder.</li>
+            <li><strong>Plug in the scanner</strong> with its USB cable and switch it on. Open the app.</li>
+        </ol>
+        <p>Then follow the <a href="/setup/">guide to your first scan</a>.</p>
+
+        <figure>
+            <img src="/assets/frames.jpg" width="1600" height="1000" loading="lazy"
+                 alt="OpenPakon for Mac: a scanned roll laid out as a strip, a box around each picture, replacing TLX on the Mac">
+        </figure>
+
+        <h2>Updating</h2>
+        <p>
+            OpenPakon tells you when there's a new version. Download it, quit OpenPakon, and
+            drag the new one into Applications. Your scans and settings stay where
+            they are.
+        </p>
+
+        <h2>Questions</h2>
+    </div>
+    <div class="wrap wrap--text">
+{{faq}}
+    </div>
+</section>

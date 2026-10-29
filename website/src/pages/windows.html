@@ -1,0 +1,66 @@
+<!--
+{
+ "title": "Use a Pakon Scanner on Windows 10/11, No XP",
+ "description": "Free software to use a Kodak Pakon F-135 on Windows 10 or Windows 11 (64-bit). The installer sets up the scanner driver for you. No Windows XP, no TLX.",
+ "app": true,
+ "faq": [
+  ["Does it work on Windows 11?", "Yes, on Windows 10 and Windows 11, 64-bit."],
+  ["Do I need Kodak's old scanner driver?", "No. The Pakon installer sets up the scanner's driver itself. If Kodak's driver was installed, it replaces it."],
+  ["Windows says the app is unknown or unsafe. Is it?", "The app isn't signed yet, so Windows shows a warning for any new app like it. Click <strong>More info</strong>, then <strong>Run anyway</strong>. The source code is public for anyone to check."],
+  ["Why does it ask for administrator permission?", "To install the scanner's driver. It only asks once."],
+  ["Can I run TLX (TLXClientDemo) on Windows 11?", "TLX was made for Windows XP and its 32-bit driver, so on Windows 10 and 11 it needs workarounds or a virtual machine. OpenPakon is a replacement that runs on Windows 11 as is. See <a href=\"/tlxclientdemo-alternative/\">coming from TLX</a>."],
+  ["Where do my scans go?", "Into a folder called <code>pakon</code> in your user folder, one folder per roll. You can pick another folder in the app."]
+ ]
+}
+-->
+<section class="hero hero--page">
+    <div class="wrap hero__inner">
+        <div>
+            <p class="tag-pill">Windows 10 &amp; 11 · 64-bit</p>
+            <h1 class="hero__title">Use your Pakon on <span class="red">Windows 11</span>, no XP</h1>
+            <p class="hero__lede">
+                A free app for the Kodak Pakon F-135 and F-135+ on a modern Windows PC.
+                The scanner driver comes with it.
+            </p>
+            <div class="get-row">
+{{download:windows}}
+</div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="wrap wrap--text prose">
+        <h2>Why the old software stopped working</h2>
+        <p>
+            The Pakon's own software (TLX and PSI) and its driver were made for
+            Windows XP. Newer versions of Windows won't run that driver, so people
+            kept old XP laptops around just for the scanner. OpenPakon comes with a
+            driver that works on Windows 10 and 11.
+        </p>
+
+        <h2>Install</h2>
+        <ol class="steps">
+            <li><strong>Download</strong> <code>Pakon-Setup.exe</code> above and open it.</li>
+            <li><strong>If Windows warns you</strong> ("Windows protected your PC"), click <strong>More info</strong>, then <strong>Run anyway</strong>. The app isn't signed yet, which is why Windows doesn't recognise it.</li>
+            <li><strong>Say yes</strong> when Windows asks for administrator permission. That's the installer setting up the scanner's driver. It only happens once.</li>
+            <li><strong>Plug in the scanner</strong> with its USB cable, switch it on and open the app.</li>
+        </ol>
+        <p>Then follow the <a href="/setup/">guide to your first scan</a>.</p>
+
+        <div class="note">
+            OpenPakon's installer replaces Kodak's scanner driver if you had it installed.
+        </div>
+
+        <h2>Updating</h2>
+        <p>
+            OpenPakon tells you when there's a new version. Quit OpenPakon and run the new
+            installer. Your scans and settings stay where they are.
+        </p>
+
+        <h2>Questions</h2>
+    </div>
+    <div class="wrap wrap--text">
+{{faq}}
+    </div>
+</section>

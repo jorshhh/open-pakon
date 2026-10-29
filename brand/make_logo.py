@@ -9,8 +9,8 @@ Every use scales the sprite by whole numbers.
 
 Writes:
   brand/logo.png                                  the sprite (128 px wide)
-  website/theme/pakon/assets/images/logo.png      the site header's copy
-  website/pakon-icon.png                          site icon, 512 px (Ghost: Publication icon)
+  website/src/assets/logo.png                     the site header's copy
+  website/src/assets/icon.png                     site icon, 512 px (smaller copies: website/README.md)
 
 The app icon is drawn from brand/logo.png by packaging/macos/make_icon.py.
 """
@@ -135,10 +135,9 @@ def main(art):
     a = np.asarray(Image.open(art).convert("RGB")).astype(np.int32)
     sprite = pixelate(a, cut_out(a))
     sprite.save(LOGO, optimize=True)
-    # the header shows it at half size in CSS: one art pixel per device pixel
-    # on a retina screen
-    shutil.copy(LOGO, REPO / "website/theme/pakon/assets/images/logo.png")
-    on_square(scaled(sprite, 512 // WIDTH), 512).save(REPO / "website/pakon-icon.png",
+    # the header scales it down in CSS with pixelated rendering
+    shutil.copy(LOGO, REPO / "website/src/assets/logo.png")
+    on_square(scaled(sprite, 512 // WIDTH), 512).save(REPO / "website/src/assets/icon.png",
                                                       optimize=True)
 
 

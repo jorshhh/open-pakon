@@ -1,60 +1,51 @@
 # Website
 
-The project site runs on [Ghost](https://ghost.org): the homepage is a
-one-screen Mac download page and the blog lives at `/blog/`.
+The project site: plain static HTML, one page per question people search
+for (Pakon on a Mac, on Windows 11, without Windows XP, coming from TLX…).
+Written for photographers, not developers: plain words, no file paths unless
+someone needs them.
 
-- `theme/pakon/`: the Ghost theme, in the same retro Kodak minilab style as
-  the web UI. `home.hbs` is the landing page, `index.hbs` the blog.
-- `routes.yaml`: puts the landing page at `/` and the blog at `/blog/`.
-- `docker-compose.yml`: a local Ghost for working on the theme.
+- `src/pages/`: one HTML fragment per page. The comment at the top holds the
+  page's title, description and questions (as JSON); see `build.py`.
+- `src/assets/`: the stylesheet (same retro Kodak minilab look as the app),
+  logo, icons, screenshots and the social-preview image `og.png`.
+- `build.py`: wraps each page in the shared header and footer, adds the
+  search-engine data (canonical link, social preview, app and FAQ
+  structured data), and writes `public/` with `sitemap.xml` and `robots.txt`.
+  Python 3, standard library only.
 
-## Run it locally
+The logo and `icon.png` come from `brand/make_logo.py`. After running it,
+redo the small icons:
+
+```sh
+sips -Z 180 src/assets/icon.png --out src/assets/apple-touch-icon.png
+sips -Z 32 src/assets/icon.png --out src/assets/favicon-32.png
+```
+
+## Build and preview
 
 ```sh
 cd website
-docker compose up -d
+python3 build.py
+python3 -m http.server 8765 --directory public   # http://127.0.0.1:8765
 ```
 
-Open <http://localhost:2368/ghost>, create the admin account, then:
+The site's address goes into every page (canonical links, sitemap, social
+previews). It's `SITE_URL` at the top of `build.py`; override it with
+`SITE_URL=https://example.org python3 build.py`.
 
-1. **Settings → Design & branding → Change theme**: activate **pakon**
-   (it is mounted from `theme/pakon`, so edits show up on reload).
-2. **Settings → Labs → Routes → Upload routes file**: upload `routes.yaml`.
-3. **Settings → Navigation**: set the primary links, e.g. *Blog* `/blog/`.
-   The header adds the GitHub link on its own.
-4. **Settings → Design & branding → Brand → Publication icon**: upload
-   `pakon-icon.png` (the browser-tab icon).
+## Add a page
 
-The header logo and `pakon-icon.png` are made from the artwork by
-`brand/make_logo.py`, which also writes `brand/logo.png` (the app icon's source):
+Copy one of `src/pages/*.html`, change the comment at the top, and add it to
+`NAV` or `FOOTER` in `build.py` if it should be linked from every page.
+`{{downloads}}` puts in the four download buttons and `{{faq}}` the page's
+questions. A page called `name.html` is served at `/name/`.
 
-```sh
-python brand/make_logo.py path/to/artwork.jpeg
-```
+The download buttons point at the latest GitHub release, so a new release
+needs no change here.
 
-Without step 2 the homepage still works, but the blog has no `/blog/` page.
+## Publish
 
-## Theme settings
-
-In **Settings → Design & branding → Site design**:
-
-| Setting        | Default |
-|----------------|---------|
-| Download URL   | `https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon.dmg` |
-| Repo URL       | `https://github.com/jorshhh/open-pakon` |
-| Version label  | `Free and open source · macOS` |
-
-**Download for Mac** links straight to a `Pakon.dmg` asset on the latest
-GitHub release, so each new release updates the button with no site change.
-Until a release with that file exists, the link returns 404.
-
-## Check and package the theme
-
-```sh
-cd website/theme/pakon
-npm test        # gscan, Ghost's theme validator
-npm run zip     # writes website/dist/pakon-theme.zip
-```
-
-Upload the zip in **Settings → Design & branding → Change theme → Upload
-theme** on the production Ghost (Ghost(Pro) or a self-hosted install).
+Upload the contents of `public/` to any static host (GitHub Pages,
+Cloudflare Pages, Netlify). Pages are served as `/name/index.html`, and
+`404.html` is the not-found page on all three.

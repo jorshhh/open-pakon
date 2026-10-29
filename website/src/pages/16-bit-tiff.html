@@ -1,0 +1,68 @@
+<!--
+{
+ "title": "Export 16-bit TIFFs from a Pakon",
+ "description": "Save 16-bit TIFFs and raw negatives from a Kodak Pakon F-135 at full Base 16 resolution, ready for Lightroom, Photoshop or Negative Lab Pro. Free software.",
+ "faq": [
+  ["What size are the pictures?", "At Base 16, the Pakon's highest resolution, a full 35 mm frame comes out at 3000 × 2000 pixels. Base 8 and Base 4 are smaller and faster."],
+  ["Is this the same as TLX's \"16 Base\"?", "It's the same resolution. Pick <em>Base 16</em> on the Scan page (it's the default), and the TIFFs OpenPakon saves hold the full 16 bits per colour."],
+  ["Should I save TIFFs or raw negatives?", "TIFFs if you want Kodak's colours with room to edit. Raw negatives if you prefer to turn the negative into a positive yourself, in a tool like Negative Lab Pro."],
+  ["Do black &amp; white TIFFs come out in colour?", "No. Black &amp; white film is saved as 16-bit greyscale TIFFs."],
+  ["Do the files say which film I used?", "Yes. When OpenPakon reads the film's edge code, the film name and ISO go into every file."]
+ ]
+}
+-->
+<section class="hero hero--page">
+    <div class="wrap hero__inner">
+        <div>
+            <p class="tag-pill">Base 16 · 16-bit</p>
+            <h1 class="hero__title">Export <span class="red">16-bit TIFFs</span> from a Pakon</h1>
+            <p class="hero__lede">
+                Get the most out of every frame: OpenPakon saves 16-bit TIFFs and raw
+                negatives at the scanner's highest resolution. Free.
+            </p>
+{{downloads}}
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="wrap wrap--text prose">
+        <h2>Why 16-bit?</h2>
+        <p>
+            A JPEG keeps 256 shades per colour. A 16-bit TIFF keeps thousands. You
+            won't see the difference straight away, but you will when you edit:
+            brightening shadows or shifting colours won't leave bands or blotches.
+        </p>
+
+        <h2>What you can save</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Choice</th><th>What you get</th><th>Good for</th></tr></thead>
+                <tbody>
+                    <tr><th>JPEGs</th><td>Finished pictures with Kodak's colours</td><td>Sharing, printing, quick looks</td></tr>
+                    <tr><th>TIFFs</th><td>Finished pictures, 16-bit</td><td>Editing in Lightroom or Photoshop</td></tr>
+                    <tr><th>Raw negatives</th><td>The negative as scanned, 16-bit, orange mask and all</td><td>Negative Lab Pro and other converters</td></tr>
+                    <tr><th>Contact sheet</th><td>The whole roll on one page</td><td>Picking your keepers</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>How to save them</h2>
+        <ol class="steps">
+            <li><strong>Scan</strong> the roll and check the frames.</li>
+            <li>Press <strong>Export</strong>.</li>
+            <li>Choose <strong>TIFFs</strong>, <strong>Raw negatives</strong>, or both. They're saved in the roll's folder.</li>
+        </ol>
+
+        <figure>
+            <img src="/assets/export.jpg" width="1600" height="1000" loading="lazy"
+                 alt="OpenPakon's Export page with buttons to save JPEGs, 16-bit TIFFs, raw negatives or a contact sheet">
+            <figcaption>The Export page.</figcaption>
+        </figure>
+
+        <h2>Questions</h2>
+    </div>
+    <div class="wrap wrap--text">
+{{faq}}
+    </div>
+</section>

@@ -47,8 +47,8 @@ scratch/
 # (see firmware/README.md)
 /firmware/*.sys
 
-# packaged Ghost theme (npm run zip in website/theme/pakon)
-/website/dist/
+# built website (python3 website/build.py)
+/website/public/
 
 # Mac app build (packaging/macos/build.sh)
 /dist/
