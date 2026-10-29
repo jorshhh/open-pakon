@@ -10,7 +10,7 @@
   "author": {
     "name": "Jorge Rangel",
     "email": "jorsh@jor.shj",
-    "url": "https://github.com/jorshhh/pakon-macos"
+    "url": "https://github.com/jorshhh/open-pakon"
   },
   "keywords": [
     "ghost-theme"
@@ -39,13 +39,13 @@
     "custom": {
       "download_url": {
         "type": "text",
-        "default": "https://github.com/jorshhh/pakon-macos/releases/latest/download/Pakon.dmg",
+        "default": "https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon.dmg",
         "group": "homepage",
         "description": "Direct link to the Mac download (.dmg) on the latest GitHub release."
       },
       "repo_url": {
         "type": "text",
-        "default": "https://github.com/jorshhh/pakon-macos",
+        "default": "https://github.com/jorshhh/open-pakon",
         "description": "GitHub repository, linked from the header and footer."
       },
       "version_label": {
