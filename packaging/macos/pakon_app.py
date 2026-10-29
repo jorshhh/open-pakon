@@ -15,11 +15,14 @@ In the Mac app the EEPROM archives go to ~/Library/Application Support/Pakon
 log in Pakon/Logs.
 """
 import functools
+import getpass
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 FROZEN = getattr(sys, "frozen", False)
@@ -68,6 +71,44 @@ if LOGS:
         # a windowed app has no terminal; uvicorn and the tools still print
         sys.stdout = sys.stderr = open(LOGS / "pakon.log", "a", buffering=1)
 
+# One app per user: a second one would start a second service on the same
+# scanner and temp folder. It brings the running window to the front instead
+# (POST /api/app/focus) and quits. The lock is the OS's on an open file, so a
+# crash leaves none behind; the port file says where the running one listens.
+_RUN = (Path(os.environ["PAKON_DATA"]) if os.environ.get("PAKON_DATA")
+        else Path(tempfile.gettempdir()) / f"pakon-{getpass.getuser()}")
+
+
+def _hold_lock():
+    """The open lock file while this is the only app, else None."""
+    _RUN.mkdir(parents=True, exist_ok=True)
+    f = open(_RUN / "app.lock", "a+")
+    f.seek(0)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
+if __name__ == "__main__":
+    _LOCK = _hold_lock()
+    if _LOCK is None:
+        try:
+            port = int((_RUN / "app.port").read_text())
+            urllib.request.urlopen(urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/app/focus", method="POST"), timeout=5).close()
+        except (OSError, ValueError):
+            pass                                  # still starting: it shows itself
+        print("Pakon is already running", flush=True)
+        sys.exit(0)
+
 # PyUSB looks libusb up with ctypes.util.find_library, which fails on a Mac
 # without Homebrew and on Windows: point its backend at the copy in the app.
 _libusb = ROOT / ("libusb-1.0.dll" if sys.platform == "win32" else "libusb-1.0.0.dylib")
@@ -79,7 +120,7 @@ if _libusb.exists():
 import uvicorn  # noqa: E402
 import webview  # noqa: E402
 
-from web.app import app  # noqa: E402
+import web.app as service  # noqa: E402
 
 
 def _free_port():
@@ -90,7 +131,7 @@ def _free_port():
 
 def main():
     port = _free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
+    server = uvicorn.Server(uvicorn.Config(service.app, host="127.0.0.1", port=port,
                                            log_level="info"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -100,8 +141,16 @@ def main():
 
     webview.settings["ALLOW_DOWNLOADS"] = True       # the frame / zip links
     if server.started:
-        webview.create_window("Pakon", f"http://127.0.0.1:{port}/",
-                              width=1280, height=800, min_size=(960, 640))
+        window = webview.create_window("Pakon", f"http://127.0.0.1:{port}/",
+                                       width=1280, height=800, min_size=(960, 640))
+        (_RUN / "app.port").write_text(str(port))
+
+        def focus():                                  # a second launch
+            window.restore()
+            window.show()
+            window.on_top = True                      # to the front, then normal
+            window.on_top = False
+        service.focus_window = focus
     else:
         webview.create_window("Pakon", html=(
             "<body style='font:15px -apple-system,system-ui,sans-serif;padding:2em'>"

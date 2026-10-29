@@ -24,6 +24,7 @@ GET  /api/frames                  list decoded frames
 GET  /api/frames/{n}/thumb        JPEG thumbnail
 POST /api/save                    SSE — save the frames to the work folder (jpeg|tiff|raw|contact)
 POST /api/reveal                  show a saved export folder (Finder, Explorer, xdg-open)
+POST /api/app/focus               bring the app's window to the front (second launch)
 POST /api/update/open             open the newer release's page in the browser
 POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
 POST /api/telemetry/page|error    a page opened / a page error (web/telemetry.py)
@@ -1089,6 +1090,19 @@ async def api_reveal(path: str = Body(..., embed=True)):
         # xdg-open can't select a file: open the folder it is in
         subprocess.Popen(["xdg-open", str(target.parent if target.is_file() else target)],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"ok": True}
+
+
+# Set by the window app (packaging/macos/pakon_app.py): a second launch of it
+# brings the running window to the front instead of starting another service.
+focus_window = None
+
+
+@app.post("/api/app/focus")
+async def api_app_focus():
+    if focus_window is None:
+        return JSONResponse({"error": "no app window"}, status_code=404)
+    focus_window()
     return {"ok": True}
 
 
