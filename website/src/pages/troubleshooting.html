@@ -1,0 +1,51 @@
+<!--
+{
+ "title": "Pakon Scanner Not Working? Troubleshooting & Fixes",
+ "description": "Fixes for common Kodak Pakon F-135 problems: scanner not found, film stuck, dark edges, Windows warnings. For the free OpenPakon app on Mac, Windows and Linux.",
+ "faq": [
+  ["The scanner isn't found.", "Check it's switched on and the USB cable is in. Then press <strong>Load firmware</strong> on the Scan page; the scanner needs it every time it's switched on."],
+  ["The scanner stopped responding.", "Switch the scanner off and on again, then press <strong>Load firmware</strong> again."],
+  ["A strip is stuck inside the scanner.", "Press <strong>Advance film</strong> on the Scan page to run it out."],
+  ["The scan came out dark or uneven at the edges.", "Feed the film only after OpenPakon says <em>\"Motor running — feed the film now\"</em>. Before that, OpenPakon is measuring the scanner's light, and film in the way spoils the measurement."],
+  ["Windows says \"Windows protected your PC\".", "The app isn't signed yet, so Windows warns about it. Click <strong>More info</strong>, then <strong>Run anyway</strong>."],
+  ["My Pakon is an F-235 or F-335.", "Those aren't supported. They're different machines inside."],
+  ["The colours look off on black &amp; white film.", "For XP2 or BW400CN, choose <strong>B&amp;W C41</strong>. For traditional black &amp; white like HP5 or Tri-X, choose <strong>B&amp;W</strong>."],
+  ["I get an error in TLX or PSI.", "Those are Kodak's old programs and we can't fix them. OpenPakon replaces them: see <a href=\"/tlxclientdemo-alternative/\">coming from TLX</a>."]
+ ]
+}
+-->
+<section class="hero hero--page">
+    <div class="wrap hero__inner">
+        <div>
+            <p class="tag-pill">Help</p>
+            <h1 class="hero__title">Pakon <span class="red">troubleshooting</span></h1>
+            <p class="hero__lede">
+                The common problems and how to fix them.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="wrap wrap--text">
+{{faq}}
+    </div>
+    <div class="wrap wrap--text prose" style="margin-top: 48px">
+        <h2>Still stuck?</h2>
+        <p>
+            Ask in the <a href="https://www.facebook.com/groups/PakonF135">Pakon F-135 group on Facebook</a>, where most
+            Pakon owners talk. Someone has probably seen your problem before.
+        </p>
+        <p>
+            If it looks like a problem with the app itself, 
+            <a href="https://github.com/jorshhh/open-pakon/issues">tell us what happened</a>
+            and attach OpenPakon's log file. It's a plain text file that records what
+            the scanner and the app were doing. You'll find it here:
+        </p>
+        <ul>
+            <li><strong>Mac:</strong> <code>~/Library/Logs/Pakon/pakon.log</code></li>
+            <li><strong>Windows:</strong> <code>%LOCALAPPDATA%\Pakon\Logs\pakon.log</code></li>
+            <li><strong>Linux:</strong> <code>~/.local/state/pakon/pakon.log</code></li>
+        </ul>
+    </div>
+</section>

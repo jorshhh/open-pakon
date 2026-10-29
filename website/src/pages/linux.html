@@ -1,0 +1,51 @@
+<!--
+{
+ "title": "Pakon Scanner Software for Linux (Ubuntu & Mint)",
+ "description": "Use a Kodak Pakon F-135 film scanner on Linux. Free app for Ubuntu 24.04 and Linux Mint 22, no Windows, no virtual machine.",
+ "app": true,
+ "faq": [
+  ["Which Linux versions are supported?", "The download is made for Ubuntu 24.04 and Linux Mint 22 (64-bit PCs). Other versions can run OpenPakon from the source code; see the <a href=\"https://github.com/jorshhh/open-pakon/blob/main/docs/TECHNICAL.md\">technical guide</a>."],
+  ["Do I need to be an administrator to scan?", "Only to install. After that, any user can use the scanner."],
+  ["Can I share the scanner with other computers at home?", "Yes, if you're comfortable with a bit of setup: OpenPakon can run on the computer the scanner is plugged into and be used from a web browser on another computer. The <a href=\"https://github.com/jorshhh/open-pakon/blob/main/docs/TECHNICAL.md\">technical guide</a> explains how."],
+  ["Where do my scans go?", "Into a folder called <code>pakon</code> in your home folder, one folder per roll. You can pick another folder in the app."]
+ ]
+}
+-->
+<section class="hero hero--page">
+    <div class="wrap hero__inner">
+        <div>
+            <p class="tag-pill">Ubuntu 24.04 · Linux Mint 22</p>
+            <h1 class="hero__title">Pakon scanner software <span class="red">for Linux</span></h1>
+            <p class="hero__lede">
+                Scan with your Kodak Pakon F-135 or F-135+ on a Linux PC. Free, with
+                nothing else to set up.
+            </p>
+            <div class="get-row">
+{{download:linux}}
+</div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="wrap wrap--text prose">
+        <h2>Install</h2>
+        <ol class="steps">
+            <li><strong>Download</strong> <code>pakon_amd64.deb</code> above.</li>
+            <li><strong>Open it</strong> with your software installer, or in a terminal in your Downloads folder run <code>sudo apt install ./pakon_amd64.deb</code></li>
+            <li><strong>Plug in the scanner</strong> with its USB cable, switch it on and open the app from your apps menu.</li>
+        </ol>
+        <p>Then follow the <a href="/setup/">guide to your first scan</a>.</p>
+
+        <h2>Updating</h2>
+        <p>
+            OpenPakon tells you when there's a new version. Quit OpenPakon and install the new
+            download the same way. Your scans and settings stay where they are.
+        </p>
+
+        <h2>Questions</h2>
+    </div>
+    <div class="wrap wrap--text">
+{{faq}}
+    </div>
+</section>
