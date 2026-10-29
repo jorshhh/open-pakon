@@ -42,8 +42,9 @@ HOSTNAME = os.environ.get("PAKON_RYBBIT_DOMAIN", "").strip()
 ENDPOINT = RYBBIT_URL + "/api/track"
 _TIMEOUT = 8
 # A hard crash in native code (numpy, unicorn) kills Python before it can
-# report; faulthandler writes it here and the next launch sends it.
-CRASH_LOG = Path.home() / "Library/Logs/Pakon/crash.log"
+# report; faulthandler writes it here and the next launch sends it. Beside
+# the app's log: ~/Library/Logs/Pakon, or PAKON_LOGS (the Linux launcher).
+CRASH_LOG = Path(os.environ.get("PAKON_LOGS") or "~/Library/Logs/Pakon").expanduser() / "crash.log"
 
 _q: queue.Queue = queue.Queue(maxsize=200)
 _started = False
