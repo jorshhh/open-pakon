@@ -4,8 +4,8 @@ Crash reports and usage statistics, sent to a Rybbit instance
 
 Where they go is set by the build, not the code: PAKON_RYBBIT_URL (the
 instance), PAKON_RYBBIT_SITE_ID and PAKON_RYBBIT_DOMAIN (the Rybbit site and
-its domain). Release builds bake them into the app's Info.plist (build.sh,
-packaging/macos/release.env) and pakon_app.py puts them back in the
+its domain). Release builds bake them into the Mac app's Info.plist (build.sh,
+packaging/release.env) and pakon_app.py puts them back in the
 environment; a build or checkout without them never sends anything and does
 not ask.
 

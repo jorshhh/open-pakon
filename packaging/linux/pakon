@@ -1,0 +1,14 @@
+#!/bin/sh
+# Pakon: the web service in its own window (packaging/macos/pakon_app.py,
+# GTK WebKit through python3-gi). Data in ~/.local/share/pakon, the log in
+# ~/.local/state/pakon/pakon.log.
+# the version and the report server (build-deb.sh), as the Mac app's Info.plist
+if [ -f /opt/pakon/release.env ]; then
+    set -a; . /opt/pakon/release.env; set +a
+fi
+export PAKON_DATA="${PAKON_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/pakon}"
+LOGS="${XDG_STATE_HOME:-$HOME/.local/state}/pakon"
+mkdir -p "$PAKON_DATA" "$LOGS"
+export PYWEBVIEW_GUI="${PYWEBVIEW_GUI:-gtk}"
+exec /opt/pakon/venv/bin/python /opt/pakon/packaging/macos/pakon_app.py "$@" \
+    >>"$LOGS/pakon.log" 2>&1
