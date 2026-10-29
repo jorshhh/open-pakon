@@ -24,6 +24,9 @@
 #include <signal.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 /* One step of the captured open handshake: the bytes to send, and the reply
  * bytes observed in the capture (for verification). Lengths are 2+count. */
@@ -73,6 +76,21 @@ static void scan_sigint_handler(int signum)
     scan_interrupted = 1;
     signal(signum, SIG_DFL);
 }
+
+#ifdef _WIN32
+/* Windows has no SIGINT to send to a windowless child: with PAKON_STOP_STDIN
+ * set (the web app), a "stop" line on stdin raises it here instead, with the
+ * same effect as Ctrl-C. */
+static DWORD WINAPI stop_stdin_thread(LPVOID unused)
+{
+    (void)unused;
+    char line[64];
+    while (fgets(line, sizeof line, stdin))
+        if (strncmp(line, "stop", 4) == 0)
+            raise(SIGINT);
+    return 0;
+}
+#endif
 
 static int do_open(unsigned timeout)
 {
@@ -2902,7 +2920,17 @@ int main(int argc, char **argv)
 {
     /* Line-buffered even into a pipe: the web client reads progress (e.g. the
      * "feed the film now" prompt) as it happens. */
+#ifdef _WIN32
+    /* the Windows C runtime has no line buffering (_IOLBF is full) */
+    setvbuf(stdout, NULL, _IONBF, 0);
+    if (getenv("PAKON_STOP_STDIN")) {
+        HANDLE t = CreateThread(NULL, 0, stop_stdin_thread, NULL, 0, NULL);
+        if (t)
+            CloseHandle(t);
+    }
+#else
     setvbuf(stdout, NULL, _IOLBF, 0);
+#endif
 
     int want_open = 0, drain = 0, trace_status = 0, autostop = 0;
     int want_advance_run = 0;       /* --advance: standalone or after --scan */

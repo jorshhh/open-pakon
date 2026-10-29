@@ -8,6 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>         /* _mktemp */
+static char *mkdtemp(char *t) { return _mktemp(t) && _mkdir(t) == 0 ? t : NULL; }
+#define TMP_DIR "test_calcacheXXXXXX"      /* in the current folder */
+#else
+#define TMP_DIR "/tmp/test_calcacheXXXXXX"
+#endif
 
 static int failures = 0;
 
@@ -37,7 +45,7 @@ int main(void)
     CHECK(!strcmp(pakon_cal_action_name(PAKON_CAL_REFRESH), "refresh"), "action name");
 
     /* ---- file round trip */
-    char dir[] = "/tmp/test_calcacheXXXXXX";
+    char dir[] = TMP_DIR;
     if (!mkdtemp(dir)) {
         printf("FAIL - mkdtemp\n");
         return 1;
@@ -70,7 +78,10 @@ int main(void)
         rec.dark[i] = 300.5 + i;
         rec.bright[i] = 64000.25 - i;
     }
+    rec.when = now - 50;
     CHECK(pakon_cal_save(path, &rec) == 0, "save");
+    rec.when = now - 5;
+    CHECK(pakon_cal_save(path, &rec) == 0, "save again (replaces the file)");
 
     pakon_cal_record got;
     int r = pakon_cal_load(path, 3054, 43, PAKON_FILM_BW, LP, &got);
