@@ -2,12 +2,14 @@
   <img src="brand/logo.png" width="112" alt="Pixel-art drawing of the Pakon F-135 scanner">
 </p>
 
-<h1 align="center">Pakon</h1>
+<h1 align="center">OpenPakon</h1>
 
 <p align="center">
-  <b>Your Pakon, back in service.</b><br>
-  Scan film on your Kodak Pakon F-135 or F-135+ on a Mac, a Windows PC or Linux.<br>
-  No old Windows PC needed.
+  <b>Kodak Pakon F-135 scanner software for Mac, Windows and Linux.</b><br>
+  Your Pakon, back in service: scan film on your F-135 or F-135+ with the
+  computer you already have.<br>
+  Free forever. No old Windows PC needed.<br>
+  <a href="https://openpakon.com"><b>openpakon.com</b></a>
 </p>
 
 <p align="center">
@@ -29,7 +31,7 @@ The Kodak Pakon F-135 is a film scanner that photo labs used to scan 35 mm
 rolls quickly. Lots of them are now in the hands of film photographers, but
 the original software only runs on old versions of Windows.
 
-**Pakon** is a free app that replaces it. Plug the scanner into your computer, feed
+**OpenPakon** is a free app that replaces it (on your computer the app is simply called Pakon). Plug the scanner into your computer, feed
 a strip of film, and get finished pictures: JPEGs ready to share, 16-bit TIFFs
 for editing, or the raw negatives. It uses Kodak's own colour processing, so
 your scans look the way a Pakon scan should.
