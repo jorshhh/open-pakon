@@ -30,9 +30,17 @@ python3 build.py
 python3 -m http.server 8765 --directory public   # http://127.0.0.1:8765
 ```
 
-The site's address goes into every page (canonical links, sitemap, social
-previews). It's `SITE_URL` at the top of `build.py`; override it with
-`SITE_URL=https://example.org python3 build.py`.
+Settings come from `website/.env` (git-ignored; copy `.env.example`) or the
+environment, which wins:
+
+| Variable | What it does |
+| --- | --- |
+| `SITE_URL` | the site's address, in every page (canonical links, sitemap, social previews); defaults to `https://openpakon.com` |
+| `RYBBIT_URL` | the Rybbit instance that counts visits, e.g. `https://rybbit.example.com` |
+| `RYBBIT_SITE_ID` | the website's Rybbit site ID (not the app's) |
+
+Without both Rybbit settings the pages get no analytics script, and the build
+says so.
 
 ## Add a page
 

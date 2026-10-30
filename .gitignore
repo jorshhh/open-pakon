@@ -25,6 +25,7 @@ frame_*.png
 
 # release-only build settings (packaging/release.env.example)
 packaging/release.env
+website/.env
 
 # python cruft
 __pycache__/

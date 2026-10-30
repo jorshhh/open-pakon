@@ -15,6 +15,9 @@ served at /, 404.html at /404.html and every other page at /<name>/.
     python3 build.py                       # SITE_URL below
     SITE_URL=https://example.org python3 build.py
 
+Settings come from the environment or website/.env (see .env.example);
+the environment wins.
+
 Standard library only.
 """
 
@@ -25,15 +28,35 @@ import re
 import shutil
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+OUT = ROOT / "public"
+
+# KEY=value lines from .env, without overriding what's already set
+if (ROOT / ".env").exists():
+    for line in (ROOT / ".env").read_text().splitlines():
+        key, sep, value = line.partition("=")
+        if sep and not key.strip().startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
 SITE_URL = os.environ.get("SITE_URL", "https://openpakon.com").rstrip("/")
 SITE_NAME = "OpenPakon"
 REPO = "https://github.com/jorshhh/open-pakon"
 COMMUNITY = "https://www.facebook.com/groups/PakonF135"
 DOWNLOAD = REPO + "/releases/latest/download/"
 
-ROOT = Path(__file__).resolve().parent
-SRC = ROOT / "src"
-OUT = ROOT / "public"
+# visit counting (rybbit.com); left out of the pages unless both are set
+RYBBIT_URL = os.environ.get("RYBBIT_URL", "").rstrip("/")
+RYBBIT_SITE_ID = os.environ.get("RYBBIT_SITE_ID", "")
+# plus a "download" event for every click on a release file, with the file name
+ANALYTICS = f"""<script src="{RYBBIT_URL}/api/script.js?siteId={RYBBIT_SITE_ID}" defer></script>
+<script>
+document.addEventListener("click", function (e) {{
+    var a = e.target.closest && e.target.closest('a[href^="{DOWNLOAD}"]');
+    if (a && window.rybbit) window.rybbit.event("download", {{file: a.href.slice({len(DOWNLOAD)}), page: location.pathname}});
+}});
+</script>
+""" if RYBBIT_URL and RYBBIT_SITE_ID else ""
 
 NAV = [("/setup/", "How to scan"), ("/mac/", "Mac"),
        ("/windows/", "Windows"), ("/linux/", "Linux")]
@@ -142,7 +165,7 @@ TEMPLATE = """<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
 <link rel="stylesheet" href="/assets/site.css">
-{ld}</head>
+{analytics}{ld}</head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 
@@ -242,7 +265,7 @@ def build_page(src):
 
     page = TEMPLATE.format(
         title=html.escape(meta["title"]), description=html.escape(meta["description"]),
-        url=url, site_url=SITE_URL, site_name=SITE_NAME, ld=ld,
+        url=url, site_url=SITE_URL, site_name=SITE_NAME, ld=ld, analytics=ANALYTICS,
         nav=nav, body=body.strip(), footer=footer, repo=REPO, github=GITHUB_ICON)
 
     dest = OUT / ("404.html" if name == "404" else
@@ -270,7 +293,8 @@ def main():
     (OUT / "robots.txt").write_text(
         f"User-agent: *\nAllow: /\n\nSitemap: {SITE_URL}/sitemap.xml\n")
 
-    print(f"{len(urls)} pages for {SITE_URL} → {OUT.relative_to(ROOT.parent)}/")
+    print(f"{len(urls)} pages for {SITE_URL} → {OUT.relative_to(ROOT.parent)}/"
+          + ("" if ANALYTICS else " (no analytics: RYBBIT_URL / RYBBIT_SITE_ID not set)"))
 
 
 if __name__ == "__main__":
