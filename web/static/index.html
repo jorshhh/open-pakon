@@ -1371,6 +1371,7 @@
 
   // Dust removal needs the scan's infrared channel: B&W scans without it
   // (silver blocks IR), and older raws may lack the calibration's IR table.
+  // Slides get none: it softens slide grain (the prescan leaves meta.ice off).
   // The choice is remembered in this browser.
   function showIce() {
     const box = $('ice-on'), ok = !!(meta && meta.ice);
@@ -1380,6 +1381,8 @@
       ? 'Rebuild dust and scratches from the scan\'s infrared channel (slower export)'
       : (meta && meta.film === 'bw'
          ? 'B&W is scanned without the infrared channel, so there is nothing to find dust with'
+         : meta && meta.film === 'slide'
+         ? 'Dust removal is off for slides: it softens the grain of slide film'
          : 'This scan has no infrared channel to find dust with');
   }
   try { $('sharpen').value = localStorage.getItem('pakon-sharpen') || 'off'; } catch {}

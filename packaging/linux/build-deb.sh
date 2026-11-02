@@ -37,11 +37,12 @@ step() { printf '\n==> %s\n' "$*"; }
 
 rm -rf "$STAGE" && mkdir -p "$APPDIR" "$OUT"
 
-step "pakon_probe, pakon_replay"
+step "pakon_probe, pakon_replay, pakon_render"
 cmake -S "$REPO" -B "$OUT/cbuild" -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build "$OUT/cbuild" --target pakon_probe pakon_replay -j >/dev/null
+cmake --build "$OUT/cbuild" --target pakon_probe pakon_replay pakon_render -j >/dev/null
 mkdir -p "$APPDIR/build"
-install -m755 "$OUT/cbuild/pakon_probe" "$OUT/cbuild/pakon_replay" "$APPDIR/build/"
+install -m755 "$OUT/cbuild/pakon_probe" "$OUT/cbuild/pakon_replay" \
+    "$OUT/cbuild/libpakon_render.so" "$APPDIR/build/"
 
 step "app files"
 # same set as packaging/macos/pakon.spec

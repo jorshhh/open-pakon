@@ -15,6 +15,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -53,6 +55,7 @@ from pakon_image import (  # noqa: E402
     oem_roll_balance,
     oem_rpd,
 )
+import oem_dice  # noqa: E402
 import oem_sba  # noqa: E402
 import pakon_ice  # noqa: E402
 
@@ -291,6 +294,10 @@ def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
 
     rgb, ice = _build_ribbon(raw_path, emit)
     rows, cols = rgb.shape[:2]
+    if film == "slide":
+        # On slide film dust removal (ours and the OEM's) smoothed the grain
+        # over most of the frame (2026-11-02), so slides get none.
+        ice = None
 
     emit("Measuring film base", 0.62)
     base = measure_dmin(rgb, pct=99.5)
@@ -378,6 +385,46 @@ def autoframe(ribbon_path, film="c41", fmt="full") -> dict:
             "frame_w": int(frame_w), "pitch": int(pitch), "format": fmt}
 
 
+def _total_ram():
+    """Physical memory in bytes, or None when it cannot be read."""
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong)] + [
+                    (f, ctypes.c_ulonglong) for f in ("ullAvailPhys", "ullTotalPageFile",
+                    "ullAvailPageFile", "ullTotalVirtual", "ullAvailVirtual",
+                    "ullAvailExtendedVirtual")]
+            s = Status(dwLength=ctypes.sizeof(Status))
+            return s.ullTotalPhys if ctypes.windll.kernel32.GlobalMemoryStatusEx(
+                ctypes.byref(s)) else None
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+# Peak memory per frame being exported, measured on 3000 x 2000 frames
+# (2026-11-02): ~1 GB with dust removal (pakon_ice.clean_frame), a few
+# hundred MB without; with headroom.
+_FRAME_RAM = {True: 1.5 * 2 ** 30, False: 0.5 * 2 ** 30}
+
+
+def export_workers(ice):
+    """How many frames export renders at once: 6, 4 or 2, the most that
+    fit in half the physical memory (2 when it is unknown). Dust removal
+    on 12 frames: 33 s on 1 thread, 19 s on 2, 13 s on 4, 11 s on 6.
+    PAKON_EXPORT_THREADS overrides it."""
+    override = os.environ.get("PAKON_EXPORT_THREADS")
+    if override and override.isdigit() and int(override) > 0:
+        return int(override)
+    ram = _total_ram()
+    if not ram:
+        return 2
+    return next((k for k in (6, 4) if k * _FRAME_RAM[ice] <= ram / 2), 2)
+
+
 def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
                   frame_w=_FRAME_W, progress=None, rpd_balance=None,
                   roll_centres=None, film="c41", flare=None,
@@ -424,7 +471,6 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
     use_rpd = RPD_PROFILE.exists()
     oem = _oem_path()
     rot_k = (rotate // 90) % 4
-    frames = []
     n = len(centres)
 
     def crop_at(centre, fw):
@@ -440,15 +486,27 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
         ir_noise = np.load(str(WORK_DIR / "ir_noise.npy"))
     dpi = pakon_ice.pakon_dpi(rgb.shape[1])
 
+    # The OEM Digital ICE (tools/oem_dice.py) when it can run, one emulator
+    # per export thread; else our port (tools/pakon_ice.py).
+    use_dice = ir_rib is not None and oem_dice.available()
+    local = threading.local()
+
     def clean(i, part):
-        """The crop with dust and scratches rebuilt from the IR plane (black
-        300 off for ICE, back on after); unchanged without an IR plane."""
+        """The crop with dust and scratches rebuilt from the IR plane;
+        unchanged without an IR plane."""
         if ir_rib is None:
             return part
         fw = int(widths[i]) if widths else frame_w
         r1 = min(rows, max(0, int(centres[i]) - fw // 2) + fw)
-        out, mask = pakon_ice.clean_frame(part, ir_rib[max(0, r1 - fw):r1], ir_noise, dpi)
-        print(f"ICE frame {i + 1}: {100 * mask.mean():.2f}% rebuilt", flush=True)
+        ir = ir_rib[max(0, r1 - fw):r1]
+        if use_dice:
+            if not hasattr(local, "dice"):
+                local.dice = oem_dice.Dice()
+            out, mask = oem_dice.clean_frame(local.dice, part, ir)
+        else:
+            out, mask = pakon_ice.clean_frame(part, ir, ir_noise, dpi)
+        print(f"ICE frame {i + 1} ({'OEM' if use_dice else 'ours'}): "
+              f"{100 * mask.mean():.2f}% rebuilt", flush=True)
         return out
 
     # OEM scene balance of the confirmed frames against the whole roll (all
@@ -460,9 +518,8 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
         roll = [crop_at(c, frame_w) for c in roll_centres] if roll_centres else None
         shifts = _sba_shifts([crop(i) for i in range(n)], oem, roll, sba_dpi, scene_dmin)
 
-    for i in range(n):
-        emit(f"Exporting frame {i + 1}/{n}" + (" (removing dust)" if ir_rib is not None
-                                                 else ""), (i + 1) / max(1, n))
+    def render(i):
+        """Clean, render and write frame i; returns its files."""
         part = clean(i, np.ascontiguousarray(crop(i)))
         if rot_k:
             part = np.ascontiguousarray(np.rot90(part, k=rot_k))
@@ -502,8 +559,19 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
         step = max(1, max(rendered.shape[0] // 600, rendered.shape[1] // 600))
         Image.fromarray(rendered[::step, ::step]).save(str(thumb_path),
                                                        "JPEG", quality=85)
-        frames.append({"index": i + 1, "raw_tiff": raw_tiff, "tiff": pos_tiff,
-                       "jpg": jpg_path, "thumb": thumb_path})
+        return {"index": i + 1, "raw_tiff": raw_tiff, "tiff": pos_tiff,
+                "jpg": jpg_path, "thumb": thumb_path}
+
+    # Frames are independent and numpy releases the GIL, so they render
+    # in parallel, as many as the computer's memory allows.
+    workers = max(1, min(n, os.cpu_count() or 1, export_workers(ir_rib is not None)))
+    what = " (removing dust)" if ir_rib is not None else ""
+    emit(f"Exporting {n} frames{what}", 0.0)
+    with ThreadPoolExecutor(workers) as pool:
+        jobs = [pool.submit(render, i) for i in range(n)]
+        for done, _ in enumerate(as_completed(jobs), 1):
+            emit(f"Exported frame {done}/{n}{what}", done / max(1, n))
+        frames = [j.result() for j in jobs]       # in frame order
 
     emit("Done", 1.0)
     return frames
