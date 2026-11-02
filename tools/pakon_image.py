@@ -156,8 +156,14 @@ def marker_align(img, min_frac=0.6, sample_rows=3000):
     B/R/G channel identity no longer drifts between scans.
 
     `img` is (rows, linewidth) uint16. Returns (aligned_img, marker_col), or
-    (img, None) if no column is reliably set (no marker → leave phase untouched)."""
-    sub = img[::max(1, img.shape[0] // sample_rows)]
+    (img, None) if no column is reliably set (no marker → leave phase untouched).
+
+    The rows are sampled in three blocks (start, middle, end), not spread over
+    the whole roll: on a memory-mapped raw on a USB disk, 3000 scattered rows
+    took 7.6 s to read and 3000 contiguous ones 0.27 s."""
+    n, k = img.shape[0], max(1, sample_rows // 3)
+    sub = (img if n <= 3 * k else
+           np.concatenate([img[s:s + k] for s in (0, (n - k) // 2, n - k)]))
     frac = (sub & 1).mean(0)
     cm = int(np.argmax(frac))
     if frac[cm] < min_frac:
