@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -54,6 +55,7 @@ from pakon_image import (  # noqa: E402
     oem_roll_balance,
     oem_rpd,
 )
+import oem_dice  # noqa: E402
 import oem_sba  # noqa: E402
 import pakon_ice  # noqa: E402
 
@@ -292,6 +294,10 @@ def prescan(raw_path, progress=None, film="c41", fmt="full") -> dict:
 
     rgb, ice = _build_ribbon(raw_path, emit)
     rows, cols = rgb.shape[:2]
+    if film == "slide":
+        # On slide film dust removal (ours and the OEM's) smoothed the grain
+        # over most of the frame (2026-11-02), so slides get none.
+        ice = None
 
     emit("Measuring film base", 0.62)
     base = measure_dmin(rgb, pct=99.5)
@@ -480,15 +486,27 @@ def export_frames(ribbon_path, base, centres, widths=None, rotate=90,
         ir_noise = np.load(str(WORK_DIR / "ir_noise.npy"))
     dpi = pakon_ice.pakon_dpi(rgb.shape[1])
 
+    # The OEM Digital ICE (tools/oem_dice.py) when it can run, one emulator
+    # per export thread; else our port (tools/pakon_ice.py).
+    use_dice = ir_rib is not None and oem_dice.available()
+    local = threading.local()
+
     def clean(i, part):
-        """The crop with dust and scratches rebuilt from the IR plane (black
-        300 off for ICE, back on after); unchanged without an IR plane."""
+        """The crop with dust and scratches rebuilt from the IR plane;
+        unchanged without an IR plane."""
         if ir_rib is None:
             return part
         fw = int(widths[i]) if widths else frame_w
         r1 = min(rows, max(0, int(centres[i]) - fw // 2) + fw)
-        out, mask = pakon_ice.clean_frame(part, ir_rib[max(0, r1 - fw):r1], ir_noise, dpi)
-        print(f"ICE frame {i + 1}: {100 * mask.mean():.2f}% rebuilt", flush=True)
+        ir = ir_rib[max(0, r1 - fw):r1]
+        if use_dice:
+            if not hasattr(local, "dice"):
+                local.dice = oem_dice.Dice()
+            out, mask = oem_dice.clean_frame(local.dice, part, ir)
+        else:
+            out, mask = pakon_ice.clean_frame(part, ir, ir_noise, dpi)
+        print(f"ICE frame {i + 1} ({'OEM' if use_dice else 'ours'}): "
+              f"{100 * mask.mean():.2f}% rebuilt", flush=True)
         return out
 
     # OEM scene balance of the confirmed frames against the whole roll (all

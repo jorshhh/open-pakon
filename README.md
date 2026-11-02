@@ -194,8 +194,9 @@ pakon stands on other people's work:
   read-only reference (`docs/LIBPAKON_COMPARISON.md`).
 - **Kodak / Pakon**: the original F-X35 software. Its F-135 engine `TLB.dll`
   was reverse-engineered for interoperability (`docs/TLB_FINDINGS.md`); the
-  colour engine `PakonIMAu.dll`, its scene-balance data and the DX
-  product-code table are used as-is (`oem/`), as are the colour profiles in
+  colour engine `PakonIMAu.dll`, its scene-balance data, the DX
+  product-code table and the Digital ICE library `DMLDICELib.dll` (Applied
+  Science Fiction) are used as-is (`oem/`), as are the colour profiles in
   `profiles/` (© Eastman Kodak Company).
 - **Software**: [libusb](https://libusb.info),
   [FastAPI](https://fastapi.tiangolo.com),

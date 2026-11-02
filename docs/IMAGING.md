@@ -351,12 +351,24 @@ passes through dye but is blocked by physical dust/scratches). The OEM applies
 Digital ICE via **`DMLDICELib.dll`** (loaded by `CN_CiDLLDigitalIce`; PSI "Use
 Scratch Removal"; `IrChannelSavedInPlanarFile`, `IrCrossTalkFactor`).
 
-**Ours** (`tools/pakon_ice.py`, not the OEM library): a numpy port of
-nkscan's `dust.rs` (the openICE pipeline) on the trailing IR block (one IR
-sample per pixel, `width` samples per row), flat-fielded against the
-calibration's open-gate IR. `pakon_ice.clean_frame` cleans one registered,
-flat-fielded frame before rendering; the web export (Frames, "Remove dust")
-and `pakon_image.py --ice` both call it. The Pakon-specific parts (gate
+**The export uses the OEM library** (`tools/oem_dice.py`, since
+2026-11-02): `oem/DMLDICELib.dll` under Unicorn, called the way TLB.dll calls
+it (docs/TLB_FINDINGS.md "Digital ICE"). The planes go in as 14-bit R, G, B,
+IR back to back, width first, `(raw - 300) / 4`; only the pixels DICE changes
+are taken back into the 16-bit frame. One emulator per export thread (~1.5 GB
+for the first, ~0.4 GB each more); 0.69 s per Base 16 frame on 4 threads.
+Against ours on the same frames: dust added to a real frame left 766 of 8586
+(ours 1084), and on a clean roll it changed 0.00-0.01% of pixels where ours
+changed 0.13-0.25%, softening foliage. Slides get no dust removal: on slide
+film both smoothed the grain over most of the frame, and DICE's negative flag
+(dynamic +0x14) changed nothing.
+
+**Ours** (`tools/pakon_ice.py`, the fallback when Unicorn is missing): a
+numpy port of nkscan's `dust.rs` (the openICE pipeline) on the trailing IR
+block (one IR sample per pixel, `width` samples per row), flat-fielded
+against the calibration's open-gate IR. `pakon_ice.clean_frame` cleans one
+registered, flat-fielded frame before rendering; `pakon_image.py --ice` calls
+it. The Pakon-specific parts (gate
 margin, the line-start noise, confidence over rows) are in `STATUS.md`;
 `test/test_ice.py` covers them on synthetic frames. Raws scanned with IR off
 (silver B&W) have no IR block and cannot be cleaned.

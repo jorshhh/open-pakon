@@ -38,8 +38,10 @@ Python runtime dependencies (web/requirements.txt, packaging/macos)
 oem/, profiles/
     Files from the original Kodak/Pakon F-X35 software, used as-is: the
     colour engine PakonIMAu.dll, its scene-balance parameters, the DX
-    product-code table (oem/ansel/common/common-ProdCodeTable.dpi), and the
-    colour profiles and correction data (© Eastman Kodak Company). They are
+    product-code table (oem/ansel/common/common-ProdCodeTable.dpi), the
+    Digital ICE dust removal library DMLDICELib.dll (Applied Science
+    Fiction), and the colour profiles and correction data (© Eastman Kodak
+    Company). They are
     NOT covered by the AGPL. See oem/README.md and profiles/README.md.
 
 test/fixtures/eeprom/
