@@ -46,6 +46,18 @@ if(WIN32)
   target_link_libraries(pakon PUBLIC winmm pthread)
 endif()
 
+# --- pakon_render: the OEM colour render for the web app (ctypes) --------
+# Image processing only, no transport or protocol. Built optimised even in
+# Debug (numpy is the fallback when it is missing), with no fused multiply-
+# add so its float results match numpy's bit for bit.
+add_library(pakon_render SHARED src/pakon_render.c)
+target_include_directories(pakon_render PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(pakon_render PRIVATE -O2 -ffp-contract=off -fvisibility=hidden)
+if(WIN32)
+  # libpakon_render.dll, the name tools/pakon_image.py looks for
+  set_target_properties(pakon_render PROPERTIES PREFIX "lib")
+endif()
+
 # --- tools (standalone) ---------------------------------------------------
 add_executable(pakon_probe tools/pakon_probe.c)
 target_link_libraries(pakon_probe PRIVATE pakon)

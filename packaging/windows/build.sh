@@ -67,7 +67,7 @@ step "downloads"
 fetch "$PY_URL" "$PY_SHA" "$CACHE/python-embed.zip"
 fetch "$USB_URL" "$USB_SHA" "$CACHE/libusb.7z"
 
-step "pakon_probe, pakon_replay (MinGW, static)"
+step "pakon_probe, pakon_replay, pakon_render (MinGW, static)"
 # libusb's static library only, so the tools need no DLL next to them
 USB="$OUT/libusb"
 rm -rf "$USB" && mkdir -p "$USB/x" "$USB/lib" "$USB/include/libusb-1.0"
@@ -83,11 +83,12 @@ Cflags: -I$USB/include/libusb-1.0
 PC
 PKG_CONFIG_LIBDIR="$USB" cmake -S "$REPO" -B "$OUT/cbuild" -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER="$CC" \
-    -DCMAKE_EXE_LINKER_FLAGS=-static >/dev/null
-cmake --build "$OUT/cbuild" --target pakon_probe pakon_replay -j >/dev/null
+    -DCMAKE_EXE_LINKER_FLAGS=-static -DCMAKE_SHARED_LINKER_FLAGS=-static >/dev/null
+cmake --build "$OUT/cbuild" --target pakon_probe pakon_replay pakon_render -j >/dev/null
 mkdir -p "$APP/build"
-cp "$OUT/cbuild/pakon_probe.exe" "$OUT/cbuild/pakon_replay.exe" "$APP/build/"
-x86_64-w64-mingw32-strip "$APP"/build/*.exe
+cp "$OUT/cbuild/pakon_probe.exe" "$OUT/cbuild/pakon_replay.exe" \
+    "$OUT/cbuild/libpakon_render.dll" "$APP/build/"
+x86_64-w64-mingw32-strip "$APP"/build/*.exe "$APP"/build/*.dll
 # PyUSB's (web/eeprom.py), found by pakon_app.py
 cp "$USB/x/MinGW64/dll/libusb-1.0.dll" "$APP/"
 

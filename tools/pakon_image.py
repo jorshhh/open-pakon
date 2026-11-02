@@ -455,22 +455,26 @@ class RpdLut:
 
 def _interp3(t, x01, chunk_rows=256):
     """Trilinear lookup of (H, W, 3) values in [0, 1] in an (n, n, n, 3)
-    table whose nodes span [0, 1] evenly."""
+    table whose nodes span [0, 1] evenly. The table is read flat: one index
+    per pixel for its cube, the 8 corners at fixed offsets from it (np.take
+    is ~3x faster than indexing with three arrays)."""
     n = t.shape[0]
+    flat = t.reshape(-1, t.shape[-1])
     out = np.empty(x01.shape, dtype=np.float32)
     for r0 in range(0, x01.shape[0], chunk_rows):
         f = np.clip(x01[r0:r0 + chunk_rows], 0.0, 1.0) * (n - 1)
         i = np.minimum(f.astype(np.int32), n - 2)
         w = f - i
+        base = (i[..., 0] * n + i[..., 1]) * n + i[..., 2]
         acc = 0.0
         for dr in (0, 1):
             wr = w[..., 0] if dr else 1.0 - w[..., 0]
             for dg in (0, 1):
-                wg = w[..., 1] if dg else 1.0 - w[..., 1]
+                wrg = wr * (w[..., 1] if dg else 1.0 - w[..., 1])
                 for db in (0, 1):
                     wb = w[..., 2] if db else 1.0 - w[..., 2]
-                    acc = acc + (wr * wg * wb)[..., None] * t[
-                        i[..., 0] + dr, i[..., 1] + dg, i[..., 2] + db]
+                    acc = acc + (wrg * wb)[..., None] * flat.take(
+                        base + ((dr * n + dg) * n + db), axis=0)
         out[r0:r0 + chunk_rows] = acc
     return out
 
@@ -644,6 +648,77 @@ def _adjust_12bit(v, adj, balance=None):
     return v
 
 
+_NATIVE = {"lib": False}       # False: not looked for yet; None: not available
+
+
+def _native_lib():
+    """build/libpakon_render (src/pakon_render.c) through ctypes, or None
+    when it is not built or PAKON_NATIVE=0. The repo and the app bundle both
+    keep it in build/ next to tools/; a module PyInstaller froze into its
+    archive sits beside build/ instead."""
+    if _NATIVE["lib"] is False:
+        _NATIVE["lib"] = None
+        if os.environ.get("PAKON_NATIVE", "1") != "0":
+            import ctypes
+            name = {"darwin": "libpakon_render.dylib",
+                    "win32": "libpakon_render.dll"}.get(sys.platform, "libpakon_render.so")
+            here = os.path.dirname(os.path.abspath(__file__))
+            for path in (os.path.join(here, os.pardir, "build", name),
+                         os.path.join(here, "build", name)):
+                try:
+                    lib = ctypes.CDLL(os.path.normpath(path))
+                    if lib.pakon_render_abi() != 1:
+                        continue
+                except (OSError, AttributeError):
+                    continue
+                f, u16 = ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_uint16)
+                lib.pakon_render_oem.argtypes = [
+                    u16, ctypes.c_int, ctypes.c_int, f, f, ctypes.c_float, f, f, f,
+                    ctypes.c_float, ctypes.c_int, f, ctypes.c_int, u16]
+                lib.pakon_render_oem.restype = ctypes.c_int
+                _NATIVE["lib"] = lib
+                break
+        print(f"colour render: {'native ' + lib._name if _NATIVE['lib'] else 'numpy'}",
+              file=sys.stderr)
+    return _NATIVE["lib"]
+
+
+def _render_oem_native(rgb16, negmat, lut, table, balance, grey, adj):
+    """render_oem's colour steps in src/pakon_render.c (bit-identical, ~10x
+    faster, no full-frame temporaries): (H, W, 3) 16-bit sRGB before the grey
+    conversion, or None when the library is missing (numpy does it)."""
+    lib = _native_lib()
+    if lib is None or rgb16.ndim != 3 or rgb16.shape[2] != 3:
+        return None
+    import ctypes
+
+    def ptr(a, ctype):
+        return a.ctypes.data_as(ctypes.POINTER(ctype))
+
+    f32 = lambda a: np.ascontiguousarray(a, dtype=np.float32)   # noqa: E731
+    src = np.ascontiguousarray(rgb16, dtype=np.uint16)
+    keep = [f32(negmat), f32(lut), f32(table)]
+    contrast = 1000 + adj["contrast"] / 2 if adj and adj["contrast"] else 0.0
+    gain = offset = off = None
+    if balance is not None:
+        gain, offset = f32(balance[0]), f32(balance[1])
+    if adj:                       # the same float32 offsets as _adjust_12bit
+        off = np.array([adj[c] + adj["brightness"] for c in ("red", "green", "blue")],
+                       np.float32) * 4096 / 4000
+    sharp = adj["sharpness"] * 0.01 if adj and adj["sharpness"] else 0.0
+    out = np.empty(src.shape, np.uint16)
+    none = ctypes.POINTER(ctypes.c_float)()
+    rc = lib.pakon_render_oem(
+        ptr(src, ctypes.c_uint16), src.shape[0], src.shape[1],
+        ptr(keep[0], ctypes.c_float), ptr(keep[1], ctypes.c_float), contrast,
+        none if gain is None else ptr(gain, ctypes.c_float),
+        none if offset is None else ptr(offset, ctypes.c_float),
+        none if off is None else ptr(off, ctypes.c_float),
+        sharp, int(bool(grey)), ptr(keep[2], ctypes.c_float), keep[2].shape[0],
+        ptr(out, ctypes.c_uint16))
+    return out if rc == 0 else None
+
+
 def render_oem(rgb16, negmat, lut, rpd_lut, balance=None, grey=False, adjust=None):
     """Raw 16-bit RGB frame -> OEM-path positive, 16-bit sRGB. `balance` is
     the (gain, offset) pair from oem_roll_balance (None = none).
@@ -660,11 +735,14 @@ def render_oem(rgb16, negmat, lut, rpd_lut, balance=None, grey=False, adjust=Non
     and the neutral rendered through rpd.pf, giving the OEM tone curve. Returns
     (H, W) 16-bit grey instead of (H, W, 3)."""
     adj = clean_adjust(adjust)
+    table = (adjusted_table(rpd_lut, adj["saturation"], adj["tone"]) if adj
+             else rpd_lut.table)
+    out = _render_oem_native(rgb16, negmat, lut, table, balance, grey, adj)
+    if out is not None:
+        return to_grey(out) if grey and not (adj and adj["tone"] != "none") else out
     rpd = _adjust_12bit(oem_rpd(rgb16, negmat, lut), adj, balance)
     if grey:
         rpd = np.repeat(rpd.mean(axis=-1, keepdims=True), 3, axis=-1)
-    table = (adjusted_table(rpd_lut, adj["saturation"], adj["tone"]) if adj
-             else rpd_lut.table)
     srgb = _interp3(table, rpd / 4095.0)
     out = np.clip(srgb * 65535.0 + 0.5, 0.0, 65535.0).astype(np.uint16)
     return to_grey(out) if grey and not (adj and adj["tone"] != "none") else out

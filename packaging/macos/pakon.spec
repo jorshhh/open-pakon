@@ -41,6 +41,7 @@ datas = [
 binaries = [
     (str(BIN / "pakon_probe"), "build"),
     (str(BIN / "pakon_replay"), "build"),
+    (str(BIN / "libpakon_render.dylib"), "build"),   # ctypes, tools/pakon_image.py
     (str(BIN / "libusb-1.0.0.dylib"), "."),
 ] + collect_dynamic_libs("unicorn")   # unicorn/lib/libunicorn.2.dylib, loaded by ctypes
 

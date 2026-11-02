@@ -126,13 +126,14 @@ build_arch() {  # arch
     fi
 
     # --- C tools, linked against that libusb by rpath --------------------------
-    step "pakon_probe, pakon_replay ($A)"
+    step "pakon_probe, pakon_replay, pakon_render ($A)"
     BIN="$AC/bin"
     rm -rf "$BIN" && mkdir -p "$BIN"
     PKG_CONFIG_PATH="$USB_PREFIX/lib/pkgconfig" cmake -S "$REPO" -B "$AC/cbuild" \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=$DEPLOY \
         -DCMAKE_OSX_ARCHITECTURES=$A >/dev/null
-    cmake --build "$AC/cbuild" --target pakon_probe pakon_replay -j >/dev/null
+    cmake --build "$AC/cbuild" --target pakon_probe pakon_replay pakon_render -j >/dev/null
+    cp "$AC/cbuild/libpakon_render.dylib" "$BIN/"   # ctypes, tools/pakon_image.py
     cp "$USB_PREFIX/lib/libusb-1.0.0.dylib" "$BIN/"
     chmod u+w "$BIN/libusb-1.0.0.dylib"
     install_name_tool -id @rpath/libusb-1.0.0.dylib "$BIN/libusb-1.0.0.dylib"
