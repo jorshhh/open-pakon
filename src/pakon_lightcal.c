@@ -69,6 +69,15 @@ long pakon_lc_marker_origin(const uint16_t *s, size_t nsamples, size_t line_len)
     return best * 10 >= lines * 6 ? (long)arg : -1;
 }
 
+long pakon_lc_origin(const uint16_t *s, size_t nsamples, size_t line_px,
+                     size_t black_px, int ir, double min_contrast)
+{
+    long o = pakon_lc_marker_origin(s, nsamples, PAKON_LC_BLOCKS(ir) * line_px);
+    if (o < 0 && ir)
+        o = pakon_lc_find_origin(s, nsamples, line_px, black_px, min_contrast);
+    return o;
+}
+
 size_t pakon_lc_marker_line_len(const uint16_t *s, size_t nsamples)
 {
     size_t prev = 0, best = 0, n = 0, have = 0;
