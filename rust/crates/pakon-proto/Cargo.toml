@@ -1,0 +1,9 @@
+[package]
+name = "pakon-proto"
+version = "0.1.0"
+description = "Pakon F-135 / F-135+ protocol layer: frames, commands, setup. Pure logic, no I/O."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]

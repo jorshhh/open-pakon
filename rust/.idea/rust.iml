@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-image/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-image/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-image/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-oem/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-oem/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-proto/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-proto/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-roll/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-roll/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-scan/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-scan/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/pakon-usb/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>
