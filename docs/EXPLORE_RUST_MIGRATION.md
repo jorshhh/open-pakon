@@ -58,7 +58,6 @@ single product: the browser-driven scanning + decoding service.
 | `pakon_usb.c` (libusb transport) | ~570 | `nusb` (pure-Rust) or `rusb` (libusb binding) | **Low–med** | API maps almost 1:1 to the header. `nusb` removes the libusb C dep entirely → truly static. Control transfers, bulk in/out, claim/alt-set, clear_halt all supported. |
 | `pakon_proto.c` + `pakon_cmd.c` | ~140 | plain Rust structs/enums | **Low** | 36-byte frame, `2+count` wire length, address/status enums. Natural fit. |
 | `pakon_hex.c` (Intel HEX / FX2 load) | ~190 | `ihex` crate or hand-rolled | **Low** | Firmware load is replaying a `.pakfw` control-transfer script — mostly EP0 writes. |
-| `pakon_calib.c` | ~410 | Rust | **Low–med** | Calibration table parsing; straightforward byte work. |
 | `pakon_replay.c` (scan driver) | ~1270 | Rust | **Med** | The state machine: open → param read → configure → scan + 0x86 image reads + `--autostop` EOR logic. The autostop arming/`film_seen` logic (recent bug area) needs careful porting. |
 | `pakon_image.py` (decode pipeline) | ~800 | `ndarray` + `image` + `tiff` + `lcms2` | **HIGH** | The real work. See below. |
 | `analyze_capture.py` (pcapng parsing) | ~550 | optional — leave in Python | **N/A** | A dev/forensics tool, not in the runtime path. No need to port. |

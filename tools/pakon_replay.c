@@ -1,10 +1,7 @@
 /*
- * pakon_replay — replays/extends captured handshakes against the device.
- *
- * --open replays the open handshake decoded from a real scan capture (the EP1
- * command exchanges that bring the device to Idle) and verifies each reply,
- * exercising the pakon_cmd primitive end to end. --scan (Phase 5) is still a
- * stub pending the image-stream decode.
+ * pakon_replay — drives the scanner: open handshake and model detection
+ * (--open), capture replay (--scan, advance scripts) and the code-built
+ * paths (--setup, --light-cal, --scan-code, --advance-code, --eject).
  *
  * NOTE: this requires the OPERATIONAL device (0F05:F135). The f235 bootstrap
  * does not implement the command protocol.
@@ -12,7 +9,6 @@
 #include "pakon_usb.h"
 #include "pakon_proto.h"
 #include "pakon_cmd.h"
-#include "pakon_calib.h"
 #include "pakon_log.h"
 #include "pakon_eeprom.h"
 #include "pakon_setup.h"
@@ -65,7 +61,7 @@ static void hex(const char *tag, const uint8_t *b, size_t n)
 }
 
 /* First Ctrl-C during a motor-running phase (--scan replay, --advance, the
- * --scan-sm / --scan-code image loop): finish cleanly (teardown / motor stop
+ * --scan-code image loop): finish cleanly (teardown / motor stop
  * writes) instead of dying with the drive engaged. In the image loop it, or
  * SIGTERM, also means "end of roll" (the web app's Stop button). The handler
  * resets to default so a second signal kills immediately. */
@@ -503,7 +499,7 @@ static int hexbytes(const char *s, uint8_t *out, size_t max)
     return hi < 0 ? (int)n : -1;
 }
 
-/* ---- End-of-roll detection (shared by --scan --autostop and --scan-sm) ----
+/* ---- End-of-roll detection (shared by --scan --autostop and --scan-code) ----
  * The scan ends with the open gate shining through no film: samples near the
  * 16-bit max (~48900). Film -- even clear base, leader, or inter-frame gaps
  * (orange C-41 base) -- is far darker, so a chunk that is almost all "white"
@@ -518,7 +514,7 @@ static int hexbytes(const char *s, uint8_t *out, size_t max)
                                    * ~25% IR band sits at ~32k (< threshold), so an
                                    * open-gate chunk is only ~75% "white" -- 90%
                                    * could never trip and the scan ran to the cap.
-                                   * For the replayed OEM scans (--scan, --scan-sm). */
+                                   * For the replayed OEM scans (--scan). */
 /* --scan-code: its own calibration drives the open gate's R/G/B to full
  * scale, but sets the IR peak to ~40000 -- on SM_WHITE_THRESH -- so with that
  * threshold an open-gate chunk counted 76-94% white depending on how much IR
@@ -822,47 +818,6 @@ static int do_scan(const char *script, const char *image_path, unsigned timeout,
     return rc;
 }
 
-/* ---- Phase 5b: poll-driven scan state machine ----------------------------
- *
- * Verbatim replay locks the scan to the captured image-read count, so it only
- * works for a roll the same length as the reference capture. The state machine
- * replays just the deterministic SETUP spine (OPEN -> param table -> the
- * calibration-derived register writes -> motor start, all of which we cannot
- * synthesise) and then DRIVES the image transfer itself, reading 0x86 and
- * re-arming the CCD until the film has fully passed.
- *
- * Done-signal: we cannot mine it offline (the .pakscan stores commands sent,
- * never the poll replies, and test/captures is empty), so we use the IMAGE
- * data: the scan ends with the open gate shining through no film (samples near
- * the 16-bit max, ~48900; film -- even clear base/leader -- is far darker). We
- * latch "film seen" on the first non-white chunk, then stop once we have seen a
- * sustained run of end-of-roll white. Every status poll is logged so a hardware
- * run also reveals the real protocol done-signal for a future tightening.
- *
- * Split marker between replay and takeover = the motor-start command
- * 04 03 24 00 a0 (confirmed). Everything up to the first image read after it is
- * replayed; from there we take over. */
-
-/* (white-detection constants + sm_chunk_is_white live above do_scan, shared.) */
-static const uint8_t SM_MOTOR_START[] = {0x04,0x03,0x24,0x00,0xa0};
-
-/* Replay this many image reads PAST motor-start before taking over, so the
- * post-motor setup burst (control-strobe reg0=0x0161 + the reg9 integration
- * writes, which land between reads 1-3 in the capture) is in place — taking over
- * at the very first read leaves integration unconfigured and the stream stalls. */
-#define SM_TAKEOVER_READS 64u
-
-/* Build + send a frame whose wire bytes are raw[0..n) (raw[0]=type,[1]=count,
- * [2..]=data). Reads (and discards) the reply on EP1 IN. */
-static pakon_result sm_cmd(pakon_dev *dev, const uint8_t *raw, size_t n,
-                           pakon_packet *reply, unsigned timeout)
-{
-    (void)n;   /* count is carried in raw[1]; n is the caller's sizeof sanity */
-    pakon_packet pkt;
-    pakon_packet_build(&pkt, raw[0], raw + 2, raw[1]);
-    return pakon_cmd(dev, &pkt, reply, timeout);
-}
-
 /* The poll-driven image phase.
  *
  * CONFIRMED from a full --trace-status scan: re-arming (8a) happens ONLY in the
@@ -916,7 +871,7 @@ static void sm_scan_loop(pakon_dev *dev, FILE *img, unsigned long long *img_byte
             idle = 0;
             /* Event service after every read (the OEM polls every 1 ms while
              * scanning); unacknowledged events are the suspected cause of
-             * the stream dying part-way. --scan-sm is F-135 only. */
+             * the stream dying part-way. F-135 addresses only. */
             uint8_t hf = 0;
             if (pakon_cmd_service_events_dx(dev, AD_PICL, AD_PICM, timeout, &hf,
                                             &events, dx) != PAKON_OK)
@@ -1061,262 +1016,6 @@ static void write_dx_json(const char *image_path, const pakon_dx_roll *dx)
     fclose(f);
 }
 
-static int do_scan_sm(const char *script, const char *image_path, unsigned timeout,
-                      unsigned long max_mb)
-{
-    FILE *fp = fopen(script, "r");
-    if (!fp) { fprintf(stderr, "cannot open scan script '%s'\n", script); return 1; }
-
-    pakon_ctx *ctx = NULL;
-    if (pakon_usb_init(&ctx) != PAKON_OK) { fclose(fp); return 1; }
-    pakon_dev *dev = NULL;
-    pakon_result r = pakon_usb_open(ctx, &dev);
-    if (r != PAKON_OK) {
-        fprintf(stderr, "open device failed: %s (need operational f135)\n",
-                pakon_result_str(r));
-        fclose(fp); pakon_usb_exit(ctx); return 1;
-    }
-    if (pakon_usb_claim(dev, 0, 0) != PAKON_OK) {
-        fprintf(stderr, "claim failed\n");
-        pakon_usb_close(dev); fclose(fp); pakon_usb_exit(ctx); return 1;
-    }
-
-    FILE *img = fopen(image_path, "wb");
-    if (!img) {
-        fprintf(stderr, "cannot open image '%s'\n", image_path);
-        pakon_usb_release(dev); pakon_usb_close(dev); fclose(fp);
-        pakon_usb_exit(ctx); return 1;
-    }
-
-    char line[1024];
-    uint8_t buf[65536];
-    unsigned long ncmd = 0, nimg = 0, errs = 0;
-    unsigned long long img_bytes = 0;
-    int rc = 0, passed_motor_start = 0, took_over = 0;
-    unsigned reads_after_motor = 0;
-
-    /* Phase 1: replay the deterministic setup spine, including preview/cal image
-     * reads and the post-motor setup burst, up to SM_TAKEOVER_READS reads after
-     * motor start; then hand off to the poll-driven loop. */
-    while (fgets(line, sizeof(line), fp)) {
-        char *p = line;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '#' || *p == '\n' || *p == '\0') continue;
-
-        if (*p == 'O') {
-            int n = hexbytes(p + 1, buf, sizeof(buf));
-            if (n < 0) { fprintf(stderr, "bad O line\n"); rc = 1; break; }
-            /* Note the motor-start marker before the reply overwrites buf. */
-            int is_motor_start = ((size_t)n == sizeof(SM_MOTOR_START) &&
-                                  memcmp(buf, SM_MOTOR_START, n) == 0);
-            size_t sent = 0;
-            r = pakon_usb_send(dev, PAKON_EP_CMD_OUT, buf, (size_t)n, &sent, timeout);
-            if (r == PAKON_OK) {
-                size_t got = 0;
-                r = pakon_usb_recv(dev, PAKON_EP_CMD_IN, buf, sizeof(buf), &got, timeout);
-            }
-            if (r != PAKON_OK) errs++;
-            ncmd++;
-            if (is_motor_start) {
-                passed_motor_start = 1;
-                printf("  [sm] motor start (a0) replayed at cmd %lu\n", ncmd);
-            }
-        } else if (*p == 'M') {
-            if (passed_motor_start && reads_after_motor >= SM_TAKEOVER_READS) {
-                printf("  [sm] setup + burst replayed (%lu cmds, %u reads past "
-                       "motor); taking over scan\n", ncmd, reads_after_motor);
-                took_over = 1;
-                break;
-            }
-            unsigned long want = strtoul(p + 1, NULL, 0);
-            if (want > sizeof(buf)) want = sizeof(buf);
-            size_t got = 0;
-            r = pakon_usb_recv(dev, PAKON_EP_IMAGE_IN, buf, want, &got, SCAN_IMG_TIMEOUT_MS);
-            if (got) { fwrite(buf, 1, got, img); img_bytes += got; }
-            if (r != PAKON_OK && r != PAKON_ERR_TIMEOUT) errs++;
-            nimg++;
-            if (passed_motor_start) reads_after_motor++;
-        } else if (*p == 'C') {
-            unsigned brt, breq, wval, widx, wlen; int consumed = 0;
-            if (sscanf(p + 1, "%x %x %x %x %x%n", &brt,&breq,&wval,&widx,&wlen,&consumed) != 5) {
-                fprintf(stderr, "bad C line\n"); rc = 1; break;
-            }
-            int dn = hexbytes(p + 1 + consumed, buf, sizeof(buf));
-            if (dn < 0) dn = 0;
-            size_t got = 0;
-            r = pakon_usb_control(dev, (uint8_t)brt, (uint8_t)breq, (uint16_t)wval,
-                                  (uint16_t)widx, buf, (uint16_t)wlen, &got, timeout);
-            if (r != PAKON_OK) errs++;
-        }
-    }
-    fclose(fp);
-
-    /* Phase 2: poll-driven image transfer until end-of-roll white. */
-    if (!rc) {
-        if (!passed_motor_start)
-            printf("  [sm] no motor-start (a0) in script; taking over at end of "
-                   "script\n");
-        int film_seen = 0;
-        static pakon_dx_roll dx;
-        sm_scan_loop(dev, img, &img_bytes, &nimg, &ncmd, &errs, timeout, max_mb,
-                     SM_WHITE_THRESH, SM_WHITE_FRAC_PCT, &film_seen, &dx);
-        write_dx_json(image_path, &dx);
-        if (!film_seen)
-            fprintf(stderr, "  [sm] WARNING: no film ever detected in the stream "
-                    "(stale device state / nothing loaded?)\n");
-
-        /* Phase 3: replay the captured teardown (stop + engine reset) -- the
-         * driver's full 761-command tail. This is the KNOWN-GOOD reset (returns
-         * the device to Idle 0/5). A synthesized 4-command teardown was tried and
-         * REVERTED: it assumed 02 04 20 01 80 00 = "lamp off" and left both the
-         * illumination off (next scan read dark) and the engine not fully reset.
-         * Do not re-synthesize the teardown without knowing each command. */
-        printf("  [sm] replaying captured teardown (stop + engine reset)...\n");
-        long td = sm_replay_teardown(dev, script, timeout, &ncmd, &errs);
-        if (td > 0) {
-            printf("  [sm] teardown: %ld commands replayed (engines reset to idle)\n", td);
-        } else {
-            uint8_t stop_readout[] = {0x04,0x03,0x20,0x00,0x92};
-            uint8_t stop_motor[]   = {0x04,0x03,0x24,0x00,0xa2};
-            sm_cmd(dev, stop_readout, sizeof(stop_readout), NULL, timeout);
-            sm_cmd(dev, stop_motor,   sizeof(stop_motor),   NULL, timeout);
-            ncmd += 2;
-            printf("  [sm] no teardown tail in script; sent bare stop (92, a2)\n");
-        }
-    }
-    (void)took_over;
-
-    pakon_usb_release(dev);
-    pakon_usb_close(dev);
-    pakon_usb_exit(ctx);
-    fclose(img);
-    printf("\nscan-sm done: %lu commands, %lu image reads, %llu image bytes "
-           "-> %s (%lu transfer errors)\n",
-           ncmd, nimg, img_bytes, image_path, errs);
-    return rc;
-}
-
-/* ---- Phase 6 / milestone 3: driven CALIBRATE -----------------------------
- *
- * Opens the device, replays the OPEN handshake to Idle, then runs the DRIVEN
- * calibration (measure open-gate CCD -> compute gain/offset) instead of
- * replaying frozen values. Prints the converged registers next to the OEM seed
- * values so a hardware run shows immediately whether the loop tracks the OEM.
- *
- * NEEDS-HARDWARE: this assumes the open gate (no film) is presented. The CCD
- * init beyond the OPEN handshake may need extending on hardware (see
- * pakon_calib_run / calib_acquire). Run on the Linux box and iterate. */
-/* Replay the O (command) and C (control) lines of a .pakscan-style script,
- * skipping M (image-read) lines. Used as a calibration PRELUDE: the captured
- * CCD + illumination setup spine that lights the lamp and configures the sensor
- * before the driven loops take over. Returns commands replayed, -1 on open. */
-static long calib_replay_prelude(pakon_dev *dev, const char *path, unsigned timeout)
-{
-    FILE *fp = fopen(path, "r");
-    if (!fp) { fprintf(stderr, "cannot open prelude '%s'\n", path); return -1; }
-    char line[1024];
-    uint8_t buf[65536];
-    long n = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        char *p = line;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == 'O') {
-            int nb = hexbytes(p + 1, buf, sizeof(buf));
-            if (nb < 2) continue;
-            pakon_packet cmd, reply;
-            pakon_packet_build(&cmd, buf[0], buf + 2, buf[1]);
-            pakon_cmd(dev, &cmd, &reply, timeout);
-            n++;
-        } else if (*p == 'C') {
-            unsigned brt, breq, wval, widx, wlen; int consumed = 0;
-            if (sscanf(p + 1, "%x %x %x %x %x%n",
-                       &brt,&breq,&wval,&widx,&wlen,&consumed) != 5) continue;
-            int dn = hexbytes(p + 1 + consumed, buf, sizeof(buf));
-            if (dn < 0) dn = 0;
-            size_t got = 0;
-            pakon_usb_control(dev, (uint8_t)brt, (uint8_t)breq, (uint16_t)wval,
-                              (uint16_t)widx, buf, (uint16_t)wlen, &got, timeout);
-            n++;
-        }
-        /* M (image-read) lines intentionally skipped. */
-    }
-    fclose(fp);
-    return n;
-}
-
-static int do_calibrate(unsigned timeout, size_t nlines, int verbose,
-                        const char *prelude, unsigned exposure)
-{
-    pakon_ctx *ctx = NULL;
-    if (pakon_usb_init(&ctx) != PAKON_OK) { fprintf(stderr, "init failed\n"); return 1; }
-    pakon_dev *dev = NULL;
-    pakon_result r = pakon_usb_open(ctx, &dev);
-    if (r != PAKON_OK) {
-        fprintf(stderr, "open device failed: %s (need operational f135)\n",
-                pakon_result_str(r));
-        pakon_usb_exit(ctx); return 1;
-    }
-    if (pakon_usb_claim(dev, 0, 0) != PAKON_OK) {
-        fprintf(stderr, "claim failed\n");
-        pakon_usb_close(dev); pakon_usb_exit(ctx); return 1;
-    }
-
-    if (prelude) {
-        /* Replay the captured CCD + illumination setup spine (lamp on, sensor
-         * configured) before driving the loops. */
-        long np = calib_replay_prelude(dev, prelude, timeout);
-        if (np < 0) { pakon_usb_release(dev); pakon_usb_close(dev);
-                      pakon_usb_exit(ctx); return 1; }
-        printf("prelude '%s' replayed (%ld commands); running driven calibration...\n",
-               prelude, np);
-    } else {
-        /* No prelude: just the open handshake (dark-offset works, but the gain
-         * phase needs illumination — pass --prelude resources/scan.pakscan). */
-        size_t nseq = sizeof(OPEN_SEQ) / sizeof(OPEN_SEQ[0]);
-        for (size_t i = 0; i < nseq; i++) {
-            const open_step *s = &OPEN_SEQ[i];
-            pakon_packet cmd, reply;
-            pakon_packet_build(&cmd, s->out[0], s->out + 2, s->out[1]);
-            if (pakon_cmd(dev, &cmd, &reply, timeout) != PAKON_OK)
-                fprintf(stderr, "  open step '%s' failed (continuing)\n", s->label);
-        }
-        printf("open handshake done (no prelude); running driven calibration "
-               "(present the open gate, no film)...\n");
-    }
-
-    pakon_calib_opts opts = {0};
-    opts.nlines = nlines;
-    opts.timeout_ms = timeout < 2000 ? 2000 : timeout;
-    opts.exposure = exposure;
-    opts.do_dark = 1;
-    opts.do_gain = 1;
-    opts.verbose = verbose;
-
-    pakon_calib_result res;
-    r = pakon_calib_run(dev, &opts, &res);
-
-    pakon_usb_release(dev);
-    pakon_usb_close(dev);
-    pakon_usb_exit(ctx);
-
-    if (r != PAKON_OK) {
-        fprintf(stderr, "calibration failed: %s\n", pakon_result_str(r));
-        return 1;
-    }
-
-    printf("\n=== calibration result (OEM seeds: gain~13, offset~-45) ===\n");
-    const char *ch = "RGB";
-    for (int k = 0; k < 3; k++)
-        printf("  %c: gain=%-3d offset=%-5d  dark_mean=%-6u white_peak=%u\n",
-               ch[k], res.gain[k], res.offset[k], res.dark[k], res.white[k]);
-    printf("  dark offset converged: %s | gain converged: %s\n",
-           res.offset_converged ? "yes" : "NO",
-           res.gain_converged ? "yes" : "NO");
-    printf("\nNOTE: if dark_mean/white_peak read ~0, the open-gate acquisition "
-           "spine needs extending (see calib_acquire). This is the seam to tune.\n");
-    return 0;
-}
-
 /* ---- read the cached calibration / param table (0xA4/0xA9) ----------------
  *
  * The OEM reads a parameter table over EP0 at session start: a 0xA4 trigger
@@ -1327,6 +1026,10 @@ static int do_calibrate(unsigned timeout, size_t nlines, int verbose,
  * gain/offset/exposure/lamp fields and drive the backend from the cache instead
  * of reproducing a live open-gate calibration. Offsets/lengths mirror the
  * capture (scan.pakscan). */
+/* Section checksums of serial 3054, the unit the baseline was taken from. */
+#define READ_PARAMS_CKSUM_R1  0x52ffea66u
+#define READ_PARAMS_CKSUM_R2  0x873e6ed3u
+
 static int do_read_params(unsigned timeout, const char *outpath)
 {
     struct { uint16_t off, len; } chunks[] = {
@@ -1403,12 +1106,12 @@ static int do_read_params(unsigned timeout, const char *outpath)
     if (valid[0x04]) {
         uint32_t c1 = (uint32_t)(table[0x04] | (table[0x05]<<8) | (table[0x06]<<16) | (table[0x07]<<24));
         printf("\nregion1 checksum 0x%08x %s baseline 0x%08x\n", c1,
-               c1 == PAKON_CALIB_EEPROM_CKSUM_R1 ? "==" : "!=", PAKON_CALIB_EEPROM_CKSUM_R1);
+               c1 == READ_PARAMS_CKSUM_R1 ? "==" : "!=", READ_PARAMS_CKSUM_R1);
     }
     if (valid[0x804]) {
         uint32_t c2 = (uint32_t)(table[0x804] | (table[0x805]<<8) | (table[0x806]<<16) | (table[0x807]<<24));
         printf("region2 checksum 0x%08x %s baseline 0x%08x  (matches => default_config valid for this unit)\n",
-               c2, c2 == PAKON_CALIB_EEPROM_CKSUM_R2 ? "==" : "!=", PAKON_CALIB_EEPROM_CKSUM_R2);
+               c2, c2 == READ_PARAMS_CKSUM_R2 ? "==" : "!=", READ_PARAMS_CKSUM_R2);
     }
 
     /* flag the OEM seed values so the fields are easy to spot */
@@ -1435,10 +1138,6 @@ static int do_read_params(unsigned timeout, const char *outpath)
     return errs ? 1 : 0;
 }
 
-/* ---- synthesized CONFIGURE (capture-free register programming) ------------
- * Open + (optional) init prelude + write the calibration register set from C
- * defaults (the OEM's validated converged values), instead of replaying frozen
- * captured writes. Proves we can program the calibration independently. */
 /* ---- Controller init + mode configure built in code (no replay) ----------
  *
  * Detects the model with the PIC probes, takes the unit's Base 16 Offset from
@@ -2619,7 +2318,7 @@ static int scan_calibrate(pakon_dev *dev, pakon_setup_state *st, unsigned t,
 /*
  * Code-built setup for the base, light calibration, scan start (scan pixel
  * window, scan duties for the film type, EEPROM motor speed for the base,
- * acquire, trigger), the --scan-sm image loop with the event service, then
+ * acquire, trigger), the driven image loop with the event service, then
  * the code-built teardown. Only the firmware load is still a capture. Feed
  * the film once the motor runs. The Base 8 / 4 triggers are predicted, not
  * yet tested (pakon_setup_mode).
@@ -2802,61 +2501,13 @@ out:
     return rc;
 }
 
-static int do_configure(unsigned timeout, const char *prelude)
-{
-    pakon_ctx *ctx = NULL;
-    if (pakon_usb_init(&ctx) != PAKON_OK) { fprintf(stderr, "init failed\n"); return 1; }
-    pakon_dev *dev = NULL;
-    pakon_result r = pakon_usb_open(ctx, &dev);
-    if (r != PAKON_OK) {
-        fprintf(stderr, "open device failed: %s (need operational f135)\n",
-                pakon_result_str(r));
-        pakon_usb_exit(ctx); return 1;
-    }
-    if (pakon_usb_claim(dev, 0, 0) != PAKON_OK) {
-        fprintf(stderr, "claim failed\n");
-        pakon_usb_close(dev); pakon_usb_exit(ctx); return 1;
-    }
-    if (prelude) {
-        long np = calib_replay_prelude(dev, prelude, timeout);
-        printf("prelude '%s' replayed (%ld commands)\n", prelude, np);
-    } else {
-        for (size_t i = 0; i < sizeof(OPEN_SEQ)/sizeof(OPEN_SEQ[0]); i++) {
-            const open_step *s = &OPEN_SEQ[i];
-            pakon_packet cmd, reply;
-            pakon_packet_build(&cmd, s->out[0], s->out + 2, s->out[1]);
-            pakon_cmd(dev, &cmd, &reply, timeout);
-        }
-    }
-
-    pakon_calib_config cfg = pakon_calib_default_config();
-    r = pakon_calib_configure(dev, &cfg, timeout < 2000 ? 2000 : timeout);
-
-    pakon_usb_release(dev);
-    pakon_usb_close(dev);
-    pakon_usb_exit(ctx);
-
-    if (r != PAKON_OK) {
-        fprintf(stderr, "configure failed: %s\n", pakon_result_str(r));
-        return 1;
-    }
-    printf("CONFIGURE ok: programmed gain=%d/%d/%d offset=%d/%d/%d height=0x%04x "
-           "(all register writes accepted)\n",
-           cfg.gain[0], cfg.gain[1], cfg.gain[2],
-           cfg.offset[0], cfg.offset[1], cfg.offset[2], cfg.height);
-    return 0;
-}
-
 static void usage(const char *argv0)
 {
     fprintf(stderr,
         "usage: %s FILE.pakscan [--steps N] [--limit SEC] advance film\n"
         "       %s --scan FILE [--image OUT] [--drain] [--autostop]  scan replay\n"
-        "       %s --scan-sm FILE [--image OUT] [--max-mb N]  poll-driven scan\n"
         "       %s --open                                verify open handshake\n"
-        "       %s --calibrate [--cal-lines N] [--cal-verbose]  driven calibration\n"
         "       %s --read-params [--params-out FILE]      dump cached calibration table\n"
-        "       %s --configure [--prelude FILE]           program calibration regs from C\n"
         "       %s --setup --eeprom-dir DIR [--base N] [--teardown]  controller init + configure, built in code\n"
         "       %s --calib-probe --eeprom-dir DIR [--base N] [--ir on|off]  static dark/lit line levels (F-135, open gate)\n"
         "       %s --light-cal --eeprom-dir DIR [--base N] [--ir on|off] [--flat-out FILE]  light calibration in code (F-135, open gate)\n"
@@ -2868,9 +2519,6 @@ static void usage(const char *argv0)
         "  FILE.pakscan  positional: replay advance script, then poll until idle\n"
         "  --limit SEC   wall-clock limit for the advance poll loop (default 60)\n"
         "  --open        replay the captured open handshake, verify replies\n"
-        "  --calibrate   run the driven CALIBRATE (measure open-gate CCD ->\n"
-        "                compute gain/offset); present the open gate, no film\n"
-        "  --cal-lines N  CCD lines to average per measurement (default 32)\n"
         "  --base N      resolution base for --setup/--calib-probe/--light-cal/\n"
         "                --scan-code: 16 (default, 2000 px), 8 (1500 px) or 4\n"
         "                (1000 px, dual-tap)\n"
@@ -2881,14 +2529,8 @@ static void usage(const char *argv0)
         "                DIR/flatfield.json, DIR/flatfield-baseN.json at Base\n"
         "                8/4; --scan-code writes OUT.flat.json, and\n"
         "                OUT.dx.json when the film's DX code was read)\n"
-        "  --cal-exposure N  nominal CcdExposure for the gain phase (default 256)\n"
-        "  --prelude FILE replay a .pakscan setup spine (CCD+lamp init) before\n"
-        "                calibrating -- needed for the gain phase (illumination)\n"
-        "  --cal-verbose  log each calibration iteration\n"
         "  --scan FILE   replay a .pakscan scan script verbatim (fixed length)\n"
-        "  --scan-sm FILE  replay setup spine, then drive the image transfer and\n"
-        "                  stop on end-of-roll white (any roll length)\n"
-        "  --image OUT   raw image output for --scan/--scan-sm (default pakon_scan.raw)\n"
+        "  --image OUT   raw image output for --scan/--scan-code (default pakon_scan.raw)\n"
         "  --advance     F-135+ only: run the film transport for a fixed time\n"
         "                to push the strip out (standalone, or appended to\n"
         "                --scan). On an F-135 use the FILE.pakscan advance mode\n"
@@ -2907,13 +2549,12 @@ static void usage(const char *argv0)
         "  --recalibrate  --scan-code: calibrate from scratch even if the saved\n"
         "                calibration (DIR/calibration-<film>.bin) is recent; it is\n"
         "                reused for an hour, then refreshed, like the OEM software\n"
-        "  --max-mb N    --scan-sm/--scan-code safety cap on image MB (default 4096,\n"
+        "  --max-mb N    --scan-code safety cap on image MB (default 4096,\n"
         "                0=off); a full 36-exposure roll is up to ~2 GB\n"
         "  --timeout MS  USB per-transfer timeout in ms (default 1000)\n"
         "\n"
         "Set PAKON_DEBUG=0..4 for increasing trace verbosity.\n",
-        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0,
-        argv0, argv0, argv0);
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
 int main(int argc, char **argv)
@@ -2935,20 +2576,16 @@ int main(int argc, char **argv)
     int want_open = 0, drain = 0, trace_status = 0, autostop = 0;
     int want_advance_run = 0;       /* --advance: standalone or after --scan */
     unsigned advance_seconds = 15;
-    int want_calibrate = 0, cal_verbose = 0, want_read_params = 0, want_configure = 0;
+    int want_read_params = 0;
     int want_setup = 0, want_teardown = 0, want_probe = 0, want_lightcal = 0;
     int want_scan_code = 0, recalibrate = 0;
     pakon_film film = PAKON_FILM_C41;
     unsigned film_sense_s = 0, advance_code_s = 0, eject_s = 60;
     int want_eject = 0;
     const char *eeprom_dir = NULL;
-    unsigned long cal_lines = 32;
-    unsigned long cal_exposure = 256;
-    const char *cal_prelude = NULL;
     const char *params_out = NULL;
     const char *flat_out = NULL;
     const char *scan_file = NULL;
-    const char *scan_sm_file = NULL;
     const char *advance_file = NULL;
     const char *image_path = "pakon_scan.raw";
     unsigned timeout = 1000;
@@ -2965,8 +2602,6 @@ int main(int argc, char **argv)
             return 0;
         } else if (!strcmp(argv[i], "--open")) {
             want_open = 1;
-        } else if (!strcmp(argv[i], "--calibrate")) {
-            want_calibrate = 1;
         } else if (!strcmp(argv[i], "--read-params")) {
             want_read_params = 1;
         } else if (!strcmp(argv[i], "--setup")) {
@@ -3012,22 +2647,10 @@ int main(int argc, char **argv)
             want_teardown = 1;
         } else if (!strcmp(argv[i], "--eeprom-dir") && i + 1 < argc) {
             eeprom_dir = argv[++i];
-        } else if (!strcmp(argv[i], "--configure")) {
-            want_configure = 1;
         } else if (!strcmp(argv[i], "--params-out") && i + 1 < argc) {
             params_out = argv[++i];
-        } else if (!strcmp(argv[i], "--cal-lines") && i + 1 < argc) {
-            cal_lines = strtoul(argv[++i], NULL, 0);
-        } else if (!strcmp(argv[i], "--prelude") && i + 1 < argc) {
-            cal_prelude = argv[++i];
-        } else if (!strcmp(argv[i], "--cal-exposure") && i + 1 < argc) {
-            cal_exposure = strtoul(argv[++i], NULL, 0);
-        } else if (!strcmp(argv[i], "--cal-verbose")) {
-            cal_verbose = 1;
         } else if (!strcmp(argv[i], "--scan") && i + 1 < argc) {
             scan_file = argv[++i];
-        } else if (!strcmp(argv[i], "--scan-sm") && i + 1 < argc) {
-            scan_sm_file = argv[++i];
         } else if (!strcmp(argv[i], "--max-mb") && i + 1 < argc) {
             max_mb = strtoul(argv[++i], NULL, 0);
         } else if (!strcmp(argv[i], "--image") && i + 1 < argc) {
@@ -3057,10 +2680,10 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!want_open && !want_calibrate && !want_read_params && !want_configure &&
+    if (!want_open && !want_read_params &&
         !want_setup && !want_probe && !want_lightcal && !want_scan_code &&
         !film_sense_s && !advance_code_s && !want_eject &&
-        !scan_file && !scan_sm_file && !advance_file && !want_advance_run) {
+        !scan_file && !advance_file && !want_advance_run) {
         usage(argv[0]);
         return 2;
     }
@@ -3088,26 +2711,11 @@ int main(int argc, char **argv)
         return do_calib_probe(timeout, eeprom_dir, scan_base, scan_ir);
     if (want_setup)
         return do_setup(timeout, eeprom_dir, scan_base, scan_ir, want_teardown);
-    if (want_configure)
-        return do_configure(timeout, cal_prelude);
-    if (want_calibrate)
-        return do_calibrate(timeout, (size_t)cal_lines, cal_verbose, cal_prelude,
-                            (unsigned)cal_exposure);
     if (advance_file) {
         if (want_advance_run)
             fprintf(stderr, "note: --advance is ignored with an advance "
                     "script (that mode already drives the film)\n");
         return do_advance(advance_file, timeout, limit_sec, steps_count);
-    }
-    if (scan_sm_file) {
-        int rc = do_scan_sm(scan_sm_file, image_path, timeout, max_mb);
-        if (want_advance_run) {
-            printf("\n[advance] pushing the film out of the transport...\n");
-            int advance_rc = do_timed_advance(timeout, advance_seconds);
-            if (!rc)
-                rc = advance_rc;
-        }
-        return rc;
     }
     if (scan_file) {
         int rc = do_scan(scan_file, image_path, timeout, drain, trace_status,

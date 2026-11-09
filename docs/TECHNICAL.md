@@ -84,7 +84,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 Produces: static `libpakon`, tools `pakon_probe` and `pakon_replay`, and the
-hardware-free unit tests (`test_proto`, `test_hex`, `test_calib`,
+hardware-free unit tests (`test_proto`, `test_hex`,
 `test_eeprom_c`, `test_setup`, `test_lightcal`, `test_fw`, `test_dx`). When
 CMake finds Python 3, ctest also runs the offline Python tests
 (`test_eeprom`, `test_image_colour`, `test_dx_metadata`, `test_oem_sba`); the

@@ -151,7 +151,7 @@ re-derives it every 20 h. A replay-free client measures it itself.
 
 ## Our unit's converged values (serial 3054, for sanity checks only)
 
-From `pakon_scan.pcapng`; shipped as `pakon_calib_default_config()`. Per-unit;
+From `pakon_scan.pcapng`. Per-unit;
 do not reuse on another scanner.
 
 | Register | Value |
