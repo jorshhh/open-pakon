@@ -146,7 +146,7 @@ The OEM runs a dedicated thread (`Thread_PpbInterrupt`) for the whole session:
 5. Update the status LEDs (FPGA bank `0x82` reg 9) from the result.
 
 This is the traffic our captures show at irregular read indices
-(`02052002060020`, `0103201e90`). Without it the driven `--scan-sm` died
+(`02052002060020`, `0103201e90`). Without it a driven scan (the former `--scan-sm` mode) died
 about 38% into a strip; with it (`pakon_cmd_service_events` after every image
 read) a whole strip scanned on serial 3054, 2026-10-09 [C].
 
@@ -161,7 +161,7 @@ pakon-reference `dx-barcode.md`, checked against our captures): bytes 0–1
 position counter (big-endian), byte 2 entry count, then 5-byte entries with
 the type in the low nibble of byte 0. Decoded by `pakon_dx` (`test_dx` runs
 every reply in the three scan captures); the event service logs each block as
-a `dx:` line at `PAKON_DEBUG=2`, and `--scan-code` / `--scan-sm` print a
+a `dx:` line at `PAKON_DEBUG=2`, and `--scan-code` prints a
 summary at the end of the scan.
 
 **Serial 3054 decodes the barcode.** The reference unit (F-135+, 16402) never
@@ -275,11 +275,8 @@ that stall, and stops.
 |---|---|
 | `pakon_replay --open` | synthesized handshake + probes; prints `model detected: F-135` or `F-135+` |
 | `--read-params` | synthesized EEPROM read |
-| `--configure` | synthesized FPGA writes (values from our unit) |
-| `--calibrate` | driven dark-offset loop (works); gain phase sees no light |
 | `--scan FILE` | verbatim replay of a capture; fits a roll the capture's length |
 | `--scan FILE --autostop` | verbatim replay, stops at end-of-roll white, then replays the teardown |
-| `--scan-sm FILE` | replays setup to motor start, then reads with the event service; scans a whole strip (F-135) |
 | `--setup --eeprom-dir DIR [--base N] [--teardown]` | code-built setup (and teardown), Base 16 (default), 8 or 4 |
 | `--calib-probe` / `--light-cal --eeprom-dir DIR [--base N]` | static line levels / light calibration in code (F-135, open gate); Base 8/4 tables go to `DIR/flatfield-baseN.json` |
 | `--scan-code --eeprom-dir DIR [--base N] [--image OUT] [--film c41\|bw\|slide]` | scan with nothing replayed (F-135, IR on, Base 16 default; Base 8/4 not yet run); feed the film once the motor runs; `--film` picks the scan duties |

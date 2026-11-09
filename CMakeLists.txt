@@ -25,7 +25,6 @@ add_library(pakon STATIC
   src/pakon_hex.c
   src/pakon_cmd.c
   src/pakon_usb.c
-  src/pakon_calib.c
   src/pakon_eeprom.c
   src/pakon_setup.c
   src/pakon_lightcal.c
@@ -38,7 +37,7 @@ target_include_directories(pakon PUBLIC ${CMAKE_SOURCE_DIR}/include)
 # archive propagates its link deps; PkgConfig::LIBUSB carries the search dirs
 # so downstream targets (incl. test_proto) link cleanly.
 target_link_libraries(pakon PRIVATE PkgConfig::LIBUSB)
-# pakon_calib uses libm (gain linearization); expose it on the interface so the
+# pakon_lightcal and pakon_eeprom use libm; expose it on the interface so the
 # tools and tests that link the static archive resolve the math symbols.
 target_link_libraries(pakon PUBLIC m)
 if(WIN32)
@@ -74,10 +73,6 @@ add_test(NAME test_proto COMMAND test_proto)
 add_executable(test_hex test/test_hex.c)
 target_link_libraries(test_hex PRIVATE pakon)
 add_test(NAME test_hex COMMAND test_hex)
-
-add_executable(test_calib test/test_calib.c)
-target_link_libraries(test_calib PRIVATE pakon)
-add_test(NAME test_calib COMMAND test_calib)
 
 add_executable(test_eeprom_c test/test_eeprom_c.c)
 target_link_libraries(test_eeprom_c PRIVATE pakon)

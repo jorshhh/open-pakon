@@ -79,7 +79,7 @@ cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on
 ```
 
 Builds static `libpakon`, tools `pakon_probe` and `pakon_replay`, tests
-`test_proto`, `test_hex`, `test_calib` (hardware-free). Decoder venv: `numpy
+`test_proto`, `test_hex`, `test_setup`, `test_lightcal` and others (hardware-free). Decoder venv: `numpy
 pillow tifffile`. Web: `pip install -r web/requirements.txt`, then `uvicorn
 web.app:app --host 0.0.0.0 --port 8000`.
 
