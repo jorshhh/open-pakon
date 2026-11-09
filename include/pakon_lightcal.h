@@ -59,6 +59,18 @@ long pakon_lc_find_origin(const uint16_t *s, size_t nsamples, size_t line_px,
 long pakon_lc_marker_origin(const uint16_t *s, size_t nsamples, size_t line_len);
 
 /*
+ * Line origin of a calibration read, IR on or off: the line marker when the
+ * read has one, else (IR on only) pakon_lc_find_origin. The marker is exact;
+ * pakon_lc_find_origin follows the black-to-lit edge of the IR block, so on
+ * a unit whose IR block has fewer than `black_px` black pixels it lands a
+ * sample or more early: the red black-pixel mean then takes in the last, lit
+ * IR sample of the line before and the three channels are read rotated, and
+ * the dark-offset loop never settles (serial 1101, IR on).
+ */
+long pakon_lc_origin(const uint16_t *s, size_t nsamples, size_t line_px,
+                     size_t black_px, int ir, double min_contrast);
+
+/*
  * Line length in samples from the line marker: the most common distance
  * between consecutive marked words (at least twice). Works lit or dark.
  * Returns 0 if there is none.

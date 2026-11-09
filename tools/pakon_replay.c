@@ -1365,15 +1365,17 @@ static int st_ir(const pakon_setup_state *st)
     return (st->reg0 & 0x100) != 0;
 }
 
-/* Line origin of a read: on the lit IR / RGB blocks with IR on (as
- * calibrated since 2026-10-09), on the line marker with IR off, where
- * there is no IR block and the dark steps have no light at all
- * (pakon_lightcal.h). */
+/* Line origin of a read: on the line marker; with IR on and no marker in
+ * the read, on the lit IR / RGB blocks (pakon_lc_origin). */
 static long lc_origin(const uint16_t *s, size_t n, size_t line_px,
                       size_t black_px, int ir)
 {
-    return ir ? pakon_lc_find_origin(s, n, line_px, black_px, LC_MIN_CONTRAST)
-              : pakon_lc_marker_origin(s, n, PAKON_LC_BLOCKS(0) * line_px);
+    long o = pakon_lc_origin(s, n, line_px, black_px, ir, LC_MIN_CONTRAST);
+    /* Say so when a read had to use the less exact search. */
+    if (ir && o >= 0 && pakon_lc_marker_origin(s, n, PAKON_LC_BLOCKS(1) * line_px) < 0)
+        fprintf(stderr, "light-cal: no line marker in this read; aligned on "
+                "the IR block\n");
+    return o;
 }
 
 static void probe_report(const char *label, const uint16_t *s, size_t n,

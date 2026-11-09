@@ -176,6 +176,46 @@ int main(void)
         free(line);
     }
 
+    /* IR on, dark-offset step (IR LED alone) on a unit whose IR block has
+     * 18 black pixels, not 20 (the shape behind serial 1101's failure):
+     * the contrast search lands early, so "red" is blue plus the
+     * last lit IR sample and "green" is red; the marker gives the true
+     * origin and the true black-pixel means. */
+    {
+        enum { PX = 2052, L = 4 * PX, LINES = 40, START = 1234, IRLIT = 9000 };
+        const uint16_t dark[3] = { 272, 284, 286 };   /* all inside 300 +/- 32 */
+        uint16_t *line = malloc(L * sizeof *line);
+        for (size_t i = 0; i < L; i++) {
+            size_t p = i - 3 * PX;
+            line[i] = i < 3 * PX ? dark[i % 3] : (uint16_t)(p < 18 ? 300 : IRLIT);
+        }
+        line[0] |= 1u;
+        uint16_t *s = malloc(LINES * L * sizeof *s);
+        for (size_t i = 0; i < LINES * L; i++)
+            s[i] = line[(START + i) % L];
+        long edge = pakon_lc_find_origin(s, LINES * L, PX, 20, 3000);
+        long o = pakon_lc_origin(s, LINES * L, PX, 20, 1, 3000);
+        snprintf(msg, sizeof msg, "IR on, 18 black IR px: contrast origin is %ld "
+                 "early, marker origin exact", (long)(L - START) - edge);
+        CHECK(edge < L - START && o == L - START, msg);
+        pakon_lc_stats st;
+        CHECK(pakon_lc_stats_range(s, LINES * L, PX, 1, (size_t)o, 0, 20, &st) == 0 &&
+              pakon_lc_dark_ok(st.mean[0]) && pakon_lc_dark_ok(st.mean[1]) &&
+              pakon_lc_dark_ok(st.mean[2]), "IR on: marker origin reads the dark "
+              "offsets as converged");
+        CHECK(pakon_lc_stats_range(s, LINES * L, PX, 1, (size_t)edge, 0, 20, &st) == 0 &&
+              !pakon_lc_dark_ok(st.mean[0]), "IR on: the early origin reads red "
+              "out of range (the lit IR sample)");
+        for (size_t i = 0; i < LINES * L; i++)   /* no marker: contrast search */
+            s[i] &= (uint16_t)~1u;
+        CHECK(pakon_lc_origin(s, LINES * L, PX, 20, 1, 3000) == edge,
+              "IR on, no marker: falls back to the contrast search");
+        CHECK(pakon_lc_origin(s, LINES * L, PX, 20, 0, 3000) == -1,
+              "IR off, no marker: no origin");
+        free(s);
+        free(line);
+    }
+
     /* Dark offset. */
     CHECK(pakon_lc_offset_next(-38, 300.0) == -38, "offset unchanged at target");
     CHECK(pakon_lc_offset_next(10, 3884.0) == -38, "offset step: 3584 counts = 48 codes");
