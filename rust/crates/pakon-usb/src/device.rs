@@ -90,6 +90,8 @@ pub struct DevInfo {
     pub bus: String,
     pub address: u8,
     pub class: u8,
+    /// bcdDevice.
+    pub version: u16,
 }
 
 pub fn is_warm_id(vid: u16, pid: u16) -> bool {
@@ -101,7 +103,7 @@ pub fn list() -> Result<Vec<DevInfo>, UsbError> {
     Ok(nusb::list_devices()
         .wait()
         .map_err(usb)?
-        .map(|d| DevInfo { vid: d.vendor_id(), pid: d.product_id(), bus: d.bus_id().to_string(), address: d.device_address(), class: d.class() })
+        .map(|d| DevInfo { vid: d.vendor_id(), pid: d.product_id(), bus: d.bus_id().to_string(), address: d.device_address(), class: d.class(), version: d.device_version() })
         .collect())
 }
 

@@ -9,6 +9,7 @@
 
 pub mod calib;
 pub mod cmd;
+pub mod eeprom_read;
 pub mod link;
 pub mod replay;
 pub mod scan;
@@ -54,9 +55,24 @@ impl From<pakon_usb::UsbError> for ScanError {
     }
 }
 
+/// Where [`log`] lines also go (the app shows the scanner's log on its Scan
+/// page; the CLI tools leave this unset and read stderr).
+pub type LogSink = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+static SINK: std::sync::Mutex<Option<LogSink>> = std::sync::Mutex::new(None);
+
+/// Send the log lines to `sink` as well as stderr; `None` stops it.
+pub fn set_log_sink(sink: Option<LogSink>) {
+    *SINK.lock().unwrap_or_else(|e| e.into_inner()) = sink;
+}
+
 /// Log at `PAKON_DEBUG` >= `level` (0 errors, 1 warnings/info, 2 details).
 pub(crate) fn log(level: u8, msg: &str) {
     if level == 0 || pakon_usb::debug_level() >= level {
         eprintln!("{msg}");
+        let sink = SINK.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(sink) = sink {
+            sink(msg);
+        }
     }
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pakon-proto", "crates/pakon-usb", "crates/pakon-image", "crates/pakon-oem", "crates/pakon-roll", "crates/pakon-scan", "crates/pakon-cli"]
+members = ["crates/pakon-proto", "crates/pakon-usb", "crates/pakon-image", "crates/pakon-oem", "crates/pakon-roll", "crates/pakon-scan", "crates/pakon-cli", "crates/pakon-web", "crates/pakon-app"]
 
 [workspace.package]
 edition = "2021"

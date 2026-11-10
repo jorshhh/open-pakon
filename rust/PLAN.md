@@ -147,15 +147,15 @@ Parts:
 **Gate:** pixel-equivalent (exact, or within a documented tolerance for
 float paths) to the Python output on real rolls and on `test/fixtures`.
 
-### Stage 3 — `pakon-usb` + `pakon-scan` + `pakon-cli` (~3–4 weeks + scanner sessions) — **in progress**
+### Stage 3 — `pakon-usb` + `pakon-scan` + `pakon-cli` — **verified on F-135 serial 3054; F-135+, web app and Windows/Linux pending**
 
-Done so far (no hardware needed):
+Ported:
 - `pakon-usb::fw`: the FX2 load sequence from HEX equals all 1104 transfers
   of `resources/f135.pakfw`.
 - `pakon-usb::device`: `nusb` transport (list/find, open + claim, bulk
   send/recv with IN lengths rounded to whole packets, control, firmware
   load from HEX or `.pakfw`, wait for re-enumeration); vendor request 0xA2
-  refused in the transport. Untested on hardware.
+  refused in the transport.
 - `pakon-scan::cmd` (`pakon_cmd.c`): reply rules, busy polls, retries, PIC
   probe, event service with DX blocks, lamp wait; tested against a
   simulated scanner (`tests/sim.rs`), including "an unsafe sequence sends
@@ -179,26 +179,29 @@ Done so far (no hardware needed):
   `--calib-probe`, `--film-sense`, advance scripts (`--steps`). The Python
   web app runs them unchanged with `PAKON_BUILD=rust/target/release`.
 
-Hardware session (needs the scanner, serial 3054), in order, stopping at
-the first failure: `pakon_probe` (classify), `pakon_probe
---load-firmware-hex firmware/PknLdr.hex firmware/Pakon7.hex`, `pakon_replay
---open`, `pakon_replay --setup --eeprom-dir backups/eeprom/F135-3054-cycle1
---teardown`, `--light-cal`, then `--scan-code` on a short strip; then the
-web app on the Rust binaries.
+Hardware session on F-135 serial 3054 (2026-11-09), all passed: firmware
+load, `pakon_replay --open`, `--setup`, `--light-cal`, and a full
+`--scan-code` run with autostop, DX and teardown. The scan decodes
+identically in Rust and Python.
 
-Transport on `nusb` (no libusb). Port `pakon_replay.c` orchestration:
-firmware load, handshake, 1 ms event service on a dedicated thread, scan,
-teardown (LEDs off → ResetFifos → `92` → 20 ms → `a2`) guaranteed on drop and
-on panic. Ship `pakon-cli` alongside the C tools until it matches on real
-scans, then retire the C.
+Still to do:
+- the web app on the Rust binaries (`PAKON_BUILD=rust/target/release`)
+- one F-135+ run on a Plus unit (serial 16402 was the reference)
+- Windows and Linux
+- the CLI modes not ported yet (above)
+
+Transport is `nusb` (no libusb). Teardown (LEDs off → ResetFifos → `92` →
+20 ms → `a2`) is guaranteed on drop and on panic. Ship `pakon-cli` alongside
+the C tools until it matches on real scans on every platform, then retire
+the C.
 
 **Gate:** dry-run command streams match the C tools byte for byte; real scans
-on serial 3054; one F-135+ run on a Plus unit.
+on serial 3054 (**met**); one F-135+ run on a Plus unit (open).
 
 Windows keeps `packaging/windows/pakon_driver.c` (WinUSB setup); `nusb` needs
 WinUSB just as libusb does.
 
-### Stage 4 — Rust server + webview (~2–3 weeks incl. packaging)
+### Stage 4 — Rust server + webview — **in progress: macOS app built, hardware run pending**
 
 `pakon-web` (axum + tokio): every route in `web/app.py` with the same request
 and response shapes, including the server-sent event streams for firmware,
@@ -215,6 +218,59 @@ uvicorn, pywebview and PyInstaller: one native binary per platform.
 contract test replays each endpoint against both servers and compares);
 signed builds on macOS (arm64 + Intel), Windows, Linux.
 
+Done so far:
+- `pakon-web`: every route of `web/app.py` with the same shapes, the event
+  streams included (`orders`, `eeprom`, `update`, `telemetry` port
+  `web/*.py`). Scans, eject and the firmware load call `pakon-scan` /
+  `pakon-usb` in process, one at a time behind a device lock, and show the
+  same `pakon_replay` lines the Python app picked out; the Stop button and
+  shutdown set the scan's stop flag, so the teardown always runs. The EEPROM
+  is read with the OEM read requests in `pakon-scan::eeprom_read` (no Python
+  `pakon_eeprom.py`) and archived in the same layout. `pakon_web` serves it
+  without a window (`--host`, `--port`), as uvicorn did.
+- API contract: a script runs the Python and the Rust servers side by side
+  on the same requests and on a whole roll (open, process, autoframe, export
+  with sharpening, save in every format): 51 of 51 checks equal, exported
+  TIFFs bit-identical. `tests/api.rs` keeps the routes covered in `cargo
+  test` without the Python server.
+- JPEG: `jpeg-encoder` downsampled chroma by keeping one sample of each 2x2
+  block; it now gets libjpeg's box-filtered chroma (`output::Rgb420`), and
+  the exported JPEGs match Pillow's error against the TIFF to 0.001 code,
+  sizes within 0.1 % (before: 4–8 % more error, 8 % larger).
+- `pakon-app` (tao + wry + muda): the window, one app per user (a second
+  launch brings it to the front), the Mac menu (Quit, Copy/Paste), links
+  open in the browser, Info.plist / release.env settings, logs to
+  `~/Library/Logs/Pakon`. Closing the window, Cmd-Q or a system quit ends a
+  running scan and waits for the teardown before exiting.
+- `packaging/macos/build-rust.sh`: Pakon.app from the one binary plus the
+  files it reads; only system libraries (no libusb, Unicorn linked in),
+  hardened runtime with the JIT entitlement; 36 MB app / 14 MB dmg (the
+  PyInstaller app: 101 MB / 46 MB). Tested ad hoc signed on arm64: the
+  live EEPROM read, process and export with the OEM scene balance under
+  Unicorn, quit.
+
+- Speed against the Python app, same requests, M4 Pro: process 3.3-6.2x
+  faster, export without ICE 1.9x, a whole 33-frame roll (process, export
+  with sharpening, save) 2.6x. The contact sheet decodes and shrinks its
+  frames in parallel (2.08 s -> 0.29 s for 33, pixel-identical).
+- Memory: the Rust app holds 2.3 GB before export where Python holds
+  8.7 GB (36-frame roll). Per frame with Digital ICE, 6 at once: 0.48 GB
+  full frame, 0.68 GB panorama (upper bounds), so the ICE budget is
+  0.75 GB (Python: 1.5 GB). Frames at once follow the cores while each fits
+  in half the RAM (`pakon-roll` `workers_for`), not a fixed 6 / 4 / 2: 36
+  ICE frames in 11.1 s instead of 29.7 s with 6 at once, identical TIFFs.
+- First scans from the app on serial 3054 (a 4-frame and a 36-frame roll):
+  scan, process, export with ICE. A coloured line in every frame came from
+  dust in the gate during the open-gate calibration (a 14-18 % shadow in
+  the bright line that the scan did not have), not from the port: the
+  Python decode of the same raw is identical.
+
+Still to do: eject and firmware load from the window on serial 3054
+(checked from the command line, not yet from the window); Developer ID
+signing and notarization; Windows and Linux packages
+(`packaging/windows`, `packaging/linux` still ship the Python app); then
+retire FastAPI, uvicorn, pywebview and PyInstaller.
+
 ## Status
 
 | Stage | Item | State |
@@ -229,10 +285,13 @@ signed builds on macOS (arm64 + Intel), Windows, Linux.
 | 1 | DX | done |
 | 2 | image pipeline, OEM DLLs, roll orchestration | done (bit-exact but `render_jpeg`, see part 9) |
 | 3 | USB, commands, scan orchestration, CLI | done on F-135 serial 3054 (2026-11-09): firmware load, open, setup, light cal, full `--scan-code` with autostop, DX and teardown; the scan decodes identically in Rust and Python. Pending: web app on the Rust binaries, an F-135+ run, Windows/Linux |
-| 4 | server + webview | not started |
+| 4 | server + webview | macOS app built, matching the Python server on every route and a whole roll, scanning on serial 3054; pending: signed release, Windows/Linux, Digital ICE ~10 % slower than Python per frame |
 
 ## Build
 
 ```sh
 cd rust && cargo test
+cargo run --release -p pakon-app          # the app, from a checkout
+cargo run --release -p pakon-web          # the service alone, port 8000
+packaging/macos/build-rust.sh 0.9.0       # Pakon.app + dmg in dist/macos-rust
 ```

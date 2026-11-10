@@ -54,8 +54,22 @@ pub const SHARPEN_LEVELS: [(&str, i32); 4] = [("off", 0), ("low", 67), ("medium"
 
 /// Target short-axis (frame height) of the preview.
 const PREVIEW_H: f64 = 500.0;
-/// Peak memory per frame being exported (with / without dust removal).
-const FRAME_RAM: [f64; 2] = [0.5 * (1u64 << 30) as f64, 1.5 * (1u64 << 30) as f64];
+/// Memory budget per frame being exported, without / with dust removal.
+/// Measured on a 36-frame Base 16 roll with Digital ICE and sharpening, 6
+/// frames at once: 0.48 GB a full frame, 0.68 GB a panorama crop (the
+/// largest), 0.35 GB without ICE; upper bounds, as they include the cached
+/// ribbon being paged in. (The Python app budgets 0.5 / 1.5 GB.)
+const FRAME_RAM: [f64; 2] = [0.5 * (1u64 << 30) as f64, 0.75 * (1u64 << 30) as f64];
+
+/// Frames exported at once with `ram` bytes of physical memory and `cpus`
+/// cores: as many as there are cores, while each frame's budget fits in
+/// half the memory; at least 2. A frame runs on one core (Digital ICE is
+/// one emulated thread), so the cores are the ceiling: on a 14-core M4 Pro
+/// 36 ICE frames take 16.1 s 6 at once, 10.6 s 10, 8.5 s 12, 8.6 s 14.
+fn workers_for(ram: u64, ice: bool, cpus: usize) -> usize {
+    let fit = (ram as f64 / 2.0 / FRAME_RAM[ice as usize]).floor() as usize;
+    fit.min(cpus).max(2)
+}
 
 /// Where things are and which optional stages run.
 #[derive(Debug, Clone)]
@@ -216,15 +230,15 @@ impl Env {
         slide::SlidePath::load(posmat, &self.profiles())
     }
 
-    /// Frames exported at once: 6, 4 or 2, the most that fit in half the
-    /// physical memory (`export_workers`).
+    /// Frames exported at once: one per core, as many as fit in half the
+    /// physical memory ([`workers_for`]); PAKON_EXPORT_THREADS overrides it.
     pub fn export_workers(&self, ice: bool) -> usize {
         if let Some(n) = self.export_threads {
             return n;
         }
         match total_ram() {
             None => 2,
-            Some(ram) => [6usize, 4].into_iter().find(|&k| k as f64 * FRAME_RAM[ice as usize] <= ram as f64 / 2.0).unwrap_or(2),
+            Some(ram) => workers_for(ram, ice, std::thread::available_parallelism().map_or(2, |n| n.get())),
         }
     }
 
@@ -774,6 +788,15 @@ pub fn contact_sheet(env: &Env, frames: &[FrameFiles]) -> Result<Option<PathBuf>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frames_at_once_by_memory() {
+        let gb = |n: u64| n << 30;
+        // (RAM, cores, without ICE, with ICE)
+        for (ram, cpus, plain, ice) in [(4, 8, 4, 2), (8, 8, 8, 5), (16, 10, 10, 10), (48, 14, 14, 14), (8, 4, 4, 4), (2, 8, 2, 2)] {
+            assert_eq!((workers_for(gb(ram), false, cpus), workers_for(gb(ram), true, cpus)), (plain, ice), "{ram} GB, {cpus} cores");
+        }
+    }
 
     #[test]
     fn crop_rows_like_python() {

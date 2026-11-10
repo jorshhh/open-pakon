@@ -6,7 +6,9 @@
          ctypes (PyUSB, pyobjc) needs writable+executable memory, unicorn (the
          OEM scene balance emulator, tools/oem_sba.py) JIT-compiles x86 code,
          and the frozen Python loads the bundle's own libraries, which ad hoc
-         signing gives no team ID. -->
+         signing gives no team ID. The Rust app (build-rust.sh) needs only
+         the JIT entries, for the Unicorn it links in. -->
+
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>

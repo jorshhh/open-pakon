@@ -5,7 +5,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use jpeg_encoder::{ColorType, Encoder, SamplingFactor};
+use jpeg_encoder::{ColorType, Encoder, ImageBuffer, JpegColorType, SamplingFactor};
 use ndarray::{s, Array3, ArrayView2, ArrayView3, Axis};
 
 use crate::film::{self, Film};
@@ -106,14 +106,66 @@ pub fn write_tiff16(path: &Path, pic: &Picture16, film: Option<&Film>) -> Result
     f.write_all(&tiff16_bytes(pic, film)).map_err(io_err(path))
 }
 
+/// libjpeg's RGB -> YCbCr (`jccolor.c`, 16-bit fixed point): Y rounds half
+/// up, Cb / Cr round with `ONE_HALF - 1`.
+fn ycbcr(r: u8, g: u8, b: u8) -> [i32; 3] {
+    let (r, g, b) = (r as i32, g as i32, b as i32);
+    [
+        (19595 * r + 38470 * g + 7471 * b + 0x8000) >> 16,
+        (-11059 * r - 21709 * g + 32768 * b + (128 << 16) + 0x7FFF) >> 16,
+        (32768 * r - 27439 * g - 5329 * b + (128 << 16) + 0x7FFF) >> 16,
+    ]
+}
+
+/// An RGB picture for the encoder, with the chroma averaged over each 2x2
+/// block as libjpeg does (`h2v2_downsample`: a box filter, bias 1, 2, 1, 2
+/// along the row, edges replicated). jpeg-encoder downsamples by keeping
+/// the top-left sample of each block, which aliases film grain into colour
+/// noise; with the block's average at every pixel, the sample it keeps is
+/// libjpeg's.
+struct Rgb420<'a>(ArrayView3<'a, u8>);
+
+impl ImageBuffer for Rgb420<'_> {
+    fn get_jpeg_color_type(&self) -> JpegColorType {
+        JpegColorType::Ycbcr
+    }
+    fn width(&self) -> u16 {
+        self.0.dim().1 as u16
+    }
+    fn height(&self) -> u16 {
+        self.0.dim().0 as u16
+    }
+    fn fill_buffers(&self, y: u16, buffers: &mut [Vec<u8>; 4]) {
+        let (h, w, _) = self.0.dim();
+        let img = &self.0;
+        let y = y as usize;
+        let (y0, y1) = (y & !1, ((y & !1) + 1).min(h - 1));
+        let px = |yy: usize, xx: usize| ycbcr(img[(yy, xx, 0)], img[(yy, xx, 1)], img[(yy, xx, 2)]);
+        let mut chroma = [0u8; 2];
+        for x in 0..w {
+            if x % 2 == 0 {
+                let x1 = (x + 1).min(w - 1);
+                let bias = if (x / 2) % 2 == 0 { 1 } else { 2 };
+                let q = [px(y0, x), px(y0, x1), px(y1, x), px(y1, x1)];
+                for c in 0..2 {
+                    chroma[c] = ((q[0][c + 1] + q[1][c + 1] + q[2][c + 1] + q[3][c + 1] + bias) >> 2) as u8;
+                }
+            }
+            buffers[0].push(px(y, x)[0] as u8);
+            buffers[1].push(chroma[0]);
+            buffers[2].push(chroma[1]);
+        }
+    }
+}
+
 /// An 8-bit (H, W, 3) or (H, W, 1) picture as JPEG at `quality` (4:2:0
-/// like Pillow), with the film's EXIF and XMP.
+/// like Pillow, the chroma averaged as libjpeg does), with the film's EXIF
+/// and XMP.
 pub fn jpeg_bytes(img: ArrayView3<u8>, quality: u8, film: Option<&Film>) -> Result<Vec<u8>, String> {
     let (h, w, c) = img.dim();
     if w > 65535 || h > 65535 {
         return Err(format!("{w}x{h} is too large for JPEG"));
     }
-    let data: Vec<u8> = img.iter().copied().collect();
     let mut out = Vec::new();
     let mut enc = Encoder::new(&mut out, quality);
     enc.set_sampling_factor(SamplingFactor::F_2_2);
@@ -123,8 +175,12 @@ pub fn jpeg_bytes(img: ArrayView3<u8>, quality: u8, film: Option<&Film>) -> Resu
         x.extend_from_slice(&film::xmp(f));
         enc.add_app_segment(1, &x).map_err(|e| format!("{e:?}"))?;
     }
-    let ct = if c == 1 { ColorType::Luma } else { ColorType::Rgb };
-    enc.encode(&data, w as u16, h as u16, ct).map_err(|e| format!("{e:?}"))?;
+    if c == 1 {
+        let data: Vec<u8> = img.iter().copied().collect();
+        enc.encode(&data, w as u16, h as u16, ColorType::Luma).map_err(|e| format!("{e:?}"))?;
+    } else {
+        enc.encode_image(Rgb420(img)).map_err(|e| format!("{e:?}"))?;
+    }
     Ok(out)
 }
 
@@ -244,13 +300,21 @@ pub fn contact_sheet(frames: &[(usize, &Path)]) -> Result<Option<image::RgbImage
     let (sw, sh) = (cols * cell_w + (cols + 1) * pad, rows * (cell_h + label_h) + (rows + 1) * pad);
     let mut sheet = image::RgbImage::from_pixel(sw, sh, image::Rgb(bg));
     let font = FONTS.iter().find_map(|p| ab_glyph::FontVec::try_from_vec(std::fs::read(p).ok()?).ok());
-    for (k, (index, path)) in items.iter().enumerate() {
+    // decoding and shrinking the full-size frames is the work: all at once
+    use rayon::prelude::*;
+    let thumbs: Vec<image::RgbImage> = items
+        .par_iter()
+        .enumerate()
+        .map(|(k, (_, path))| {
+            let im = if k == 0 { im0.clone() } else { open(path)? };
+            Ok(image::imageops::resize(&im, cell_w, cell_h, image::imageops::FilterType::Lanczos3))
+        })
+        .collect::<Result<_, String>>()?;
+    for (k, ((index, _), thumb)) in items.iter().zip(&thumbs).enumerate() {
         let (r, c) = (k as u32 / cols, k as u32 % cols);
         let x = pad + c * (cell_w + pad);
         let y = pad + r * (cell_h + label_h + pad);
-        let im = if k == 0 { im0.clone() } else { open(path)? };
-        let thumb = image::imageops::resize(&im, cell_w, cell_h, image::imageops::FilterType::Lanczos3);
-        image::imageops::replace(&mut sheet, &thumb, x as i64, y as i64);
+        image::imageops::replace(&mut sheet, thumb, x as i64, y as i64);
         draw_text(&mut sheet, x as i32 + 2, (y + cell_h + 4) as i32, &format!("Frame {index:02}"), fg, font.as_ref());
     }
     Ok(Some(sheet))
@@ -269,6 +333,31 @@ pub fn write_contact_sheet(path: &Path, frames: &[(usize, &Path)]) -> Result<boo
 mod tests {
     use super::*;
     use ndarray::Array2;
+
+    #[test]
+    fn libjpeg_colour_conversion() {
+        assert_eq!(ycbcr(0, 0, 0), [0, 128, 128]);
+        assert_eq!(ycbcr(255, 255, 255), [255, 128, 128]);
+        assert_eq!(ycbcr(255, 0, 0), [76, 85, 255]);
+        assert_eq!(ycbcr(0, 0, 255), [29, 255, 107]);
+    }
+
+    #[test]
+    fn jpeg_chroma_is_the_block_average() {
+        // each 2x2 block: red top-left, blue elsewhere. Kept top-left
+        // chroma would decode reddish; the average is mostly blue.
+        let img = Array3::from_shape_fn((64, 64, 3), |(y, x, c)| {
+            let red = y % 2 == 0 && x % 2 == 0;
+            match (red, c) {
+                (true, 0) | (false, 2) => 255u8,
+                _ => 0,
+            }
+        });
+        let bytes = jpeg_bytes(img.view(), 95, None).unwrap();
+        let dec = image::load_from_memory(&bytes).unwrap().to_rgb8();
+        let mean = |c: usize| dec.pixels().map(|p| p[c] as f64).sum::<f64>() / (64.0 * 64.0);
+        assert!(mean(2) > 150.0 && mean(0) < 120.0, "R {} B {}", mean(0), mean(2));
+    }
 
     #[test]
     fn tiff_layout() {
