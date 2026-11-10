@@ -1,0 +1,40 @@
+# The Rust workspace's tests on every pull request. Ubuntu 22.04, as the
+# Linux build (packaging/linux/Dockerfile), with the same toolchain.
+name: test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      # cmake + libclang build Unicorn and its bindings (mostly already on
+      # the runner). No GTK / WebKitGTK: only pakon-app, the window, needs
+      # them, and it has no tests.
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config libclang-dev
+
+      - name: Rust 1.99.0
+        run: rustup toolchain install 1.99.0 --profile minimal && rustup default 1.99.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Tests
+        run: cargo test --workspace --exclude pakon-app --locked
