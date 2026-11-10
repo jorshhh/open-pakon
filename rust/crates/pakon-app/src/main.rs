@@ -15,21 +15,24 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use pakon_web::paths::{self, home};
-use pakon_web::App;
+use pakon_web::{App, Pick};
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Window, WindowBuilder};
 use wry::{NewWindowResponse, WebViewBuilder};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 enum UserEvent {
     /// A second launch: bring the window to the front.
     Focus,
+    /// The page wants the system's folder / .raw dialog (POST /api/pick):
+    /// shown here, on the main thread, as macOS and GTK require.
+    Pick(Pick, Option<PathBuf>, mpsc::Sender<Option<PathBuf>>),
     /// The service has torn the scanner down and stopped: quit.
     Stopped,
     /// Quit from the menu (Cmd-Q): as closing the window.
@@ -202,6 +205,18 @@ fn open_in_browser(url: &str) {
     let _ = std::process::Command::new(cmd).arg(url).spawn();
 }
 
+/// The system's dialog, attached to the window: the chosen path, or None.
+fn pick(w: &Window, kind: Pick, start: Option<PathBuf>) -> Option<PathBuf> {
+    let mut d = rfd::FileDialog::new().set_parent(w);
+    if let Some(dir) = start {
+        d = d.set_directory(dir);
+    }
+    match kind {
+        Pick::Folder => d.set_title("Choose the work folder").pick_folder(),
+        Pick::Raw => d.set_title("Open a raw").add_filter("Pakon raw", &["raw"]).pick_file(),
+    }
+}
+
 /// Bring a window to the front.
 fn raise(w: &Window) {
     w.set_minimized(false);
@@ -231,6 +246,13 @@ fn start_service(root: PathBuf, proxy: EventLoopProxy<UserEvent>) -> Result<(u16
     let focus = proxy.clone();
     app.set_focus(move || {
         let _ = focus.send_event(UserEvent::Focus);
+    });
+    let picker = std::sync::Mutex::new(proxy.clone());
+    app.set_picker(move |kind, start| {
+        let (tx, rx) = mpsc::channel();
+        let sent = picker.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Pick(kind, start, tx));
+        // the window is gone (quitting): as cancelled
+        sent.ok().and_then(|()| rx.recv().ok()).flatten()
     });
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let served = app.clone();
@@ -343,6 +365,9 @@ fn main() {
         };
         match event {
             Event::UserEvent(UserEvent::Focus) => raise(&window),
+            Event::UserEvent(UserEvent::Pick(kind, start, reply)) => {
+                let _ = reply.send(pick(&window, kind, start));
+            }
             Event::UserEvent(UserEvent::Stopped) => *flow = ControlFlow::Exit,
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } | Event::UserEvent(UserEvent::Quit) => match stop.take() {
                 // end a scan as at the end of the roll, wait for the

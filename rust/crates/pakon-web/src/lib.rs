@@ -21,6 +21,7 @@
 //! POST /api/save                    SSE: save the frames to the work folder (jpeg|tiff|raw|contact)
 //! POST /api/reveal                  show a saved export folder (Finder, Explorer, xdg-open)
 //! POST /api/app/focus               bring the app's window to the front (second launch)
+//! POST /api/pick                    the system's folder / .raw dialog (window app only)
 //! POST /api/update/open             open the newer release's page in the browser
 //! POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
 //! POST /api/telemetry/page|error    a page opened / a page error
@@ -57,6 +58,19 @@ pub(crate) fn device_lock() -> MutexGuard<'static, ()> {
     DEVICE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// What the native dialog picks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    /// The work folder.
+    Folder,
+    /// A `.raw` to open.
+    Raw,
+}
+
+/// Shows the dialog, starting in the folder given; the chosen path, or
+/// None when cancelled. Blocks until the dialog closes.
+pub type Picker = dyn Fn(Pick, Option<PathBuf>) -> Option<PathBuf> + Send + Sync;
+
 /// The roll being worked on.
 #[derive(Default)]
 pub struct Roll {
@@ -89,6 +103,8 @@ pub struct App {
     /// Set by the window app: a second launch brings the running window to
     /// the front instead of starting another service.
     focus: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// Set by the window app: the system's own folder / file dialog.
+    picker: Mutex<Option<Arc<Picker>>>,
     update_seen: Mutex<HashSet<String>>,
 }
 
@@ -109,6 +125,7 @@ impl App {
             device_busy: AtomicBool::new(false),
             jobs: Mutex::new(()),
             focus: Mutex::new(None),
+            picker: Mutex::new(None),
             update_seen: Mutex::new(HashSet::new()),
         })
     }
@@ -130,6 +147,15 @@ impl App {
     /// What a second launch of the window app calls (POST /api/app/focus).
     pub fn set_focus(&self, focus: impl Fn() + Send + Sync + 'static) {
         *self.focus.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(focus));
+    }
+
+    /// The window app's native dialog for POST /api/pick.
+    pub fn set_picker(&self, picker: impl Fn(Pick, Option<PathBuf>) -> Option<PathBuf> + Send + Sync + 'static) {
+        *self.picker.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(picker));
+    }
+
+    pub(crate) fn picker(&self) -> Option<Arc<Picker>> {
+        self.picker.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Once, before serving: clear the temp files of an earlier run (the
@@ -194,6 +220,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/save", post(jobs::api_save))
         .route("/api/reveal", post(files::api_reveal))
         .route("/api/app/focus", post(files::api_app_focus))
+        .route("/api/pick", post(files::api_pick))
         .route("/api/update/open", post(files::api_update_open))
         .route("/api/telemetry/consent", post(files::api_telemetry_consent))
         .route("/api/telemetry/page", post(files::api_telemetry_page))

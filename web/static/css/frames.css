@@ -1,0 +1,65 @@
+/* ── Frames space: the film strip and its crop boxes ── */
+
+/* Export options above the strip (right), the keys and the box buttons
+   under it */
+.frames-tools {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+.frames-tools-top { justify-content: flex-end; margin: -8px 0 0; }
+.frames-tools-below { margin-top: 10px; min-height: 42px; }
+.frames-tools-below .progress-wrap { margin-top: 0; flex: 1; min-width: 0; }
+.frames-tools-below .progress-label { white-space: nowrap; overflow: hidden;
+                                      text-overflow: ellipsis; }
+#exp-prog-wrap.show ~ #confirm-hint { display: none; }
+
+.ice-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem;
+           cursor: pointer; white-space: nowrap; }
+.ice-opt.off { opacity: 0.45; cursor: not-allowed; }
+
+.strip-wrap {
+  overflow-x: auto; overflow-y: hidden;
+  background: var(--border); border: 2px solid var(--border);
+  margin-top: 14px;
+  padding: 10px 0;
+  position: relative;
+}
+/* A solid, always-visible scrollbar: macOS's overlay one is a faint grey
+   line on the dark strip. WebKit/Chromium only (the app is WKWebView). */
+.strip-wrap::-webkit-scrollbar { height: 16px; }
+.strip-wrap::-webkit-scrollbar-track {
+  background: #3a3836;
+  border-top: 2px solid var(--border);
+}
+.strip-wrap::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border: 2px solid var(--border);
+}
+.strip-wrap::-webkit-scrollbar-thumb:hover { background: var(--accent-hover); }
+.strip-wrap::before, .strip-wrap::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 8px;
+  background-image: radial-gradient(circle at 6px 4px, transparent 3px, #f4f1ea 3.5px);
+  background-size: 12px 8px; background-repeat: repeat-x;
+}
+.strip-wrap::before { top: 2px; }
+.strip-wrap::after { bottom: 2px; }
+
+.strip-inner { position: relative; line-height: 0; margin: 8px 0; }
+#strip-img { display: block; height: auto; }   /* sized by fitStrip() */
+.cropbox {
+  position: absolute; top: 0; bottom: 0;
+  border: 2px solid rgba(255,181,0,0.8);
+  box-sizing: border-box; cursor: pointer;
+}
+.cropbox .lbl {
+  position: absolute; top: 2px; left: 4px;
+  font-size: 11px; font-family: 'IBM Plex Mono', monospace; font-weight: 600;
+  color: #000; background: var(--accent);
+  padding: 0 4px; border: 1px solid #000; line-height: 1.5;
+}
+.cropbox.active {
+  border-color: var(--red);
+  border-width: 3px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.65);
+}
+.cropbox.active .lbl { background: var(--red); color: #fff; }

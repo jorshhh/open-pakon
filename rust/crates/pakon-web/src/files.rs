@@ -53,6 +53,7 @@ pub async fn api_status(State(app): State<Arc<App>>) -> Response {
         "update": update,                       // a newer release, or null
         "telemetry": app.telemetry.consent(),
         "version": update::current(),           // the app's, null from a checkout
+        "native_picker": app.picker().is_some(), // /api/pick shows the system's dialog
     }))
     .into_response()
 }
@@ -216,6 +217,22 @@ pub async fn api_app_focus(State(app): State<Arc<App>>) -> Response {
         }
         None => error(StatusCode::NOT_FOUND, "no app window"),
     }
+}
+
+/// The system's own dialog for the work folder ("kind": "folder") or a
+/// .raw to open ("kind": "raw"), starting in "start": {"path"}, null when
+/// cancelled. Only the window app has one; a browser uses /api/browse.
+pub async fn api_pick(State(app): State<Arc<App>>, body: Bytes) -> Response {
+    let Some(picker) = app.picker() else { return error(StatusCode::NOT_FOUND, "no app window") };
+    let f = fields(&body);
+    let kind = match f.get("kind").and_then(Value::as_str) {
+        Some("folder") => crate::Pick::Folder,
+        Some("raw") => crate::Pick::Raw,
+        _ => return missing("kind"),
+    };
+    let start = f.get("start").and_then(Value::as_str).map(expand_user).filter(|p| p.is_dir());
+    let path = tokio::task::spawn_blocking(move || picker(kind, start)).await.ok().flatten();
+    Json(json!({"path": path.map(|p| p.to_string_lossy().into_owned())})).into_response()
 }
 
 /// Open the newer release's page in the default browser (the app window

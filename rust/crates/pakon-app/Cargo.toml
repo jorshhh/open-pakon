@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 pakon-web = { path = "../pakon-web" }
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
 tao = "0.37.2"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync"] }
 ureq = "2"

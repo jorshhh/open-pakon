@@ -129,6 +129,9 @@ async fn routes_without_a_scanner() {
     assert_eq!((s, v), (StatusCode::BAD_REQUEST, json!({"error": "not available"})));
     let (s, v) = call(&r, "POST", "/api/app/focus", None).await;
     assert_eq!((s, v), (StatusCode::NOT_FOUND, json!({"error": "no app window"})));
+    // no native dialog either: the page uses /api/browse
+    let (s, v) = call(&r, "POST", "/api/pick", Some(json!({"kind": "raw"}))).await;
+    assert_eq!((s, v), (StatusCode::NOT_FOUND, json!({"error": "no app window"})));
 
     // the telemetry choice is kept even where nothing is sent
     let (_, v) = call(&r, "POST", "/api/telemetry/consent", Some(json!({"usage": true, "crashes": false}))).await;
@@ -138,6 +141,10 @@ async fn routes_without_a_scanner() {
 
     // the page
     let (s, v) = call(&r, "GET", "/", None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(v.as_str().unwrap().contains("js/main.js"));
+    // and its modules, beside it
+    let (s, v) = call(&r, "GET", "/js/status.js", None).await;
     assert_eq!(s, StatusCode::OK);
     assert!(v.as_str().unwrap().contains("/api/status"));
 
