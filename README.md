@@ -20,7 +20,7 @@
   <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon-Setup.exe"><b>⬇ Windows</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/pakon_amd64.deb"><b>⬇ Linux (.deb)</b></a>
-  <br>macOS 13 or later · Windows 10 or 11 (64-bit) · Ubuntu 24.04, Linux Mint 22
+  <br>macOS 13 or later · Windows 10 or 11 (64-bit) · Ubuntu 22.04 or later, Linux Mint 21 or later
 </p>
 
 ![Pakon's Frames page: a colour roll laid out as a strip, with a box around each picture](docs/images/frames.jpg)
@@ -35,6 +35,9 @@ the original software only runs on old versions of Windows.
 a strip of film, and get finished pictures: JPEGs ready to share, 16-bit TIFFs
 for editing, or the raw negatives. It uses Kodak's own colour processing, so
 your scans look the way a Pakon scan should.
+
+It's built in [Rust](https://www.rust-lang.org): one fast native app with
+nothing else to install, the same on Mac, Windows and Linux.
 
 It's an independent project, not made or supported by Kodak.
 
@@ -81,8 +84,9 @@ It's an independent project, not made or supported by Kodak.
      administrator permission, say yes: that's the installer setting up the
      scanner's USB driver (once; it replaces Kodak's driver if you had it).
    - **Linux:** install `pakon_amd64.deb` with
-     `sudo apt install ./pakon_amd64.deb`. It's built for Ubuntu 24.04 and
-     Linux Mint 22, and lets you use the scanner without `sudo`.
+     `sudo apt install ./pakon_amd64.deb`. It's built for Ubuntu 22.04 or
+     later and Linux Mint 21 or later, and lets you use the scanner without
+     `sudo`.
 2. **Connect the scanner.** Plug it into your computer with USB and switch it
    on.
 3. **Open Pakon** and go to **Scan**. The first time after the scanner is
@@ -141,9 +145,12 @@ More resolutions and everything the F-135+ still lacks. Follow along in the
 
 ## For developers
 
-Building from source, the command-line tools, the web service, the driver's
-design and the scanner's protocol are all in the
-**[technical guide](docs/TECHNICAL.md)**, with deeper notes in [`docs/`](docs/).
+Pakon is written in Rust (`rust/`): one binary holds the scanner driver, the
+image pipeline, the web service and the window. Building from source, the
+command-line tools, the web service, the driver's design and the scanner's
+protocol are all in the **[technical guide](docs/TECHNICAL.md)**, with deeper
+notes in [`docs/`](docs/) and what's next in the
+[roadmap](docs/ROADMAP.md).
 
 ## Privacy
 
