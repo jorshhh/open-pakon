@@ -1,5 +1,5 @@
 # pakon scan operation script (from FX35-datalogger ioctl_log.bin — F-135+)
-# source: /Users/alibosworth/projects/Pakon Software/Pakon datalogger capture/Base 16 - no IR/ioctl_log.bin
+# source: F-135+ datalogger capture (serial 16402), Base 16 - no IR/ioctl_log.bin
 # O <hex> = EP1 cmd out (+read reply);  M <n> = read n image bytes;  C bmReqType bReq wValue wIndex wLen [data]
 # NOTE: replies were not captured (TX-only driver log); replay must not byte-verify them.
 O 0403100085

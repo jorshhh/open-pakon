@@ -133,7 +133,7 @@ pub fn transport(link: &mut dyn Link, eeprom: Eeprom, eject: bool, limit: Durati
     Ok(end)
 }
 
-/// The F-135+ timed advance, as captured (docs/F135_PLUS_CAPTURES.md):
+/// The F-135+ timed advance, as captured (docs/SCANNER_FAMILY.md):
 /// motor speed 0x647E, engage, acquire on, a status keep-alive every
 /// second, then acquire off before the drive is released (0xA2 alone
 /// leaves the motor running) and the status LEDs as captured. Refused on
@@ -146,8 +146,8 @@ pub fn timed_advance_plus(link: &mut dyn Link, seconds: u32, timeout: Duration, 
         return Err(ScanError::NoDevice);
     };
     if m != Address::PicMPlus as u8 {
-        out("advance: F-135 detected. The timed --advance replays F-135+ captured values\n  (motor speed 0x647E, above the F-135's 9500 limit) and is not used on this model.\n  Use the validated frame advance instead:\n    pakon_replay resources/advance.pakscan --steps N");
-        return Err(ScanError::Param("F-135: use the frame advance".into()));
+        out("advance: F-135 detected. The timed --advance replays F-135+ captured values\n  (motor speed 0x647E, above the F-135's 9500 limit) and is not used on this model.\n  Use the code-built advance instead:\n    pakon_replay --advance-code SECONDS --eeprom-dir DIR");
+        return Err(ScanError::Param("F-135: use --advance-code".into()));
     }
     out(&format!("advance: motor PIC at 0x{m:02x} (F-135+), running transport for {seconds}s"));
     let mut errs = 0;

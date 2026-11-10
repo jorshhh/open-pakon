@@ -1,20 +1,19 @@
 # Pakon.app (macOS)
 
-A double-clickable app for people who don't use the command line. It runs the
-web service from `web/` and shows it in its own window with
-[pywebview](https://pywebview.flowrl.com) (WKWebView); closing the window quits.
-PyInstaller freezes it with its own Python, the C tools, libusb and the
-firmware, so the Mac needs nothing installed. macOS 13 or later: one app for
-Apple silicon and a universal one that also runs on Intel Macs.
+A double-clickable app for people who don't use the command line. One native
+binary (`rust/crates/pakon-app`) runs the web service, the scanner driver and
+the image pipeline, and shows the page from `web/static` in its own window
+(WKWebView); closing the window quits. It links only system libraries (no
+Python, no libusb), so the Mac needs nothing installed. macOS 13 or later:
+one app for Apple silicon and a universal one that also runs on Intel Macs.
 
 | File                 | What it is |
 |----------------------|------------|
-| `pakon_app.py`       | Entry point: web service on a free localhost port + the window |
-| `pakon.spec`         | PyInstaller spec: what goes in the bundle |
-| `build.sh`           | Builds libusb and the C tools for macOS 13, freezes, signs, makes the `.dmg`, notarizes |
-| `requirements.txt`   | Build requirements (the web service's, plus pywebview and PyInstaller) |
-| `entitlements.plist` | Hardened-runtime exceptions for Python, unicorn and the bundled libraries |
+| `build.sh`           | Builds the binary for macOS 13, assembles the bundle, signs, makes the `.dmg`, notarizes |
+| `entitlements.plist` | Hardened-runtime exceptions: JIT for Unicorn (the OEM DLLs' emulator) |
 | `make_icon.py`       | Draws the app icon |
+| `pakon_app.py`       | The Python window app, still run by the Linux and Windows packages |
+| `requirements.txt`   | Its pinned pywebview, read by the Linux and Windows builds |
 
 ## Build
 
@@ -24,27 +23,22 @@ packaging/macos/build.sh 0.2.0        # version number
 
 Output goes to `dist/macos/`: `Pakon.app` + `Pakon.dmg` (Apple silicon) and
 `Pakon-Universal.app` + `Pakon-Universal.dmg` (Apple silicon and Intel; the
-app inside the dmg is still `Pakon.app`). Downloads and intermediate files are
-cached in `packaging/macos/.cache/<arch>/` (all git-ignored).
-
-The app is frozen once per architecture: the Intel half with
-python-build-standalone's x86_64 Python (run under Rosetta) and x86_64 wheels,
-libusb and the C tools cross-compiled. The universal app fuses the two
-bundles: every Mach-O pair goes through `lipo`, every other file must match
-(PyInstaller's signature, a wheel's `RECORD` / `WHEEL` and a zip whose members
-match are allowed to differ); anything else stops the build. For a quicker
-Apple-silicon-only build: `PAKON_ARCH=arm64 packaging/macos/build.sh 0.2.0`.
-Check the Intel half on an Apple silicon Mac with
+app inside the dmg is still `Pakon.app`). The icon is cached in
+`packaging/macos/.cache/` (git-ignored). For a quicker Apple-silicon-only
+build: `PAKON_ARCH=arm64 packaging/macos/build.sh 0.2.0`. Check the Intel
+half on an Apple silicon Mac (with Rosetta) with
 `arch -x86_64 dist/macos/Pakon-Universal.app/Contents/MacOS/Pakon`.
-Needs Xcode's command-line tools, CMake and pkg-config. Python and libusb are
-downloaded at pinned versions and checked against their SHA-256.
 
-`build.sh` fails if any binary in the bundle needs a newer macOS than 13: wheels
-are fetched for macOS 13, and libusb is built from source because Homebrew's
-targets the running macOS.
+Needs rustup with the `aarch64-apple-darwin` target (and `x86_64-apple-darwin`
+for the universal app), Xcode's command-line tools, CMake (the Unicorn crate
+builds Unicorn from source) and, the first time only, Python 3 with Pillow
+for the icon.
 
-To try the window without building: `python packaging/macos/pakon_app.py`
-(with `web/requirements.txt` and `pywebview` installed).
+`build.sh` fails if the binary needs a newer macOS than 13 or links a library
+outside the system, and lists any weak imports to check.
+
+To try the window without building the bundle:
+`cd rust && cargo run --release -p pakon-app`.
 
 ## Signing and notarization
 
@@ -74,7 +68,7 @@ Download links point at `releases/latest/download/Pakon.dmg` and
 ### Crash reports and usage statistics (Rybbit)
 
 The app can send opt-in crash reports and usage statistics to a
-[Rybbit](https://rybbit.com) instance (`web/telemetry.py`). Where they go is
+[Rybbit](https://rybbit.com) instance (`rust/crates/pakon-web/src/telemetry.rs`). Where they go is
 set when building, never in the code, so a build anyone makes from this repo
 sends nothing and never asks. For a release, copy
 `packaging/release.env.example` to `packaging/release.env` (git-ignored; the
@@ -92,7 +86,8 @@ prints `reports: on` or `reports: off`, and writes them into the app's
 public tracking endpoint, and a key would be readable by anyone with the app.
 
 Installed apps check the latest release on launch (and every 6 hours) and
-show a banner when it is newer than their own version (`web/update.py`), so
+show a banner when it is newer than their own version
+(`rust/crates/pakon-web/src/update.rs`), so
 tag releases `vX.Y.Z` with the same number passed to `build.sh`, and do not
 mark them draft or pre-release unless they should stay hidden. Users can turn
 the check off with `PAKON_UPDATE_CHECK=0`.

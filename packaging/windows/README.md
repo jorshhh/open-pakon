@@ -1,50 +1,48 @@
 # Pakon for Windows
 
 `Pakon-Setup.exe` installs Pakon for the current user on 64-bit Windows 10 or
-11: no administrator rights, no Python or anything else to install first. It
-is the same app as the Mac one: the web service from `web/` in its own window
-(pywebview with Microsoft's WebView2, part of Windows 11 and of current
-Windows 10).
+11: no administrator rights, nothing else to install first. It is the same
+app as the Mac one: one native binary (`rust/crates/pakon-app`) that runs the
+web service, the scanner driver and the image pipeline, and shows the page
+in its own window with Microsoft's WebView2 (part of Windows 11 and of
+current Windows 10).
 
 | File            | What it is |
 |-----------------|------------|
-| `build.sh`      | Builds the installer on Linux (in Docker when MinGW or NSIS is missing) |
-| `launcher.c`    | `Pakon.exe`: runs `packaging/macos/pakon_app.py` with the embedded Python |
+| `build.sh`      | Builds the installer on Linux or a Mac (in Docker when MinGW, NSIS or Rust's Windows target is missing) |
 | `installer.nsi` | The NSIS installer: files, shortcuts, the entry in Settings > Apps |
 | `pakon_driver.c` | `pakon_driver.exe`: installs the scanner's USB driver (see below) |
 | `pakon-winusb.inf` | That driver: Windows' WinUSB for the scanner's two USB IDs |
-| `Dockerfile`    | MinGW, NSIS and the rest, for `build.sh` |
+| `Dockerfile`    | Rust, MinGW, NSIS and the rest, for `build.sh` |
 
 ## Build
 
-On Linux (no Windows needed):
+On Linux or a Mac (no Windows needed):
 
 ```sh
 packaging/windows/build.sh 0.7.0        # version number
 ```
 
-Output: `dist/windows/Pakon-Setup.exe`. With MinGW and NSIS installed
-(`sudo apt install gcc-mingw-w64-x86-64 cmake pkg-config nsis p7zip-full unzip`)
-it builds directly; otherwise in Docker, from the `Dockerfile` here.
+Output: `dist/windows/Pakon-Setup.exe`. With rustup's `x86_64-pc-windows-gnu`
+target, MinGW and NSIS installed (`sudo apt install gcc-mingw-w64-x86-64
+g++-mingw-w64-x86-64 cmake libclang-dev nsis python3-venv`) it builds
+directly; otherwise in Docker, from the `Dockerfile` here.
 
-- `pakon_probe.exe` and `pakon_replay.exe` are cross-compiled with MinGW and
-  linked statically with libusb's Windows build.
-- Python is python.org's embeddable 3.12 with the Windows wheels of
-  `web/requirements.txt` and pywebview, picked for Windows by
-  [uv](https://docs.astral.sh/uv/) (`--python-platform`). Only wheels:
-  nothing is compiled on Linux for Windows.
-- Python and libusb are downloaded at pinned versions and checked against
-  their SHA-256 (cached in `dist/windows/.cache/`).
+- `Pakon.exe` is cross-compiled with MinGW and linked statically; it needs
+  only Windows' own DLLs and `WebView2Loader.dll` (Microsoft's, shipped
+  beside it; `build.sh` checks the imports).
+- Python with Pillow draws the icon at build time only.
 - Crash reports and usage statistics: `packaging/release.env`, as for the Mac
   build (see `packaging/macos/README.md`).
+- Installing over the earlier Python app removes its files (the embedded
+  Python, the C tools, `web\`, `tools\`).
 
 The installer is not signed, so Windows SmartScreen warns about it the first
 time ("More info", then "Run anyway").
 
 ## The USB driver
 
-Pakon talks to the scanner through libusb, which on Windows needs Microsoft's
-generic **WinUSB** driver on it; Windows has none for the scanner but Kodak's.
+Pakon talks to the scanner through Microsoft's generic **WinUSB** driver; Windows has none for the scanner but Kodak's.
 The installer sets it up once: `driver\pakon_driver.exe` (`pakon_driver.c`)
 asks for administrator rights and installs `pakon-winusb.inf`, which puts
 WinUSB on both of the scanner's USB IDs, `0F05:F235` (before the firmware

@@ -35,9 +35,8 @@ pub const PANEL_CALIBRATING: u16 = 0x00D4;
 /// Motor running, feed the film: right LED solid green.
 pub const PANEL_FEED: u16 = 0x0015;
 
-/// Advance speed in the F-135 film-advance capture (`resources/advance.pakscan`,
-/// serial 3054): 9500, the top of the F-135 range. How the OEM derives it is
-/// not known.
+/// Advance speed in the F-135 film-advance capture (serial 3054): 9500,
+/// the top of the F-135 range. How the OEM derives it is not known.
 pub const ADVANCE_SPEED_F135: u16 = 0x251C;
 
 /// Film sensing threshold for the 0x93 levels: a sensor pair is clear when

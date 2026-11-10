@@ -552,7 +552,7 @@
   </div>
 </header>
 
-<!-- A newer release is out (web/update.py) -->
+<!-- A newer release is out (rust/crates/pakon-web/src/update.rs) -->
 <div class="update-bar hidden" id="update-bar" role="status">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 15v5h16v-5"/></svg>
   <div class="update-text">
@@ -995,7 +995,7 @@
     }
   }
 
-  // ── Crash reports / usage statistics (web/telemetry.py) ─────────────────
+  // ── Crash reports / usage statistics (pakon-web telemetry.rs) ───────────
   function showConsent(t) {
     const on = !!(t && t.available);
     $('consent-card').classList.toggle('hidden', !on || t.asked);

@@ -1,7 +1,7 @@
 //! OEM (TLX) picture framing (TLB.dll FN_iFramePicturesSub and friends; port
 //! of `tlx_geometry`, `tlx_profile`, `_tlx_threshold`, `tlx_place`,
-//! `tlx_frame_grid` in `tools/pakon_image.py`, docs/TLB_FINDINGS.md
-//! "Picture framing").
+//! `tlx_frame_grid` in `tools/pakon_image.py`, docs/IMAGING.md
+//! "Framing").
 
 use std::collections::BTreeMap;
 

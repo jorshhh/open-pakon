@@ -1,4 +1,4 @@
-//! OEM Digital ICE against tools/oem_dice.py (rust/tools/golden_dice.py
+//! OEM Digital ICE against tools/oem_dice.py (rust/tools/golden_dice.py at git tag python-final
 //! writes the reference into $PAKON_GOLDEN).
 
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ fn repo() -> PathBuf {
 fn dice_matches_python() {
     let Some(dir) = std::env::var_os("PAKON_GOLDEN").map(PathBuf::from) else { return };
     if !dir.join("dice.json").is_file() {
-        eprintln!("skipped: run rust/tools/golden_dice.py first");
+        eprintln!("skipped: make the reference with rust/tools/golden_dice.py (git tag python-final)");
         return;
     }
     let rgb: Array3<u16> = read_npy(dir.join("ribbon.npy")).unwrap();

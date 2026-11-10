@@ -1,453 +1,456 @@
 # pakon: technical guide
 
-This is the developer and power-user side of pakon: building from source, the command-line tools, the web service, how the driver is put together, and where the protocol notes live. If you just want to scan, start with the [README](../README.md) and download the Mac app.
+The developer side of pakon: how the Rust code is laid out, how to build,
+test and run it, the command-line tools, the HTTP API, the switches, where
+files go, packaging, and the implementation facts worth knowing before
+changing anything. To scan, start with the [README](../README.md). What
+works on which platform and model, and what is still open, is in
+[ROADMAP.md](ROADMAP.md).
 
-A cross-platform (Linux + macOS) driver and web app for the Kodak/Pakon
-**F-135** and **F-135+** film scanners (the F-235 and F-335 are not supported;
-see `docs/SCANNER_FAMILY.md` for what differs between the models). Unofficial,
-independent reimplementation built from documented protocol notes, our own USB
-captures, and reverse engineering of the original Windows software for
-interoperability (see `docs/PROTOCOL.md` → PROVENANCE).
+Everything is Rust, in the workspace under `rust/`. One native binary per
+platform runs the scanner driver, the image pipeline and a web service, and
+shows the page (`web/static/index.html`) in its own window. Any machine on
+the local network can use the same service from a browser. The earlier
+Python app and C tools are kept at the git tag `python-final`.
 
-> **Status:** Full end-to-end scan works on hardware — firmware load, open
-> handshake, film advance, scan drive, and image decode are all validated on
-> Linux and macOS, on both the **F-135** and the **F-135+** (the Plus uses
-> its own scripts — see "F-135+ owners" under Usage). The product is a Python web service (FastAPI + browser UI)
-> that wraps the C tools and image pipeline so any machine on the local network
-> can drive the scanner.
->
-> On the **F-135** every step is now **built in code**, nothing replayed:
-> firmware from the OEM Intel HEX files, setup, light calibration, scan,
-> teardown, film advance and sensor-driven eject (`--load-firmware-hex`,
-> `--scan-code`, `--eject`), and the web UI uses that path. It needs the
-> unit's EEPROM backup (`tools/pakon_eeprom.py backup`). Verified on one
-> F-135 (serial 3054) on macOS, October 2026. The **F-135+** still replays
-> captured OEM sequences (`resources/f135plus/*.pakscan`). See
-> [Roadmap](#roadmap) for what's next.
->
-> The decoder marker-aligns each row, registers the trilinear R/G/B lines,
-> applies the OEM's per-column flat field from the light calibration, and
-> detects frames with the OEM (TLX) framing. It also reproduces the OEM colour:
-> the recovered **C-41 inversion** (a log-density ColNeg LUT) for a faithful
-> positive, and the Kodak **`rpd.pf`** rendering profile for the vibrant JPEG
-> look (see `docs/IMAGING.md`). The web UI is a **minilab-style two-stage
-> flow** — prescan preview → operator confirms each crop in the browser →
-> high-res export.
+## Crates and layering
 
-## Architecture
+| Crate | What it does |
+|---|---|
+| `pakon-usb` | Transport only, on `nusb`: enumeration, FX2 firmware load (from Intel HEX or a captured `.pakfw`), bulk and control I/O. No packet knowledge. Refuses vendor request `0xA2`. |
+| `pakon-proto` | Pure logic, no USB: frames, setup / configure / scan start / teardown streams, light-calibration steps, EEPROM decoder, DX decoder, calibration cache, capture scripts. |
+| `pakon-scan` | The one crate that uses both: OEM reply rules and busy polls (`cmd`), the event service, opening and model detection (`session`), light calibration (`calib`), the code-built scan (`scan`), eject and advance (`transport`), EEPROM read (`eeprom_read`), replay of captured scripts (`replay`). Everything goes through the `Link` trait, so the rules are tested against a simulated scanner. |
+| `pakon-image` | Raw stream to pictures: row layout, marker alignment and R/G/B registration (`decode`, `ribbon`), flat field (`flat`), OEM colour (`colour`), the no-EEPROM fallback (`fallback`), slide path (`slide`), film base and roll balance (`balance`), saturation / tone (`adjust`), TLX framing (`framing`), our IR dust removal (`ice`), DX film metadata (`film`), TIFF / JPEG / thumbnails / contact sheet (`output`), numpy-exact percentile and median (`stats`). |
+| `pakon-oem` | The OEM DLLs run under Unicorn: Digital ICE (`oem/DMLDICELib.dll`, `dice`) and Kodak Ansel scene and roll balance (`oem/PakonIMAu.dll`, `sba`), with its own PE32 loader (`pe`) and import stubs (`emu`). |
+| `pakon-roll` | A roll from raw to exported frames: prescan (ribbon cache, preview strip), auto-frame, export (crop, ICE, balance, render, write). Reads the image switches (`Env::from_env`). |
+| `pakon-web` | The web service (axum + tokio): the `/api/*` routes and event streams the page uses, the order folders, EEPROM auto-archive, telemetry, update check. Binary `pakon_web`. |
+| `pakon-app` | The window (tao + wry + muda): WKWebView on macOS, WebView2 on Windows, WebKitGTK on Linux, around the service on a free localhost port. Binary `pakon_app` (`Pakon` in the Mac bundle). |
+| `pakon-cli` | `pakon_probe` and `pakon_replay`, for hardware debugging. |
 
-The hardware driver is two strictly separated C layers:
-
-- **transport** (`pakon_usb`): libusb context, enumeration, FX2 firmware
-  download, raw bulk I/O. No packet knowledge.
-- **protocol** (`pakon_proto`): the command frame, encode/decode, command
-  primitive. No USB knowledge.
-
-`pakon_log` is a shared utility (tracing + the common `pakon_result` type) used
-by both layers without coupling them to each other. Built on them:
-
-- **`pakon_cmd`**: the one place that uses both layers: sends frames and
-  generated sequences with the OEM reply rules and busy poll, and runs the
-  event service.
-- **`pakon_setup`**: builds the command sequences in code (controller init,
-  per-mode configure, calibration writes, scan start, teardown, motor,
-  event follow-ups), checked byte for byte against the captures.
-- **`pakon_lightcal`**: line statistics and the light-calibration steps.
-- **`pakon_eeprom`**: per-unit EEPROM decoder. **`pakon_fw`**: FX2
-  firmware-load sequence from Intel HEX (parsed by **`pakon_hex`**).
-- **`pakon_dx`**: decodes the DX sensor block (the film's edge barcode, read
-  by the scanner itself) into the film's product code and frame numbers.
-
-On top of the driver, the Python web service (`web/`) drives the C tools and
-runs the image pipeline (`tools/pakon_image.py`) to serve the browser UI.
-
-## Building
-
-Requires a C11 compiler, CMake ≥ 3.16, `pkg-config`, and **libusb-1.0**.
-
-### Linux (Debian/Ubuntu)
-
-```sh
-sudo apt install build-essential cmake pkg-config libusb-1.0-0-dev
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
+```
+pakon-app ──► pakon-web ──► pakon-roll ──► pakon-image
+                  │              └───────► pakon-oem
+                  └──► pakon-scan ──► pakon-proto
+                            └───────► pakon-usb
+pakon-cli ──► pakon-scan
 ```
 
-### macOS (Homebrew)
+Rules the layering enforces:
+
+- `pakon-usb` knows nothing about packets; `pakon-proto` knows nothing about USB.
+- The safety rules are checked before anything is sent: `Seq::check_safe`
+  (`pakon-proto` `setup`) refuses type-0 frames and frames to the bootloader
+  addresses, apart from the OEM presence probe that `pakon-scan` sends on its
+  own path; every captured script is checked the same way before a replay;
+  `pakon-usb` refuses vendor request `0xA2` whatever asks for it. The rules
+  themselves are in [PROTOCOL.md](PROTOCOL.md).
+- Teardown (LEDs off → ResetFifos → `92` → 20 ms → `a2`) runs in drop guards,
+  so errors, stops and panics still stop the motor.
+- In the service, scanner work (firmware, scan, eject) runs one job at a time
+  behind a device lock, and image jobs one at a time on the blocking pool. A
+  client that disconnects does not stop a job: a scan always runs to its
+  teardown.
+
+The page is unchanged HTML/JS (`fetch` plus server-sent events) served from
+`web/static/`.
+
+## Building and testing
+
+### Prerequisites
+
+Stable Rust from [rustup](https://rustup.rs), CMake and libclang: the
+`unicorn-engine` crate builds Unicorn from source and links it in. No libusb.
+
+| OS | Install |
+|---|---|
+| macOS | Xcode command-line tools (libclang), `brew install cmake` |
+| Debian / Ubuntu | `sudo apt install build-essential cmake pkg-config libclang-dev libgtk-3-dev libwebkit2gtk-4.1-dev` |
+| Windows | The package is cross-built from macOS or Linux with MinGW (`x86_64-pc-windows-gnu`), see `packaging/windows/README.md`. Building on Windows itself is not documented. |
+
+### Build and test
 
 ```sh
-brew install cmake pkg-config libusb
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
+cd rust
+cargo test                        # every hardware-free test
+cargo build --release             # all binaries into rust/target/release
 ```
 
-Produces: static `libpakon`, tools `pakon_probe` and `pakon_replay`, and the
-hardware-free unit tests (`test_proto`, `test_hex`,
-`test_eeprom_c`, `test_setup`, `test_lightcal`, `test_fw`, `test_dx`). When
-CMake finds Python 3, ctest also runs the offline Python tests
-(`test_eeprom`, `test_image_colour`, `test_dx_metadata`, `test_oem_sba`); the
-last three skip themselves when their Python libraries are missing.
+The test profile builds at `opt-level = 2`, since the capture and image tests
+crunch real data. What `cargo test` covers:
 
-## Usage
+| Tests | What they check |
+|---|---|
+| `pakon-proto/tests/` (`setup`, `lightcal`, `eeprom`, `dx`, `calcache`) | Generated command streams against the captures (fixtures in `tests/fixtures`), the EEPROM decoder, DX decoding, the calibration cache format |
+| `pakon-usb` unit tests | Intel HEX parsing; the firmware load built from HEX equals all 1104 transfers of `resources/f135.pakfw`; `0xA2` refused |
+| `pakon-scan/tests/sim.rs` | Reply rules, busy polls, event service, scan loop, end of roll, teardown guards and "an unsafe sequence sends nothing", on a simulated scanner |
+| `pakon-oem/tests/pe.rs` | The PE loader on the OEM DLLs |
+| `pakon-web/tests/api.rs` | The HTTP routes |
+| unit tests in each crate | EEPROM fixtures in `test/fixtures/eeprom`, DX in `test/fixtures/dx`, and the rest |
 
-### Overview
+### Parity tests against the Python pipeline
 
-On power-on the scanner enumerates as a bare FX2 bootloader (`0F05:F235`). The
-host downloads the FX2 firmware, after which it re-enumerates as the
-operational scanner (`0F05:F135`). Everything after that goes over the command
-channel.
+`pakon-image/tests/golden.rs`, `pakon-oem/tests/{dice,sba}.rs` and
+`pakon-roll/tests/roll.rs` compare against outputs the Python pipeline wrote
+from a real roll. Raws are gigabytes, so the data is not in the repo and the
+tests skip themselves unless pointed at it:
 
-On the **F-135** every step is built in code from three inputs: the OEM's FX2
-firmware files (shipped in `firmware/`), the unit's **EEPROM** (factory
-per-unit values, read once and archived), and a **light calibration** measured
-at the start of every scan. Nothing is replayed from a capture.
+| Variable | Data |
+|---|---|
+| `PAKON_GOLDEN=DIR` | Outputs of the golden scripts for a slice of a roll |
+| `PAKON_GOLDEN_RAW=FILE` | The raw itself |
+| `PAKON_GOLDEN_FULL=DIR` | Outputs for the whole roll |
+| `PAKON_GOLDEN_ROLL=DIR` | Whole-roll prescan / export outputs |
 
-The **F-135+** still replays captured OEM sequences (`.pakscan` scripts, see
-[F-135+ owners](#f-135-owners)); so does the F-135 when no EEPROM backup is
-available ([Replay mode](#replay-mode)).
+The scripts that write this data (`rust/tools/golden*.py`, and `tables.py`
+for the embedded colour tables) are at tag `python-final`. Order: `golden.py
+RAW DIR --rows 20000:32000`, then `golden_colour.py`, `golden_ice.py`,
+`golden_dice.py`, `golden_adjust.py`, `golden_fallback.py`, `golden_roll.py
+DIR` on DIR; `golden_sba.py FULL DIR` and `golden_roll.py ROLLDIR RAW` for the
+whole roll.
 
-### Step-by-step (F-135)
-
-**1. Firmware files**
-
-The two OEM firmware files ship in `firmware/` (`PknLdr.hex`, `Pakon7.hex`);
-see `firmware/README.md` for where they come from and how to regenerate them.
-
-**2. Load firmware (every power-on)**
+## Running from a checkout
 
 ```sh
-./build/pakon_probe --list     # 0f05:f235 = cold, needs firmware; 0f05:f135 = ready
-./build/pakon_probe --load-firmware-hex firmware/PknLdr.hex firmware/Pakon7.hex
+cd rust
+cargo run --release -p pakon-app   # the app in its own window
+cargo run --release -p pakon-web   # the service alone, port 8000 on all interfaces
+cargo run --release -p pakon-web -- --host 127.0.0.1 --port 8000   # this machine only
 ```
 
-The loader refuses to continue unless the scanner reports the F-135/F-135+
-personality. Linux needs `sudo` (or a udev rule) for libusb; macOS does not.
+Both find the page, `oem/`, `profiles/`, `firmware/` and `resources/` by
+walking up from the executable or the working directory to the first folder
+holding `web/static/index.html` (in a Mac bundle, `Contents/Resources`);
+`PAKON_ROOT` names it instead. Open `http://<host>:8000` for the service
+alone. Ctrl-C ends a running scan as at the end of the roll and waits for
+the teardown before exiting. A build from a checkout never sends crash
+reports or usage statistics and never checks for updates (no
+`PAKON_VERSION`).
 
-**3. Back up the EEPROM (once)**
+USB access: macOS needs nothing. On Linux, install
+`packaging/linux/60-pakon.rules` into `/etc/udev/rules.d/` (the `.deb` does)
+or run as root. On Windows the scanner needs WinUSB on both USB IDs
+(`0F05:F235` and `0F05:F135`), which the installer's `pakon_driver.exe` sets
+up (`packaging/windows/README.md`).
+
+## Command-line tools
 
 ```sh
-python3 -m venv .venv && .venv/bin/pip install pyusb
-mkdir -p backups/eeprom
-.venv/bin/python tools/pakon_eeprom.py backup backups/eeprom/F135-SERIAL
+cd rust && cargo build --release -p pakon-cli
+# rust/target/release/pakon_probe and rust/target/release/pakon_replay
 ```
 
-Reads all four copies of the per-unit EEPROM (read-only, the OEM's own read
-requests) and archives them with CRC results and SHA-256 hashes. Do it once,
-right after a power-on, and keep a copy off the machine: this data exists
-nowhere else. Details in [EEPROM backup](EEPROM_BACKUP.md);
-`tools/pakon_eeprom.py decode DIR` decodes an archive without a scanner.
-The web service does this step by itself (see [Web service](#web-service)).
+They do one step at a time what the app does from its Scan page. Both take
+`--timeout MS` (USB per-transfer timeout, default 1000) and honour
+`PAKON_DEBUG=0..4`.
 
-**4. Scan**
+### `pakon_probe`
+
+| Command | What it does |
+|---|---|
+| `--list` | Lists Pakon devices: `0f05:f235` is cold (needs firmware), `0f05:f135` is warm |
+| `--load-firmware-hex STAGE1 MAIN` | Loads the FX2 firmware from the OEM Intel HEX files (`firmware/PknLdr.hex firmware/Pakon7.hex`, see `firmware/README.md`); refuses unless the scanner reports the F-135 / F-135+ personality |
+| `--load-firmware PAKFW` | Replays a captured firmware load (`resources/f135.pakfw`; same FX2 image for both models) |
+
+### `pakon_replay`
+
+Code-built modes (F-135; each needs `--eeprom-dir DIR`, the unit's EEPROM
+archive):
+
+| Mode | What it does |
+|---|---|
+| `--scan-code [--base 4\|8\|16] [--ir on\|off] [--film c41\|bw\|bwc41\|slide] [--image OUT] [--recalibrate] [--max-mb N]` | Setup, lamp wait, light calibration (open gate: keep the film out), scan start, then prints `motor start (a0) sent -- feed the film now`. Stops on its own at end of roll; teardown stops the motor. Defaults: Base 16, IR on (off for `bw`), `c41`, `pakon_scan.raw`. `--recalibrate` forces a full calibration instead of the cached one. `--max-mb` (default 4096) is only a runaway guard: a 36-exposure roll at Base 16 with IR is up to about 2 GB. |
+| `--light-cal [--base N] [--ir on\|off] [--flat-out FILE]` | Calibration only, open gate; writes the per-column tables to `DIR/flatfield.json` or `FILE` |
+| `--setup [--base N] [--teardown]` | Setup only, optionally followed by the teardown |
+| `--eject [--eject-seconds N]` | Runs the transport until the DX film sensors say the strip is out, or stalled at the exit (pull it out by hand); default limit 60 s |
+| `--advance-code SECONDS` | Runs the transport for a fixed time (the app's Advance film) |
+
+Replay and other modes:
+
+| Mode | What it does |
+|---|---|
+| `--open` | Open handshake; prints the detected model |
+| `--scan FILE [--image OUT] [--autostop] [--drain] [--advance]` | Replays a captured `.pakscan` (insert the film first). `--autostop` arms at motor start and stops at end-of-roll white, then replays the capture's teardown tail; `--drain` keeps reading image data after the script ends until the scanner is done; `--advance` pushes the strip out afterwards (F-135+). |
+| `--advance [--advance-seconds N]` | F-135+ only: timed transport run at that unit's captured motor speed (above the base F-135's limit; on an F-135 use `--advance-code`). Default 15 s; a strip already at the exit needs 1–2 s. |
+
+Ctrl-C during a scan stops it and runs the teardown before exiting; a second
+Ctrl-C exits at once. With `PAKON_STOP_STDIN` set, a line starting with
+`stop` on stdin does the same as the first Ctrl-C.
+
+A code-built scan writes beside the raw: `OUT.flat.json` (the calibration's
+per-column tables and row layout) and, when the scanner read the film's DX
+code, `OUT.dx.json`. Open the raw in the app to frame and export it; there is
+no command-line decoder.
+
+F-135+ (replays the scripts from a reference unit):
 
 ```sh
-./build/pakon_replay --scan-code --eeprom-dir backups/eeprom/F135-SERIAL --image scan.raw
+R=rust/target/release
+$R/pakon_probe --load-firmware resources/f135.pakfw
+$R/pakon_replay --open                                    # "model detected: F-135+"
+$R/pakon_replay --scan resources/f135plus/base16.pakscan --image scan.raw --advance
 ```
 
-`--film bw` scans silver B&W film and `--film slide` unmounted slide (E-6)
-strips (default `c41`, colour negative): the calibration caps and scan LED
-duties use the OEM's film-base densities for that film type.
+`resources/f135plus/` also has Base 8, Base 4 and `base4_ir.pakscan`. The
+F-135 `.pakscan` files NAK on a Plus: its controllers answer at different
+bus addresses ([SCANNER_FAMILY.md](SCANNER_FAMILY.md)).
 
-Runs setup, the light calibration (about a minute: **keep the film out**, it
-measures the open gate), then starts the motor and prints
-`motor start (a0) sent -- feed the film now`. **Feed the strip then.** The
-scan stops on its own once the open gate follows the film, and the teardown
-stops the motor. Base 16 with the IR channel; about 240 MB per 4-frame strip,
-up to ~2 GB for a 36-exposure roll (`--max-mb`, default 4096, is only a
-runaway guard). The calibration's per-column tables are saved next to the
-raw as `scan.raw.flat.json`; the decoder picks them up (see
-[Flat field](#flat-field)). When the scanner reads the film's DX edge code,
-the film's product code is saved as `scan.raw.dx.json` (see
-[Film identity (DX)](#film-identity-dx)).
+### Not ported from the C tools
 
-**5. Eject the strip**
+`--read-params`, `--params-out`, `--calib-probe`, `--film-sense`,
+`--trace-status`, and the advance scripts (`advance.pakscan
+--steps N`, `--limit`). The Rust `pakon_replay` names them and exits; the C
+tools at tag `python-final` still have them. The EEPROM backup is no longer a
+separate tool: the app and `pakon_web` read and archive it themselves
+([EEPROM.md](EEPROM.md)).
 
-```sh
-./build/pakon_replay --eject --eeprom-dir backups/eeprom/F135-SERIAL
-```
+## HTTP API
 
-Runs the transport until the DX film sensors say the strip is out, or that it
-has stalled at the exit (the tail has left the drive rollers: pull it out by
-hand). Waits up to 15 s for film, at most 60 s in all.
-`--advance-code SECONDS` runs the transport for a fixed time instead.
+`pakon-web` serves the page and these routes (`rust/crates/pakon-web/src/lib.rs`).
+Requests and responses are JSON; "stream" routes answer with server-sent
+events (`data: <json>` chunks with a `type`: `progress`, `log`, `order`, `feed`, `done`, `error`). A
+missing required field answers 422.
 
-Other code-built tools: `--setup [--teardown]` (setup only), `--light-cal`
-(calibration only, open gate; writes the flat field to
-`DIR/flatfield.json`, or `--flat-out FILE`), `--calib-probe` (static dark/lit levels),
-`--film-sense SECONDS` (log the DX sensor levels while the transport runs).
-All take `--eeprom-dir`.
+| Route | Method | What it does |
+|---|---|---|
+| `/api/status` | GET | Scanner state, the current raw and its size, frame count, processing state, work folder and next order, the EEPROM archive in use, whether the HEX firmware is present, a newer release |
+| `/api/firmware` | POST, stream | Loads the firmware (HEX files, else `f135.pakfw`) |
+| `/api/scan` | POST, stream | Scans into a new order folder; `film` (`c41`, `bw`, `bwc41`, `slide`), `base` (4, 8, 16) |
+| `/api/scan/stop` | POST | Ends a running scan as at the end of the roll (teardown still runs) |
+| `/api/eject` | POST, stream | Ejects the strip (F-135, code-built) |
+| `/api/workdir` | POST | Sets the work folder |
+| `/api/browse` | GET | Lists a folder on the host (the page's file browser) |
+| `/api/mkdir` | POST | Makes a folder on the host |
+| `/api/open` | POST | Makes a `.raw` on the host the current roll (in place, no copy) |
+| `/api/process` | POST, stream | Prescan: builds and caches the ribbon, renders the preview strip |
+| `/api/autoframe` | POST, stream | Places a crop on every picture with the OEM framing (`full`, `half`, `pano`) |
+| `/api/preview` | GET | The preview strip (JPEG) |
+| `/api/export_frames` | POST, stream | Exports the confirmed crops at full resolution |
+| `/api/frames` | GET | The exported frames |
+| `/api/frames/{n}/thumb` | GET | One frame's thumbnail |
+| `/api/save` | POST, stream | Saves a format (raw negative TIFF, TIFF, JPEG, contact sheet) into the order folder |
+| `/api/reveal` | POST | Shows a file in the system file manager |
+| `/api/app/focus` | POST | Brings the window to the front (a second launch calls it) |
+| `/api/update/open` | POST | Opens the newer release's page |
+| `/api/telemetry/consent`, `/page`, `/error` | POST | The opt-in switches, page views, page errors |
 
-### Replay mode
+Scans, eject and the firmware load call `pakon-scan` / `pakon-usb` in
+process and stream the same progress lines `pakon_replay` prints. Any other
+path is a file from `web/static/`.
 
-The original path, still used on the F-135+ and as the F-135 fallback:
-replaying sequences extracted from USB captures of the OEM driver.
+## Environment variables
 
-- **`.pakfw`**: the firmware load as captured (`resources/f135.pakfw`, same
-  FX2 image for both models):
-  `./build/pakon_probe --load-firmware resources/f135.pakfw`.
-- **`.pakscan`**: a scan or advance as captured.
-  `./build/pakon_replay --scan resources/scan.pakscan --image scan.raw`
-  replays an F-135 scan verbatim (insert the film first; `--autostop` stops at
-  the end of the film); `./build/pakon_replay resources/advance.pakscan
-  --steps N` replays the advance. Generate your own with
-  `tools/analyze_capture.py`.
-- `./build/pakon_replay --open` replays the open handshake and prints the
-  detected model.
+Read at run time by the app and `pakon_web` unless noted. An empty value
+counts as unset.
 
-### Decode the image
+| Variable | Effect |
+|---|---|
+| `PAKON_DEBUG=0..4` | Log verbosity (all binaries). 2 adds `dx:` lines; 4 hexdumps every packet and reply. |
+| `PAKON_ROOT=DIR` | The folder holding `web/static`, `oem/`, `profiles/` |
+| `PAKON_RESOURCES=DIR` / `PAKON_FIRMWARE=DIR` | Captured scripts / HEX firmware (default `<root>/resources`, `<root>/firmware`) |
+| `PAKON_DATA=DIR` | Settings (`settings.json`) and EEPROM archives (`eeprom/`); also where the window app keeps its single-instance lock |
+| `PAKON_LOGS=DIR` | The log folder (set by the app and the Linux launcher) |
+| `PAKON_EEPROM_DIR=DIR` | Use this EEPROM archive and skip the automatic read |
+| `PAKON_PAKSCAN=FILE` | Scan with this capture script instead of detecting the model |
+| `PAKON_FLAT=0` | No flat field |
+| `PAKON_LINEWIDTH=N` (+ `PAKON_IR_LANE=0/1`) | Force the row layout (samples per row, IR lane) instead of detecting it per raw |
+| `PAKON_OEM_SBA=0` | Skip the OEM scene balance |
+| `PAKON_SBA_DMIN=0` | Don't give the scene balance the strip's measured film base |
+| `PAKON_OEM_DICE=0` | Use our ICE port instead of the OEM's Digital ICE |
+| `PAKON_DICE_DLL=FILE` | Another `DMLDICELib.dll` |
+| `PAKON_EXPORT_THREADS=N` | Frames exported at once (default: by cores and memory, see below) |
+| `PAKON_TELEMETRY=0/1` | 0 turns crash reports and usage statistics off everywhere; 1 lets a checkout send them (still opt-in) |
+| `PAKON_UPDATE_CHECK=0` | No check for a newer release |
+| `PAKON_VERSION` | The app's version; set from `Info.plist` (Mac) or `release.env` (Windows, Linux) at startup. Enables the update check and telemetry. |
+| `PAKON_RYBBIT_URL` / `_SITE_ID` / `_DOMAIN` | Where reports go; set the same way, only in release builds |
+| `PAKON_STOP_STDIN` | `pakon_replay`: stop on a `stop` line on stdin |
+| `PAKON_GOLDEN*` | Parity test data (above) |
 
-**Option A — web UI (recommended):** start the web service (see below) and
-open `http://localhost:8000`. Open the `.raw` (a scan is already loaded), click **Process** (prescan →
-long preview strip + detected frames), **confirm/position each crop** on the
-strip, then **Export** for high-res output, and save it from the Export page
-into the work folder: `jpeg/`, `tiff/` (plain positive) and `raw/` (raw
-negative TIFF) subfolders, plus a contact sheet. When the scan read the
-film's DX code, each file carries the film name and ISO.
+Build-time variables (`PAKON_ARCH`, `PAKON_SIGN_IDENTITY`,
+`PAKON_NOTARY_PROFILE`, `PAKON_DEB_ARCH`) are in the packaging READMEs.
 
-**Option B — command line:** requires Python 3, `numpy`, `pillow` (with
-littlecms, for `--jpeg`), and ImageMagick (`magick`).
+## Where files go
 
-```sh
-# Faithful C-41 positive (16-bit TIFFs), auto frame count + auto orientation
-python3 tools/pakon_image.py scan.raw --invert-c41 --rotate 90
+| | macOS app | Windows | Linux (`.deb`) | From a checkout |
+|---|---|---|---|---|
+| Settings, EEPROM archives | `~/Library/Application Support/Pakon` | `%LOCALAPPDATA%\Pakon` | `~/.local/share/pakon` | `backups/` in the repo (git-ignored); the window app on Windows always uses `%LOCALAPPDATA%\Pakon` |
+| Log (`pakon.log`) | `~/Library/Logs/Pakon` | `%LOCALAPPDATA%\Pakon\Logs` | `~/.local/state/pakon` | the terminal (Windows window app: as installed) |
+| Scans (work folder, one folder per order) | `~/pakon` | `%USERPROFILE%\pakon` | `~/pakon` | same; set in the app |
+| Temp (ribbon caches, exports, about 1 GB a roll; cleared at launch) | `/tmp/pakon_web` | `%TEMP%\pakon_web` | `/tmp/pakon_web` | same |
 
-# Also write the vibrant rendered JPEGs (Kodak rpd.pf profile)
-python3 tools/pakon_image.py scan.raw --invert-c41 --jpeg --rotate 90
+`PAKON_DATA` and `PAKON_LOGS` override the first two rows. The Linux launcher
+(`packaging/linux/pakon`) honours `XDG_DATA_HOME` and `XDG_STATE_HOME`.
 
-# Raw negatives only (orange mask intact) for inverting in another tool
-python3 tools/pakon_image.py scan.raw --rotate 90
-```
+Inside the data folder:
 
-The frame count is **always auto-detected** (a "36-exposure" roll commonly scans
-as 37+ usable frames). The decoder automatically handles:
+- `eeprom/<model>-<serial>-<date>/`: the unit's EEPROM archive, all four
+  copies with CRC results and SHA-256 hashes (`report.json`). The service
+  reads it once per USB connection (at launch, after a firmware load, or
+  before a scan or eject) with the OEM's read-only requests, archives a unit
+  the first time it sees it, and afterwards picks the archive matching the
+  connected serial. This data exists nowhere else; keep a copy off the
+  machine ([EEPROM.md](EEPROM.md)).
+- In each archive, `calibration-<film>[-base4|-base8][-noir].bin`: the saved
+  light calibration. A scan reuses it within an hour, refreshes it after
+  that, and runs a full calibration after 20 hours (`calcache::needed`);
+  `flatfield.json` from `--light-cal` is used for raws without their own.
 
-- **C-41 inversion** (`--invert-c41`) — the recovered OEM ColNeg log-density
-  curve `out = 3500·log10(16383/in)` + per-channel film-base (Dmin) normalisation
-  (orange-mask removal). Without it, output is the raw negative for external
-  inversion (Negative Lab Pro, darktable negadoctor, …).
-- **Rendered JPEG** (`--jpeg`) — the Kodak `rpd.pf` ICC profile + scene balance +
-  a highlight roll-off that keeps detail the OEM blows out. See `docs/IMAGING.md`.
-- **Flat field** — the per-column dark and gain correction from the light
-  calibration (see [Flat field](#flat-field)).
-- **Dust and scratch removal** (`--ice`) — Digital ICE from the trailing IR
-  samples of each row (`tools/pakon_ice.py`, see `docs/IMAGING.md`); needs a
-  raw scanned with IR and its flat field.
-- **Marker-bit row alignment** (fixes the R,G,B phase per scan) and **trilinear
-  registration** of the R/G/B sensor lines.
-- **Frame detection** — autocorrelation pitch → count → phase-locked comb →
-  fixed-width centred crops.
+Beside each raw: `.flat.json` (calibration tables, row layout, scan duties),
+`.dx.json` (film product code), `.film` (film type), `.format` (framing
+format), `.crops.json` (confirmed crops, written at export).
 
-Key decoder options:
+## Packaging
 
-| Flag | Default | Effect |
-|------|---------|--------|
-| `--invert-c41` | off | OEM-faithful C-41 positive (ColNeg log LUT + Dmin) |
-| `--bw` | off | B&W (silver or C-41): with `--invert-c41`, the same inversion then grey (16-bit grey TIFF, grey JPEG) |
-| `--ice` | off | remove dust and scratches with the IR channel (raws scanned with IR) |
-| `--slide` | off | slide film: no inversion; OEM positive path (PosMatrix → `ColRevLut1.pf` → `romm.pf`) |
-| `--jpeg` | off | also write the `rpd.pf`-rendered JPEG (needs `profiles/rpd.pf`) |
-| `--rotate {90,180,270}` | 0 | rotate each output frame |
-| `--format {full,half,pano}` | full | picture format the frames are found and cropped in |
-| `--channel-order {fixed,auto,brg}` | fixed | R/G/B identity after marker alignment (fixed is verified) |
-| `--flat FILE` / `--no-flat` | auto | per-column flat field; default `RAW.flat.json`, else `EEPROM_DIR/flatfield.json` |
-| `--register` / `--no-register` | on | co-register the trilinear R/G/B sensor lines |
-| `-o PREFIX` | `frame` | output filename prefix |
+Each package is the one `pakon-app` binary plus the files it reads. No
+Python, no libusb.
 
-### Flat field
+| Platform | Command | Output | Details |
+|---|---|---|---|
+| macOS | `packaging/macos/build.sh VERSION` | `dist/macos/`: `Pakon.app` + dmg (Apple silicon) and a universal app + dmg | `packaging/macos/README.md` |
+| Windows | `packaging/windows/build.sh VERSION` | `dist/windows/Pakon-Setup.exe`, cross-built on macOS or Linux (in Docker when the tools are missing) | `packaging/windows/README.md` |
+| Linux | `packaging/linux/build-deb.sh VERSION` | `dist/linux/pakon_<arch>.deb`, natively on Debian/Ubuntu or in Docker; `PAKON_DEB_ARCH=amd64\|arm64` | header of `packaging/linux/build-deb.sh` |
 
-The F-135's illumination falls off toward the ends of the sensor line: on
-serial 3054 a column at the edge gets about a quarter of the light that the
-centre gets. Uncorrected, this shows as a bright band along one edge of every
-frame (the bottom, after the export's rotation). Like the OEM's `TLB.dll`, the
-light calibration measures each column dark and through the empty gate, and
-the decoder applies `(raw − dark) · 64000 / (open gate − dark)` per column.
+Release builds read `packaging/release.env` (from
+`packaging/release.env.example`) for the version and the report server.
 
-- `--scan-code` saves the tables with each scan (`scan.raw.flat.json`).
-- `--light-cal --eeprom-dir DIR` (gate empty) saves `DIR/flatfield.json`,
-  which the decoder and the web app use for any raw without its own file, so
-  older scans are corrected too.
-- Turn it off with `--no-flat` (CLI) or `PAKON_FLAT=0` (web). F-135 Base 16
-  only for now; a table that doesn't match the scan's width is skipped.
+## Implementation notes
 
-### F-135+ owners
+### Parity with the Python pipeline
 
-The F-135+ works end-to-end (verified on real hardware, 2026-08-12) but uses
-its own scripts and decoder flags — the F-135 `.pakscan` files above will NAK
-on it, because its controllers answer at different bus addresses. The
-differences:
+The image pipeline repeats numpy's float arithmetic (f32 where numpy stays
+f32, f64 where it promotes, numpy's percentile, median and pairwise-sum
+rounding), so its output is bit-identical to the Python pipeline it
+replaced.
 
-```sh
-# Firmware load is IDENTICAL (the F-135+ uses the same FX2 image):
-./build/pakon_probe --load-firmware resources/f135.pakfw
+| Part | Parity |
+|---|---|
+| Decode and ribbon: row layout, marker, leads, registration, flat field | bit-exact |
+| OEM colour: density LUT, NegMatrix, adjustments, unsharp mask, rpd.pf table, grey | bit-exact |
+| Film base (Dmin), roll balance | bit-exact |
+| Slide: density, ColRevLut1 link, romm.pf, gaps, flare | bit-exact |
+| TLX framing, all formats, both polarities | exact |
+| Saturation / tone tables, slide adjustments | bit-exact |
+| IR plane and our ICE | bit-exact |
+| OEM Digital ICE and scene balance under Unicorn | bit-exact |
+| Prescan / auto-frame / export of a whole 36-frame roll (ICE, SBA with FOS and the film base, adjustments, B&W) | every exported TIFF bit-identical |
+| HTTP API: Python and Rust servers on the same requests and a whole roll | 51 of 51 checks equal, TIFFs bit-identical |
+| A real scan decoded by both | identical |
 
-# The open handshake detects your model:
-./build/pakon_replay --open       # prints "model detected: F-135+"
+Known differences:
 
-# Scan with the F-135+ scripts (Base 16, highest quality):
-./build/pakon_replay --scan resources/f135plus/base16.pakscan --image scan.raw
+- **No-EEPROM fallback JPEG** (`fallback`): `invert_c41` is bit-exact, but
+  the rendered JPEG is within a mean of 0.43 codes, because Python ran rpd.pf
+  through LittleCMS's 8-bit transform and Rust uses a 52³ table.
+- **Colour tables**: the rpd.pf and romm.pf sRGB tables were generated once
+  with LittleCMS and are embedded (`pakon-image/assets/*.srgb52.u8`); there
+  is no LittleCMS at run time.
+- **Slide saturation / tone** works in Rust (romm.pf evaluated through its
+  matrix and TRC, within 0.003 of the LittleCMS table); the Python version
+  raised on romm.pf (no lut16 tag). The page sends no saturation, so it did
+  not show.
+- **JPEG bytes** differ from libjpeg's (see below); pixels round-trip.
 
-# Decode: F-135+ rows have no trailing IR block when IR is off, and the
-# row stride follows the resolution (Base 16 = 2000 px = 6000 samples):
-python3 tools/pakon_image.py scan.raw --linewidth 6000 --no-ir-lane \
-    --invert-c41 --jpeg
-```
+Protocol side: init, configure and teardown match all seven captures byte for
+byte; event follow-ups reproduce 91 of the 95 captured acks (the rest depend
+on reply data); scan start, LEDs, AFE, panel and advance match the captured
+frames; the EEPROM fixtures of two units decode to the same values; the
+calibration cache reads and writes the same bytes as the C driver's.
 
-Base 8 / Base 4 scripts are in `resources/f135plus/` too (decode with
-`--linewidth 4500` / `3000`); `base4_ir.pakscan` scans with the IR channel
-(decode with `--linewidth 4000`, keep the default `--ir-lane`). Insert the
-film strip at the feeder *before* starting the scan replay.
+### Performance
 
-The OEM polls the film out of the transport after a scan; verbatim replay
-cannot, so the strip can stop short of the exit. Append `--advance` to the
-scan command to push it out afterwards (a fixed transport run;
-`--advance-seconds` sets the duration, and a strip already at the exit
-needs only 1-2 s), or run it standalone any time a strip is left inside:
+Pipeline parts, against the Python pipeline on the same data:
 
-```sh
-./build/pakon_replay --advance --advance-seconds 3
-```
+| Step | Rust | Python |
+|---|---|---|
+| Decode + ribbon, whole 1.9 GB roll | 2.0 s | 13.9 s |
+| OEM colour, one Base 16 frame | 38 ms | |
+| Our ICE, one frame | 0.7 s | |
+| OEM Digital ICE, one frame (parity run) | 1.9 s | 2.35 s |
+| OEM roll balance stage | 0.3 s | 1.1 s |
+| Whole 36-frame roll: prescan + export | 8.7 s + 32 s | ~61 s |
 
-Ctrl-C during a scan is safe: the first one stops the scan and replays the
-captured teardown (motor and acquisition off) before exiting.
+The app against the Python app, same requests, Apple M4 Pro: process 3.3–6.2×
+faster, export without ICE 1.9×, a whole 33-frame roll (process, export with
+sharpening, save) 2.6×. The contact sheet decodes and shrinks its frames in
+parallel: 0.29 s for 33. In the app, Digital ICE per frame measures about
+10 % slower than the Python app's (see [ROADMAP.md](ROADMAP.md)).
 
-Frame-positioned advancing also works
-(`pakon_replay resources/f135plus/advance.pakscan`), and it probes the motor
-controller so it runs on either model. `--advance` is **F-135+ only**: it
-replays that unit's captured motor speed, which is above the base F-135's
-limit, so on an F-135 it refuses and points at `resources/advance.pakscan`. The **web UI supports the F-135+ too**: it detects the model to pick
-the scan script and auto-detects each raw's row layout, so the two-stage flow
-works on both. Everything else F-135+ (protocol differences, stream format,
-per-mode parameters) is in `docs/F135_PLUS_CAPTURES.md`.
+The x87 helpers the OEM DLLs call run inside the stub code itself, with no
+nested emulation. Digital ICE is one emulated thread, so one frame runs on
+one core.
 
-### Film identity (DX)
+### Memory and the export worker rule
 
-35 mm film carries a DX barcode along its edge with the film's product code
-and frame numbers. The scanner decodes it itself; the event service reads the
-result (PICL register `0x90`, `docs/PROTOCOL.md`), logs it as `dx:` lines at
-`PAKON_DEBUG=2`, and a scan ends with a summary such as
-`dx: film 82/3, 5 codes (0 rejected), frames 6..4`.
+Before export the app holds 2.3 GB for a 36-frame roll (the Python app held
+8.7 GB). Per frame being exported, measured on a 36-frame Base 16 roll with
+sharpening, 6 at once: 0.35 GB without ICE; with Digital ICE 0.48 GB for a
+full frame and 0.68 GB for a panorama crop (the largest). These are upper
+bounds, as they include the cached ribbon being paged in.
 
-`--scan-code` saves the product code as `scan.raw.dx.json`. The web app looks
-it up in the OEM product-code table (`oem/ansel/common/`), shows the film next
-to the raw in Process, and writes it into every exported JPEG and TIFF: the
-film name as the description, caption and keyword (EXIF and XMP, embedded in
-the file) and the ISO. The table was last revised in 2006, so newer films
-often have no entry; then nothing is written. Frame numbers are decoded but
-not used yet.
+`pakon-roll` budgets 0.5 GB per frame without ICE and 0.75 GB with it.
+Frames exported at once (`workers_for`) = as many as there are cores, while
+each frame's budget fits in half the physical memory, and at least 2
+(`PAKON_EXPORT_THREADS` overrides). On a 14-core M4 Pro, 36 ICE frames take
+16.1 s at 6 at once, 10.6 s at 10, 8.5 s at 12, 8.6 s at 14.
 
-### Debug logging
+### Output files
 
-Set `PAKON_DEBUG=0..4` to control verbosity. Level 4 hexdumps every packet.
+- **TIFF**: our own 16-bit writer (raw negative and positive), with the
+  film's name and ISO when the scan read the DX code. tifffile and Pillow
+  read the tags back.
+- **JPEG**: `jpeg-encoder`, 4:2:0 like Pillow, EXIF and XMP segments with
+  the film name (description, caption, keyword) and ISO. The encoder's own
+  downsampling keeps the top-left chroma sample of each 2×2 block, which
+  aliases film grain into colour noise. `output::Rgb420` instead hands it
+  the chroma averaged over each block as libjpeg's `h2v2_downsample` does (a
+  box filter with alternating bias 1, 2, edges replicated, libjpeg's
+  fixed-point YCbCr). The exported JPEGs then match Pillow's error against
+  the TIFF to 0.001 code, with sizes within 0.1 %. The bytes differ from
+  libjpeg's.
+- Contact sheet and thumbnails use the `image` crate.
 
-```sh
-PAKON_DEBUG=3 ./build/pakon_probe
-```
+`cargo run -p pakon-image --example write_samples DIR` writes sample files
+for checking with other readers.
 
-On Linux, pass the env explicitly with `sudo`:
+### The OEM DLLs and the hardened runtime
 
-```sh
-sudo PAKON_DEBUG=3 ./build/pakon_probe
-```
+`pakon-oem` maps each 32-bit x86 DLL at its preferred base with its own PE
+loader, binds the imports to stubs and calls functions under Unicorn. Unicorn
+JIT-compiles the x86 code, so the macOS app needs two hardened-runtime
+entitlements (`packaging/macos/entitlements.plist`):
+`com.apple.security.cs.allow-jit` and
+`com.apple.security.cs.allow-unsigned-executable-memory`. Unicorn is built
+from source and linked statically; the app links only system libraries, and
+`build.sh` fails if it links anything else or needs a macOS newer than 13.
+The DLLs stay as shipped (`oem/README.md`). Unicorn's licence is an open
+issue: see [ROADMAP.md](ROADMAP.md).
 
-## Web service
+### The window app
 
-The web service runs on the machine with the scanner plugged in and exposes a
-browser UI for the full workflow: firmware load, scan, eject, and image
-processing. Any device on the local network can then open it.
+One app per user: an OS lock on `app.lock` (in `PAKON_DATA`, else a
+per-user temp folder), so a crash leaves none behind; a second launch reads
+`app.port` and asks the running one to come to the front. Closing the window,
+Cmd-Q or a system quit ends a running scan as at the end of the roll and
+waits for the teardown. Links open in the browser. The installed app writes
+stdout and stderr, the scanner's lines included, to `pakon.log`.
 
-The service reads the connected scanner's EEPROM by itself: at launch, after
-**Load firmware**, or before a scan or eject, once per USB connection, with the
-same read-only requests as `tools/pakon_eeprom.py backup`. The first time it
-sees a unit it archives the EEPROM as `backups/eeprom/<model>-<serial>-<date>`;
-after that it reuses the archive for that serial and picks it over other
-units' archives. `PAKON_EEPROM_DIR` names an archive instead and turns the
-automatic read off. Keep a copy of the archive off the machine: this data
-exists nowhere else.
+### Firmware
 
-On an F-135 it uses the code-built path once it has the unit's EEPROM
-archive:
-**Scan** calibrates first (about a minute, keep the film out), then shows
-**"Motor running — feed the film now"**; feed the strip then. **Eject film**
-runs the transport until the film sensors say the strip is out (or stalled at
-the exit, where it has to be pulled by hand). **Load firmware** uses
-`firmware/PknLdr.hex` + `firmware/Pakon7.hex` (see `firmware/README.md`),
-else the captured `f135.pakfw` if they are missing. Without an EEPROM
-backup, and on the F-135+, scans replay the captured scripts.
-
-```sh
-python3 -m pip install -r web/requirements.txt
-python3 -m uvicorn web.app:app --host 0.0.0.0 --port 8000
-```
-
-Open `http://<host>:8000`. The UI opens on **Home** (start a scan or open a
-raw) and has a space for each step: **Scan** (connection state, firmware,
-work folder and film type, scan with a live progress bar, eject), then the
-**two-stage minilab flow**:
-
-1. **Process (prescan)** — builds the long negative ribbon once, caches it, and
-   renders a single long **preview strip** with auto-detected frame positions.
-2. **Confirm frames** — position each crop on the strip (click to place, **+Add /
-   −Remove**, keyboard **←/→** nudge, **↑/↓** prev/next, **Enter** next).
-3. **Export** — only the confirmed crops are cropped at full resolution and run
-   through the C-41 inversion + `rpd.pf` render. Colour and density are balanced
-   per frame by the OEM's own scene balance (Kodak SBA + roll analysis), run from
-   `oem/PakonIMAu.dll` under emulation (`tools/oem_sba.py`; needs `unicorn` and
-   `pefile` from `web/requirements.txt`). Download a single frame (raw
-   negative, TIFF or JPEG), or save every frame of a format, or a contact
-   sheet, into the order's folder in the work folder. The film name and ISO
-   go into each file when the scan read the DX code.
-
-**Settings** holds the crash-report and usage-statistics switches (see
-[Privacy](../README.md#privacy)). On macOS the same service also runs as a standalone
-app, `Pakon.app` (`packaging/macos/README.md`).
-
-Processing applies the [flat field](#flat-field) automatically when one is
-found (the scan's own, else the EEPROM archive's `flatfield.json`);
-`PAKON_FLAT=0` turns it off.
-
-The server calls the compiled `pakon_probe` / `pakon_replay` binaries for hardware
-control and runs the Python image pipeline in a thread pool. Build the C tools
-first (`cmake --build build`). The `rpd.pf` profile (in `profiles/`) is used for
-the rendered JPEGs.
-
-## Roadmap
-
-Open work is tracked in [GitHub issues](https://github.com/jorshhh/open-pakon/issues);
-`STATUS.md` has the background. In short:
-
-- **F-135+ built in code:** scan (#14), light calibration and flat field
-  (#15), film advance and eject (#16).
-- **Scan options:** resolution Base 4 / 8 / 16 (#17).
-- **Image:** the
-  remaining OEM scene-balance stages (#22).
-- **Distribution:** installable release builds for macOS, Windows and Linux
-  (#25).
-
-## Firmware
-
-See `firmware/README.md` for provenance and the legal note. Loading from the
-OEM Intel HEX files (`pakon_probe --load-firmware-hex firmware/PknLdr.hex
-firmware/Pakon7.hex`) is verified on the F-135; the stage-1 loader comes from
-the OEM `F235Ldr.sys` via `tools/extract_fx2_loader.py`. The captured `.pakfw`
-replay remains as a fallback.
+On power-on the scanner is a bare FX2 bootloader (`0F05:F235`); after the
+firmware load it re-enumerates as `0F05:F135`. The firmware is built from the
+OEM Intel HEX files in `firmware/` (`PknLdr.hex`, the stage-1 loader taken
+from the OEM `F235Ldr.sys`, and `Pakon7.hex`); the captured `f135.pakfw`
+replay is the fallback. Provenance and the legal note: `firmware/README.md`.
 
 ## More documentation
 
 | File | What's in it |
 |---|---|
-| [`../STATUS.md`](../STATUS.md) | Goal, what works, the roadmap, open questions |
-| [`PROTOCOL.md`](PROTOCOL.md) | Frames, replies, handshake, event service, DX sensor block, scan sequence |
-| [`REGISTERS.md`](REGISTERS.md) | Every register and command we write, with encodings |
-| [`TLB_FINDINGS.md`](TLB_FINDINGS.md) | Facts from the OEM F-135 engine (`TLB.dll`) |
-| [`IMAGING.md`](IMAGING.md) | Image layout, decoder, colour pipeline |
-| [`EEPROM_BACKUP.md`](EEPROM_BACKUP.md) | Reading and archiving the per-unit EEPROM |
-| [`SCANNER_FAMILY.md`](SCANNER_FAMILY.md) | F-135 / F-135+ / F-235 / F-335 differences |
-| [`F135_PLUS_CAPTURES.md`](F135_PLUS_CAPTURES.md), [`F135_PLUS_NOTES.md`](F135_PLUS_NOTES.md) | F-135+ support |
-| [`CAPTURE_GUIDE.md`](CAPTURE_GUIDE.md) | Recording USB captures of the OEM software |
-| [`LIBPAKON_COMPARISON.md`](LIBPAKON_COMPARISON.md) | Notes against libpakon |
-| [`DECISIONS.md`](DECISIONS.md) | Design decisions |
-| [`../packaging/macos/README.md`](../packaging/macos/README.md) | Building and signing `Pakon.app` |
+| [ROADMAP.md](ROADMAP.md) | What works, open work, open questions, known issues |
+| [PROTOCOL.md](PROTOCOL.md) | Frames, replies, handshake, event service, DX, scan sequence, safety rules |
+| [REGISTERS.md](REGISTERS.md) | Every register and command written, with encodings |
+| [EEPROM.md](EEPROM.md) | The per-unit EEPROM: reading, archiving, layout |
+| [IMAGING.md](IMAGING.md) | Image layout, decoder, colour pipeline, ICE, framing |
+| [SCANNER_FAMILY.md](SCANNER_FAMILY.md) | F-135 / F-135+ / F-235 / F-335 differences |
+| `packaging/macos/README.md`, `packaging/windows/README.md` | Building and signing the Mac app; the Windows installer and its USB driver |
 
-Credits, license and privacy are in the [README](../README.md).
+Credits, licence and privacy are in the [README](../README.md).

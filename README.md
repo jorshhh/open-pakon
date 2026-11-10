@@ -163,7 +163,8 @@ yes, each has its own switch, and you can change your mind any time on the
 
 Pakon also asks GitHub whether there's a newer version. Copies you build
 yourself never send anything; see the
-[technical guide](docs/TECHNICAL.md) and `web/telemetry.py` for details.
+[technical guide](docs/TECHNICAL.md) and
+`rust/crates/pakon-web/src/telemetry.rs` for details.
 
 ## Credits
 
@@ -176,42 +177,49 @@ pakon stands on other people's work:
   barcode layout and the OEM product-code table; its EEPROM layout and safety
   rules are used throughout. Ali also brought up and verified the F-135+ on
   serial 16402: its captures are the source of `resources/f135plus/` and of
-  `docs/F135_PLUS_CAPTURES.md`. Several of the reference's hardware facts
+  the F-135+ facts in `docs/SCANNER_FAMILY.md`. Several of the reference's hardware facts
   were measured with this project.
 - **Mats Fagerberg** ([thetalkingdrum](https://github.com/thetalkingdrum)):
   the base F-135 EEPROM dump (serial 2233) used as a test fixture, via
   pakon-reference, and pointing us to nkscan for Digital ICE.
 - **Digital ICE** ([#37](https://github.com/jorshhh/open-pakon/pull/37)): a
-  numpy port of the dust removal in
+  port of the dust removal in
   [nkscan](https://github.com/activexray/nkscan) (`src/dust.rs`, MIT OR
   Apache-2.0, © the nkscan authors), which implements the pipeline documented
   by [openICE](https://github.com/a6o/openICE) (a6o, GPL-3.0).
 - **Kai Kaufman** ([ktkaufman03/FX35](https://github.com/ktkaufman03/FX35)):
   the open-source FX35 Windows driver. Its package carries the OEM firmware
   as Intel HEX (`firmware/README.md`), and with logging added it recorded the
-  F-135+ captures (`tools/fx35_datalogger.py`).
+  F-135+ captures (`tools/fx35_datalogger.py`, at git tag `python-final`).
 - **Stefan Dierauf**: libpakon, an independent C++ driver, used as a
-  read-only reference (`docs/LIBPAKON_COMPARISON.md`).
+  read-only reference.
 - **Kodak / Pakon**: the original F-X35 software. Its F-135 engine `TLB.dll`
-  was reverse-engineered for interoperability (`docs/TLB_FINDINGS.md`); the
+  was reverse-engineered for interoperability (`docs/PROTOCOL.md`,
+  `docs/IMAGING.md`); the
   colour engine `PakonIMAu.dll`, its scene-balance data, the DX
   product-code table and the Digital ICE library `DMLDICELib.dll` (Applied
   Science Fiction) are used as-is (`oem/`), as are the colour profiles in
   `profiles/` (© Eastman Kodak Company).
-- **Software**: [libusb](https://libusb.info),
-  [FastAPI](https://fastapi.tiangolo.com),
-  [uvicorn](https://www.uvicorn.org), [NumPy](https://numpy.org),
-  [Pillow](https://python-pillow.org) (with littleCMS),
-  [tifffile](https://github.com/cgohlke/tifffile),
-  [PyUSB](https://github.com/pyusb/pyusb),
-  [Unicorn](https://www.unicorn-engine.org) and
-  [pefile](https://github.com/erocarrera/pefile) (to run the OEM scene
-  balance), [pywebview](https://pywebview.flowrl.com) (the app's window),
+- **Software**: [Rust](https://www.rust-lang.org) and its crates, among
+  them [nusb](https://github.com/kevinmehall/nusb) (USB),
+  [axum](https://github.com/tokio-rs/axum) and
+  [tokio](https://tokio.rs) (the web service),
+  [tao](https://github.com/tauri-apps/tao) and
+  [wry](https://github.com/tauri-apps/wry) (the app's window),
+  [ndarray](https://github.com/rust-ndarray/ndarray) and
+  [rayon](https://github.com/rayon-rs/rayon) (the image pipeline),
+  [image](https://github.com/image-rs/image) and
+  [jpeg-encoder](https://github.com/vstroebel/jpeg-encoder);
+  [Unicorn](https://www.unicorn-engine.org) (to run the OEM scene balance
+  and Digital ICE), [LittleCMS](https://www.littlecms.com) (the `rpd.pf`
+  and `romm.pf` tables were computed with it),
   [NSIS](https://nsis.sourceforge.io) and [MinGW-w64](https://www.mingw-w64.org)
   (the Windows installer and tools), [libwdi](https://github.com/pbatard/libwdi)
   (a reference for setting up the Windows USB driver),
   [Ghidra](https://ghidra-sre.org) (reverse engineering) and
-  [Rybbit](https://rybbit.com) (opt-in analytics).
+  [Rybbit](https://rybbit.com) (opt-in analytics). Earlier versions were
+  built on libusb, FastAPI, uvicorn, NumPy, Pillow, tifffile, PyUSB, pefile
+  and pywebview.
 
 ## License
 

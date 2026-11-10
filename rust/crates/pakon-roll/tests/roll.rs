@@ -1,5 +1,5 @@
 //! Prescan + export end to end against web/decode.py
-//! (rust/tools/golden_roll.py writes the reference into $PAKON_GOLDEN).
+//! (rust/tools/golden_roll.py, at git tag python-final, writes the reference into $PAKON_GOLDEN).
 
 use std::path::{Path, PathBuf};
 
@@ -40,7 +40,7 @@ fn full_roll_matches_python() {
 
 fn roll_matches_python(gold: &Path) {
     if !gold.join("roll.json").is_file() {
-        eprintln!("skipped: run rust/tools/golden_roll.py first");
+        eprintln!("skipped: make the reference with rust/tools/golden_roll.py (git tag python-final)");
         return;
     }
     let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(gold.join("roll.json")).unwrap()).unwrap();

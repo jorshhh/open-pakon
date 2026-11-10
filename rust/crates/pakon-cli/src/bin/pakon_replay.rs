@@ -1,8 +1,9 @@
-//! `pakon_replay` in Rust: the same flags and output lines as
-//! `tools/pakon_replay.c` for --open, --scan (replay, --autostop, --drain,
-//! --advance), --scan-code, --light-cal, --setup, --eject, --advance-code
-//! and --advance. The debugging modes (--read-params, --calib-probe,
-//! --film-sense, advance scripts) stay in the C tool for now.
+//! `pakon_replay`: the same flags and output lines as the C tool it
+//! replaced (`tools/pakon_replay.c`, git tag python-final) for --open,
+//! --scan (replay, --autostop, --drain, --advance), --scan-code,
+//! --light-cal, --setup, --eject, --advance-code and --advance. The C
+//! tool's research modes (--read-params, --calib-probe, --film-sense,
+//! --trace-status, advance scripts) were not ported.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -148,11 +149,11 @@ fn parse() -> Result<Args, i32> {
                 a.timeout_ms = num(&v[i])?;
             }
             "--read-params" | "--calib-probe" | "--film-sense" | "--trace-status" | "--steps" | "--limit" | "--params-out" => {
-                eprintln!("{}: not in the Rust pakon_replay yet; use the C tool (build/pakon_replay)", v[i]);
+                eprintln!("{}: not ported from the C pakon_replay (git tag python-final)", v[i]);
                 return Err(2);
             }
             s if !s.starts_with('-') => {
-                eprintln!("{s}: advance scripts are not in the Rust pakon_replay yet; use the C tool");
+                eprintln!("{s}: advance scripts were not ported from the C pakon_replay (git tag python-final); use --advance-code");
                 return Err(2);
             }
             s => {
@@ -179,11 +180,11 @@ fn open_device() -> Result<Device, i32> {
 
 fn archive(a: &Args) -> Result<(Eeprom, PathBuf), i32> {
     let dir = a.eeprom_dir.clone().ok_or_else(|| {
-        eprintln!("setup: need --eeprom-dir with a decodable EEPROM archive (python3 tools/pakon_eeprom.py backup DIR)");
+        eprintln!("setup: need --eeprom-dir with a decodable EEPROM archive (the app writes one when a warm scanner connects)");
         1
     })?;
     let e = session::load_eeprom_archive(&dir).ok_or_else(|| {
-        eprintln!("setup: need --eeprom-dir with a decodable EEPROM archive (python3 tools/pakon_eeprom.py backup DIR)");
+        eprintln!("setup: need --eeprom-dir with a decodable EEPROM archive (the app writes one when a warm scanner connects)");
         1
     })?;
     Ok((e, dir))

@@ -1,5 +1,5 @@
 //! Parity with the Python pipeline on a real roll. Needs reference outputs
-//! from `rust/tools/golden.py RAW DIR`; set PAKON_GOLDEN=DIR to run, skipped
+//! from `rust/tools/golden.py RAW DIR` (git tag python-final); set PAKON_GOLDEN=DIR to run, skipped
 //! otherwise (the raws are gigabytes and stay out of the repo).
 
 use std::path::PathBuf;
@@ -183,7 +183,7 @@ fn slide_path() {
 }
 
 /// TLX framing on the whole roll: PAKON_GOLDEN_FULL plus framing.json next
-/// to it (rust/tools/golden_framing.py).
+/// to it (rust/tools/golden_framing.py, git tag python-final).
 #[test]
 fn framing_matches() {
     use pakon_image::framing::{self, Format};
@@ -248,7 +248,7 @@ fn adjustments_match() {
     use pakon_image::slide;
     let Some(dir) = golden() else { return };
     if !dir.join("adjust.json").is_file() {
-        eprintln!("skipped: run rust/tools/golden_adjust.py first");
+        eprintln!("skipped: make the reference with rust/tools/golden_adjust.py (git tag python-final)");
         return;
     }
     let info: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("adjust.json")).unwrap()).unwrap();
@@ -323,7 +323,7 @@ fn fallback_matches() {
     use pakon_image::fallback;
     let Some(dir) = golden() else { return };
     if !dir.join("render_jpeg.npy").is_file() {
-        eprintln!("skipped: run rust/tools/golden_fallback.py first");
+        eprintln!("skipped: make the reference with rust/tools/golden_fallback.py (git tag python-final)");
         return;
     }
     let info: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("colour.json")).unwrap()).unwrap();

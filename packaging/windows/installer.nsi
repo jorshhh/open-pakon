@@ -34,10 +34,18 @@ VIAddVersionKey "LegalCopyright" "See LICENSE and NOTICE"
 
 Section "Pakon"
   SetOutPath "$INSTDIR"
-  ; an update replaces the app; settings and scans are elsewhere
+  ; an update replaces the app; settings and scans are elsewhere. Also
+  ; removes what the earlier Python app installed: the embedded
+  ; Python, its libraries, the C tools and the Python sources
   RMDir /r "$INSTDIR\Lib"
   RMDir /r "$INSTDIR\web"
   RMDir /r "$INSTDIR\tools"
+  RMDir /r "$INSTDIR\build"
+  RMDir /r "$INSTDIR\packaging"
+  Delete "$INSTDIR\python*.*"
+  Delete "$INSTDIR\*.pyd"
+  Delete "$INSTDIR\*.dll"
+  Delete "$INSTDIR\LICENSE.txt"
   File /r "${STAGE}\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 

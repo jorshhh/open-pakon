@@ -102,8 +102,19 @@ fn log_to(dir: &Path) {
             libc::dup2(f.as_raw_fd(), 2);
         }
     }
-    #[cfg(not(unix))]
-    drop(f);
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::IntoRawHandle;
+        use windows_sys::Win32::System::Console::{SetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
+        // Rust's stdout / stderr look the handle up on every write. The
+        // handle is kept open for the life of the process.
+        let h = f.into_raw_handle();
+        // SAFETY: an open file handle, never closed.
+        unsafe {
+            SetStdHandle(STD_OUTPUT_HANDLE, h);
+            SetStdHandle(STD_ERROR_HANDLE, h);
+        }
+    }
 }
 
 /// One app per user: a second one would start a second service on the same

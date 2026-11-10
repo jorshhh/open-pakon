@@ -86,7 +86,7 @@ pub struct Table {
 
 impl Table {
     /// From the 8-bit sRGB values the LittleCMS transform produced, /255 in
-    /// f32 as `RpdLut` does (see `rust/tools/tables.py`).
+    /// f32 as `RpdLut` does (see `rust/tools/tables.py`, git tag python-final).
     pub fn from_u8(n: usize, bytes: &[u8]) -> Result<Table, String> {
         if bytes.len() != n * n * n * 3 {
             return Err(format!("table: {} bytes, want {}", bytes.len(), n * n * n * 3));

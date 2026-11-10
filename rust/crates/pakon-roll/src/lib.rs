@@ -271,7 +271,15 @@ fn total_ram() -> Option<u64> {
         let kb: u64 = mi.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse().ok()?;
         Some(kb * 1024)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        // SAFETY: a zeroed MEMORYSTATUSEX with its length set, as the call asks.
+        let mut s: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+        s.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+        (unsafe { GlobalMemoryStatusEx(&mut s) } != 0).then_some(s.ullTotalPhys)
+    }
+    #[cfg(not(any(unix, windows)))]
     None
 }
 

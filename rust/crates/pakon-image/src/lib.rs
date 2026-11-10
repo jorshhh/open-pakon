@@ -1,4 +1,4 @@
-//! Pakon image pipeline (stage 2 of `rust/PLAN.md`): the raw 0x86 stream to
+//! Pakon image pipeline (`docs/IMAGING.md`): the raw 0x86 stream to
 //! the registered, flat-fielded RGB ribbon; then (as they are ported) OEM
 //! colour, framing, dust removal and export. Ports `tools/pakon_image.py`,
 //! `web/decode.py`, `tools/pakon_ice.py`, `tools/oem_*.py` and
@@ -24,7 +24,7 @@ pub mod stats;
 /// Dark level the light calibration targets (`pakon_image._RAW_BLACK`).
 pub const RAW_BLACK: f32 = 300.0;
 
-/// rpd.pf → sRGB on 52³ nodes (LittleCMS, 8-bit; `rust/tools/tables.py`).
+/// rpd.pf → sRGB on 52³ nodes (LittleCMS, 8-bit; `rust/tools/tables.py`, git tag python-final).
 pub const RPD_TABLE_U8: &[u8] = include_bytes!("../assets/rpd.srgb52.u8");
 /// romm.pf → sRGB, the slide output table.
 pub const ROMM_TABLE_U8: &[u8] = include_bytes!("../assets/romm.srgb52.u8");

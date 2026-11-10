@@ -1,4 +1,4 @@
-//! OEM scene balance against tools/oem_sba.py (rust/tools/golden_sba.py
+//! OEM scene balance against tools/oem_sba.py (rust/tools/golden_sba.py at git tag python-final
 //! writes the reference into $PAKON_GOLDEN from $PAKON_GOLDEN_FULL's roll).
 
 use std::path::PathBuf;
@@ -28,7 +28,7 @@ fn sba_matches_python() {
     let (Some(gold), Some(full)) = (std::env::var_os("PAKON_GOLDEN"), std::env::var_os("PAKON_GOLDEN_FULL")) else { return };
     let gold = PathBuf::from(gold);
     if !gold.join("sba.json").is_file() {
-        eprintln!("skipped: run rust/tools/golden_sba.py first");
+        eprintln!("skipped: make the reference with rust/tools/golden_sba.py (git tag python-final)");
         return;
     }
     let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(gold.join("sba.json")).unwrap()).unwrap();

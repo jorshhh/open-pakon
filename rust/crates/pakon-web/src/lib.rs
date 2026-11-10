@@ -1,4 +1,4 @@
-//! The Pakon web service in Rust (stage 4 of `rust/PLAN.md`): the routes
+//! The Pakon web service in Rust (`docs/TECHNICAL.md`): the routes
 //! and event streams of `web/app.py` behind the same page,
 //! `web/static/index.html`. Scans call `pakon-scan` in this process instead
 //! of starting `pakon_replay`; image jobs call `pakon-roll` on the blocking
