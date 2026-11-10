@@ -33,6 +33,7 @@ enum UserEvent {
     /// The service has torn the scanner down and stopped: quit.
     Stopped,
     /// Quit from the menu (Cmd-Q): as closing the window.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Quit,
 }
 
@@ -127,11 +128,28 @@ fn run_dir() -> PathBuf {
     }
 }
 
-fn hold_lock(dir: &Path) -> Option<File> {
-    std::fs::create_dir_all(dir).ok()?;
-    let f = File::options().create(true).append(true).open(dir.join("app.lock")).ok()?;
-    f.try_lock().ok()?;
-    Some(f)
+/// `Err` when another Pakon holds the lock. `Ok(None)` when the lock can't
+/// be taken for another reason: run anyway, as a missing lock is better than
+/// an app that never opens.
+fn hold_lock(dir: &Path) -> Result<Option<File>, ()> {
+    let _ = std::fs::create_dir_all(dir);
+    // read + write: Windows locks (LockFileEx) need one of them, and an
+    // append-only handle is refused with "access denied"
+    let f = match File::options().read(true).write(true).create(true).truncate(false).open(dir.join("app.lock")) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("app.lock: {e}; running without the one-app check");
+            return Ok(None);
+        }
+    };
+    match f.try_lock() {
+        Ok(()) => Ok(Some(f)),
+        Err(std::fs::TryLockError::WouldBlock) => Err(()),
+        Err(std::fs::TryLockError::Error(e)) => {
+            eprintln!("app.lock: {e}; running without the one-app check");
+            Ok(None)
+        }
+    }
 }
 
 /// Bring the running app's window to the front (POST /api/app/focus).
@@ -142,15 +160,18 @@ fn focus_running(dir: &Path) {
     let _ = ureq::post(&url).timeout(Duration::from_secs(5)).call();
 }
 
+#[cfg(target_os = "macos")]
 const QUIT_ID: &str = "quit";
 
-/// The menu bar: without one, a macOS app has no Quit (Cmd-Q) and the page
-/// no Copy / Paste. Quit is our own item, not the system's, so it ends a
-/// scan and waits for the teardown as closing the window does.
+/// The macOS menu bar: without one, a Mac app has no Quit (Cmd-Q) and the
+/// page no Copy / Paste. Quit is our own item, not the system's, so it ends a
+/// scan and waits for the teardown as closing the window does. Windows and
+/// Linux get no menu: the page's shortcuts work without one, and closing the
+/// window quits.
+#[cfg(target_os = "macos")]
 fn menu() -> muda::Menu {
     use muda::{Menu, PredefinedMenuItem as P, Submenu};
     let menu = Menu::new();
-    #[cfg(target_os = "macos")]
     {
         use muda::accelerator::{Accelerator, Code, Modifiers};
         let quit = muda::MenuItem::with_id(QUIT_ID, "Quit Pakon", true, Some(Accelerator::new(Modifiers::META, Code::KeyQ)));
@@ -248,22 +269,26 @@ fn main() {
     }
 
     let run = run_dir();
-    let Some(_lock) = hold_lock(&run) else {
+    let Ok(_lock) = hold_lock(&run) else {
         focus_running(&run);
         println!("Pakon is already running");
         return;
     };
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
-    let menu = menu();
-    let menu_proxy = event_loop.create_proxy();
-    muda::MenuEvent::set_event_handler(Some(move |e: muda::MenuEvent| {
-        if e.id() == QUIT_ID {
-            let _ = menu_proxy.send_event(UserEvent::Quit);
-        }
-    }));
     #[cfg(target_os = "macos")]
-    menu.init_for_nsapp();
+    {
+        let menu = menu();
+        let menu_proxy = event_loop.create_proxy();
+        muda::MenuEvent::set_event_handler(Some(move |e: muda::MenuEvent| {
+            if e.id() == QUIT_ID {
+                let _ = menu_proxy.send_event(UserEvent::Quit);
+            }
+        }));
+        menu.init_for_nsapp();
+        // the menu lives as long as the app
+        std::mem::forget(menu);
+    }
 
     let window = WindowBuilder::new()
         .with_title("Pakon")
@@ -271,17 +296,6 @@ fn main() {
         .with_min_inner_size(LogicalSize::new(960.0, 640.0))
         .build(&event_loop)
         .expect("a window");
-    #[cfg(windows)]
-    {
-        use tao::platform::windows::WindowExtWindows;
-        // SAFETY: the window's own handle.
-        let _ = unsafe { menu.init_for_hwnd(window.hwnd() as _) };
-    }
-    #[cfg(target_os = "linux")]
-    {
-        use tao::platform::unix::WindowExtUnix;
-        let _ = menu.init_for_gtk_window(window.gtk_window(), window.default_vbox());
-    }
 
     let service = match &root {
         Some(r) => start_service(r.clone(), event_loop.create_proxy()),
@@ -309,6 +323,15 @@ fn main() {
             (builder.with_html(error_page(&logs, &e)), None, None)
         }
     };
+    // On Linux the page goes into tao's GTK box (under the menu bar); built
+    // on the window itself it is never shown there, and the window stays blank.
+    #[cfg(target_os = "linux")]
+    let _webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        builder.build_gtk(window.default_vbox().expect("tao's GTK box")).expect("a webview")
+    };
+    #[cfg(not(target_os = "linux"))]
     let _webview = builder.build(&window).expect("a webview");
 
     let mut closing: Option<Instant> = None;

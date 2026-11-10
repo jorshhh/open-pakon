@@ -63,8 +63,8 @@ can stop short of the exit: the OEM polls the film out, a replay cannot.
 | Platform | Package | On a scanner |
 |---|---|---|
 | macOS 13+ (Apple silicon; universal build for Intel) | `Pakon.app` + dmg, ad hoc signed | Yes, F-135, Rust app and CLI |
-| Windows 10 / 11 (64-bit) | `Pakon-Setup.exe`, installs WinUSB; unsigned | No. Built and smoke-tested in a container only. |
-| Linux (Debian/Ubuntu, amd64 and arm64) | `.deb` with a udev rule | No, not with the Rust code. Built and smoke-tested in a container only. (Replay scans ran on Linux with the earlier C driver.) |
+| Windows 10 / 11 (64-bit) | `Pakon-Setup.exe`, installs WinUSB; unsigned | No. The app installs and opens on Windows 11 (a VM, no scanner); the service processes and exports with Digital ICE under Wine. |
+| Linux (Debian/Ubuntu, amd64 and arm64) | `.deb` with a udev rule | No, not with the Rust code. The app installs and opens on Linux Mint 22 (no scanner); the package processes and exports with Digital ICE in a clean Ubuntu 22.04. (Replay scans ran on Linux with the earlier C driver.) |
 
 ## Open work
 
@@ -81,7 +81,19 @@ can stop short of the exit: the OEM polls the film out, a replay cannot.
 
 ### Platforms and releases
 
-- A scan from the Windows and the Linux package on real hardware.
+- The USB path on Windows and Linux, on a scanner (nothing below has run
+  there with the Rust code):
+  - the WinUSB driver install on a clean Windows (`pakon_driver.exe`), and
+    the udev rule giving the logged-in user access on Linux;
+  - firmware load on the cold device (`0f05:f235`), then the device coming
+    back as `0f05:f135` (on Windows, nusb claims interface 0 of the cold
+    device; in a VM both IDs must be passed through);
+  - the EEPROM read and its archive when a warm scanner connects;
+  - open, setup, light calibration and a full scan with end-of-roll stop,
+    at Base 16, 8 and 4, IR on and off;
+  - Stop during a scan, Advance film (eject), and closing the window while
+    scanning (teardown: motor stopped, lamp off);
+  - unplugging and replugging, and a scanner switched off mid-session.
 - Eject and firmware load from the macOS app window (done from the CLI).
 - Developer ID signing and notarization of the Mac app (issue #25):
   `build.sh` supports both, but no certificate or notary profile is set up,
