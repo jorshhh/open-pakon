@@ -42,6 +42,9 @@ const DRIVER_HINT: &str = if cfg!(windows) {
 
 /// Lines of a code-built scan worth showing, and the one that means "the
 /// motor runs, feed the film".
+/// Lines left off the page that are shown when a job fails.
+const UNSHOWN_ON_FAILURE: usize = 12;
+
 const SCAN_LOG_KEYS: &[&str] = &[
     "calibration:",
     "calibrated:",
@@ -178,6 +181,10 @@ where
             let _ = ltx.send(l.to_string());
         })
     });
+    // Lines the keys leave out of the page: the last few are shown if the job
+    // fails, since the reason is often one of them (a calibration that could
+    // not align its lines, an image read that timed out).
+    let mut unshown: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     let ok = loop {
         let done = match tokio::time::timeout(Duration::from_millis(500), &mut handle).await {
             Ok(Ok(ok)) => Some(ok),
@@ -190,10 +197,21 @@ where
         };
         while let Ok(text) = lrx.try_recv() {
             for line in text.lines().map(str::trim) {
+                if line.is_empty() {
+                    continue;
+                }
+                // Every line goes to the app's log (pakon.log in the app),
+                // shown on the page or not.
+                eprintln!("[scanner] {line}");
                 if line.contains(FEED_KEY) {
                     em.emit(json!({"type": "feed", "message": "Motor running — feed the film now"}));
-                } else if keys.is_none_or(|ks| ks.iter().any(|k| line.contains(k))) && !line.is_empty() && !line.contains("0x81: timeout") {
+                } else if keys.is_none_or(|ks| ks.iter().any(|k| line.contains(k))) && !line.contains("0x81: timeout") {
                     em.log(plain(line));
+                } else {
+                    if unshown.len() == UNSHOWN_ON_FAILURE {
+                        unshown.pop_front();
+                    }
+                    unshown.push_back(line.to_string());
                 }
             }
         }
@@ -205,6 +223,13 @@ where
             break ok;
         }
     };
+    // (not after Stop: a stopped scan reports failure on purpose)
+    if !ok && !unshown.is_empty() && !(scan && app.scan_stop.load(Ordering::SeqCst)) {
+        em.log("The scanner's last lines:");
+        for line in unshown {
+            em.log(line);
+        }
+    }
     pakon_scan::set_log_sink(None);
     if scan {
         app.scan_active.store(false, Ordering::SeqCst);
