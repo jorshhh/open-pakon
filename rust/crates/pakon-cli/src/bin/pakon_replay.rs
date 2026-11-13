@@ -12,7 +12,6 @@ use std::time::Duration;
 use pakon_cli::{say, stop_flag};
 use pakon_proto::eeprom::Eeprom;
 use pakon_proto::lightcal::{self as lc, Film};
-use pakon_proto::setup::Model;
 use pakon_scan::link::Link;
 use pakon_scan::{calib, cmd, replay, scan, session, transport, ScanError};
 use pakon_usb::Device;
@@ -231,10 +230,6 @@ fn do_light_cal(a: &Args, dev: &mut Device, e: Eeprom, dir: &Path, ir: bool) -> 
         Ok(s) => s,
         Err(_) => return 1,
     };
-    if s.model() != Model::F135 {
-        eprintln!("light-cal: F-135 only for now");
-        return 1;
-    }
     let td = scan::Teardown::new(dev, s.st, t);
     let mut rc = 1;
     if calib::lamp_wait(&mut *td.link, &s.st, t, "light-cal", &mut out).is_ok() {

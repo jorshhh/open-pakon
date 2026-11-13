@@ -149,12 +149,12 @@ Integration (bank `0x82` reg 6) and scan-line trigger (LOW `0x91`):
 | F-135 | 8 | off | `0x0D9D` | 38 | run on serial 3054 |
 | F-135 | 4 | on | `0x060D` | 64 | run on serial 3054 |
 | F-135 | 4 | off | `0x0913` | 85 | run on serial 3054 |
-| F-135+ | 16 | off | `0x0FFD` | `0x003C` (60) | captured; replayed on serial 16402 |
-| F-135+ | 8 | off | `0x0AFD` | `0x0075` (117) | captured; replayed on serial 16402 |
-| F-135+ | 4 | off | `0x0753` | `0x0107` (263) | captured |
-| F-135+ | 4 | on | `0x04E2` | `0x00C5` (197) | captured |
-| F-135+ | 16 | on | `0x09C2` | `0x0031` (49) | predicted, never run |
-| F-135+ | 8 | on | `0x0850` | `0x004D` (77) | predicted, never run |
+| F-135+ | 16 | off | `0x0FFD` | `0x003C` (60) | captured; replayed on serial 16402; run on serial 138 |
+| F-135+ | 8 | off | `0x0AFD` | `0x0075` (117) | captured; replayed on serial 16402; run on serial 138 |
+| F-135+ | 4 | off | `0x0753` | `0x0107` (263) | captured; run on serial 138 |
+| F-135+ | 4 | on | `0x04E2` | `0x00C5` (197) | captured; run on serial 138 |
+| F-135+ | 16 | on | `0x09C2` | `0x0031` (49) | from `TLB.dll`'s table, never captured; run on serial 138 (rows 8000 samples) |
+| F-135+ | 8 | on | `0x0850` | `0x004D` (77) | from `TLB.dll`'s table, never captured; run on serial 138 (rows 6000 samples) |
 
 "Run" means a whole strip scanned from code with a frame pitch within ~1.3%
 of the OEM 3:2 pitch [C]; "replayed" means the captured OEM session was
@@ -169,9 +169,12 @@ are 2.5× the F-135 formula with their integration times, so its clock is
 EEPROM motor speed / ~98 (the engine's default motor speed is 100 ×
 trigger).
 
-**LED period** (LOW `0x82` last word) = integration × 0.6, truncated
-(`0x0C1A` → `0x0742`; Base 4 + IR → 929) [C, F-135]. The init period word is
-`0x0997` (F-135) / `0x03D6` (F-135+).
+**LED period** (LOW `0x82` last word) = integration × 0.6, truncated, on
+the F-135 (`0x0C1A` → `0x0742`; Base 4 + IR → 929) [C]; integration × 0.24
+(0.6 over the 2.5× clock), truncated, on the F-135+: `0xFFD` → 982, `0xAFD`
+→ 675, `0x753` → 450, `0x4E2` → 300, the period word of each Plus capture
+[C, captured], and run in all six modes on serial 138. The init period word
+is `0x0997` (F-135) / `0x03D6` (F-135+).
 
 ## LOW — LEDs
 

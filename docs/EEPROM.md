@@ -181,6 +181,7 @@ Offset / MotorSpeed / MotorSpeed_Ir per base:
 | 16275 (F-135+) | 1351 | 27 / 25802 / 19335 | 54 / 11467 / 7580 | 55 / 5917 / 4850 |
 | 16402 (F-135+) | 1351 | 30 / 25726 / 19278 | 58 / 11434 / 7557 | 60 / 5900 / 4836 |
 | 17157 (F-135+) | 1351 | 34 / 25498 / 19107 | 66 / 11332 / 7490 | 68 / 5847 / 4793 |
+| 138 (F-135+) | 1351 | 32 / 25381 / 19019 | 62 / 11280 / 7456 | 64 / 5820 / 4771 |
 
 NegMatrix diagonal and constants (the part that varies):
 
@@ -192,6 +193,7 @@ NegMatrix diagonal and constants (the part that varies):
 | 16275 (F-135+) | 0.28920 / 0.27583 / 0.27824 | 159.6 / 444.8 / 635.5 |
 | 16402 (F-135+) | 0.29299 / 0.28521 / 0.32000 | 165.8 / 429.8 / 638.2 |
 | 17157 (F-135+) | 0.28860 / 0.31628 / 0.32606 | 162.1 / 401.3 / 607.7 |
+| 138 (F-135+) | 0.28399 / 0.28346 / 0.28035 | 157.6 / 411.5 / 620.3 |
 
 Chip health and section B:
 
@@ -200,6 +202,7 @@ Chip health and section B:
 | 3054 | all four valid, primaries = backups | `0x873e6ed3` |
 | 2233 | all four valid | `0x2a582d50` (Base 4 MotorAdjust_Ir at `0x80C` = 1008) |
 | 5963 | all four valid | `0x873e6ed3` |
+| 138 | all four valid, primaries = backups; hardware version 400 | `0x873e6ed3` |
 | 16275 | section A primary bad: length byte `0x5A` instead of `0x8E`, and a 17-byte block at `0x100`–`0x110` (a 256-byte page boundary); backup good | `0x873e6ed3` |
 | 16402 | section A primary bad: byte `0x0A5` reads `0x48` instead of `0x00` (high byte of PosMatrix1, 0.0 → 131072.0); stable over four reads and two power cycles; backup good | `0x873e6ed3` |
 | 17157 | all four valid | `0x873e6ed3` |

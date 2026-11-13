@@ -101,9 +101,14 @@ Linux builds have not been run on a scanner yet.
 - EEPROM archive: the app reads it when a warm scanner connects and writes
   `<data folder>/eeprom/F135-<serial>-<date>/` (`backups/eeprom/` from a
   checkout); there is no standalone backup tool.
-- F-135+ support was verified by Ali Bosworth on serial 16402 (not on this
+- F-135+ replays were verified by Ali Bosworth on serial 16402 (not on this
   machine). Plus scripts are in `resources/f135plus/`; they carry that unit's
   per-unit values (motor speeds), so treat them as one unit's recording.
+- F-135+ code-built scans (all bases, IR on and off, CLI and app) ran on a
+  demo unit, serial 138, on this Mac on 2026-11-13. Plus LED period =
+  integration × 0.24 (F-135: × 0.6); current search runs to the board's
+  ceiling (Plus 4/20/20, IR on 8/24/24/8). Advance and eject on a Plus are
+  still the timed run.
 - Plus decode: rows have no IR block when IR is off; stride follows the
   resolution (6000/4500/3000 samples at Base 16/8/4). The decoder detects
   the layout per raw; `PAKON_LINEWIDTH=N PAKON_IR_LANE=0` forces it.

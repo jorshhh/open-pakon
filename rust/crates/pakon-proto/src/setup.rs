@@ -297,10 +297,15 @@ pub fn scan_px(base: u32) -> u32 {
     }
 }
 
-/// LED period for an integration time: integration * 0.6, truncated
-/// (TLB.dll; 0x0C1A gives the captured 0x742).
-pub fn led_period(integration: u16) -> u16 {
-    (integration as u32 * 6 / 10) as u16
+/// LED period for an integration time, truncated: integration * 0.6 on the
+/// F-135 (TLB.dll; 0x0C1A gives the captured 0x742), integration * 0.24 on
+/// the F-135+ (0.6 over its 2.5x pixel clock; all four Plus captures:
+/// 0xFFD -> 982, 0xAFD -> 675, 0x753 -> 450, 0x4E2 -> 300).
+pub fn led_period(model: Model, integration: u16) -> u16 {
+    match model {
+        Model::F135 => (integration as u32 * 6 / 10) as u16,
+        Model::F135Plus => (integration as u32 * 6 / 25) as u16,
+    }
 }
 
 /// Controller init after model detection.

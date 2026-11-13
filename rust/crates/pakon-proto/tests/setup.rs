@@ -266,9 +266,12 @@ fn unknown_modes_refused() {
 
 #[test]
 fn period_and_px() {
-    assert_eq!(setup::led_period(0x0C1A), 0x742);
-    assert_eq!(setup::led_period(0x0913), 1393);
-    assert_eq!(setup::led_period(0x060D), 929);
+    assert_eq!(setup::led_period(Model::F135, 0x0C1A), 0x742);
+    assert_eq!(setup::led_period(Model::F135, 0x0913), 1393);
+    assert_eq!(setup::led_period(Model::F135, 0x060D), 929);
+    // F-135+: the period word of each Plus capture (resources/f135plus/)
+    let plus = |base, ir| setup::led_period(Model::F135Plus, setup::scan_mode(Model::F135Plus, base, ir, 64).unwrap().integration);
+    assert_eq!([plus(16, false), plus(8, false), plus(4, false), plus(4, true)], [0x3D6, 0x2A3, 0x1C2, 0x12C]);
     assert_eq!([16, 8, 4, 2].map(setup::scan_px), [2000, 1500, 1000, 0]);
 }
 
@@ -413,6 +416,29 @@ fn scan_start() {
         Err(SetupError::MotorSpeed(9501))
     );
     assert!(seq.is_empty());
+}
+
+#[test]
+fn scan_start_plus() {
+    // f135plus/base16.pakscan lines 1820-1854 (serial 16402, Base 16 IR
+    // off): Offset 60, duties R655 G980 B750 at period 982, speed 0x170C =
+    // that unit's MotorSpeed 5900, trigger 60. The capture has no LOW 0x80
+    // write here (calibration left it at 01, the value we write again, as
+    // the F-135 capture does) and sets the panel word (bank 0x82 reg 9) in
+    // between, which we do after.
+    let mut seq = Seq::new();
+    let mut st = setup::init(&mut seq, LOW_P, SCN_P, setup::LED_PERIOD_F135_PLUS);
+    st.reg0 = 0x0060; // after Base 16 configure, IR off
+    let period = setup::led_period(Model::F135Plus, 0x0FFD);
+    assert_eq!(period, 0x3D6);
+    let mut seq = Seq::new();
+    setup::scan_start(&mut seq, &mut st, 60, [655, 980, 750, 0], period, setup::motor_speed(5900, 1000, Model::F135Plus), 0x3C).unwrap();
+    assert_eq!(
+        seq_hex(&seq),
+        "0206440382006000 020410018402 040340008a 0206440382043c00 020440018001 \
+         020f400c82ee0200008f020000d403d603 02054402a50c17 04034400a0 \
+         0206440382006100 02064003913c0001"
+    );
 }
 
 #[test]

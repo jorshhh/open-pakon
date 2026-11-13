@@ -12,12 +12,16 @@ parameters (the unit's EEPROM, a calibration we run, the chosen resolution
 and film). The captures stay in the repo as test fixtures: generated command
 streams are checked byte for byte against them.
 
-The F-135 is there. The F-135+ still replays captured scripts.
+The F-135 is there. The F-135+ scans in code too, at every base with IR
+on and off; only its film advance and eject are still timed runs at a
+captured speed.
 
 ## What works today
 
 "Hardware" below means run on a real scanner. Hardware runs so far were on
-one F-135 (serial 3054) and one F-135+ (serial 16402, a contributor's unit).
+one F-135 (serial 3054) and two F-135+: serial 16402 (a contributor's unit,
+C driver, replays) and serial 138 (a demo unit, Rust, code-built scans,
+2026-11-13).
 Some steps were verified on hardware with the earlier C driver and not yet
 rerun with the Rust code; the Rust code builds the same command streams
 (checked byte for byte), but the tables say which is which.
@@ -45,24 +49,26 @@ Base 16 scan.
 
 | Step | How | Hardware |
 |---|---|---|
-| Firmware load | Same FX2 image as the F-135 | C driver (macOS); Rust not run on a Plus |
-| Open handshake, model detection | In code | C driver; Rust not run on a Plus |
-| Setup | Built in code for both models and matches the Plus captures byte for byte (Base 16, 8, 4, 4 + IR) | Not run on a Plus |
-| Scan | Replay of captured scripts (`resources/f135plus/`) | C driver: Base 16 and Base 8 live. Base 4 replays badly (the capture waits on lamp and calibration events). Base 4 + IR decodes but was never replayed. Rust not run on a Plus. |
-| Light calibration, flat field | Not in code | — |
-| Film advance | Timed run at the unit's captured motor speed (`--advance`) | C driver |
-| Eject by film sensors | Not in code | — |
-| Decode | Row layout detected per raw | Works on the Plus raws |
+| Firmware load | Same FX2 image as the F-135, from the OEM HEX files | Rust, CLI (macOS), serial 138 |
+| Open handshake, model detection | In code | Rust (macOS), serial 138 |
+| EEPROM read and archive | In code, automatic in the app | Rust, app (macOS), serial 138 |
+| Setup | Built in code; matches the Plus captures byte for byte (Base 16, 8, 4, 4 + IR) | Rust (macOS), serial 138 |
+| Light calibration, flat field | In code, with the Plus LED ceilings and LED period | Rust (macOS), serial 138, all six modes |
+| Scan, Base 16 / 8 / 4, IR on and off, colour negative | In code, stops on its own at end of strip, DX read | Rust, CLI (macOS), serial 138: all six modes on a 4-frame strip; app: Base 16 + IR |
+| Scan, replayed (`resources/f135plus/`) | Capture replay, kept as a fallback without an EEPROM archive | C driver on 16402 (Base 16, 8); Rust on 138 (Base 16) |
+| Film types other than colour negative | Per-film LED duties, as on the F-135 | Not run on a Plus |
+| Film advance | Timed run at the captured motor speed (`--advance`) | C driver on 16402; Rust on 138 |
+| Eject by film sensors | Not in code (`--eject`, `--advance-code` are F-135 only) | — |
+| Decode | Row layout detected per raw: 6000 / 4500 / 3000 samples IR off, 8000 / 6000 / 4000 IR on | Works on the Plus raws, Digital ICE included |
 
-The app on a Plus scans Base 16 colour negative only (the replayed script).
-A replayed scan is as long as its capture (a 4-frame strip), and the strip
-can stop short of the exit: the OEM polls the film out, a replay cannot.
+The code-built scan stops by itself at the end of the strip and its
+teardown stops the motor (serial 138).
 
 ### Platforms
 
 | Platform | Package | On a scanner |
 |---|---|---|
-| macOS 13+ (Apple silicon; universal build for Intel) | `Pakon.app` + dmg, ad hoc signed | Yes, F-135, Rust app and CLI |
+| macOS 13+ (Apple silicon; universal build for Intel) | `Pakon.app` + dmg, ad hoc signed | Yes, F-135 (serial 3054) and F-135+ (serial 138), Rust app and CLI |
 | Windows 10 / 11 (64-bit) | `Pakon-Setup.exe`, installs WinUSB; unsigned | No. The app installs and opens on Windows 11 (a VM, no scanner); the service processes and exports with Digital ICE under Wine. |
 | Linux (Debian/Ubuntu, amd64 and arm64) | `.deb` with a udev rule | No, not with the Rust code. The app installs and opens on Linux Mint 22 (no scanner); the package processes and exports with Digital ICE in a clean Ubuntu 22.04. (Replay scans ran on Linux with the earlier C driver.) |
 
@@ -70,14 +76,15 @@ can stop short of the exit: the OEM polls the film out, a replay cannot.
 
 ### F-135+ built in code
 
-1. A first run of the Rust code on a Plus, replay path: firmware, open,
-   Base 16 scan, advance.
-2. Setup in code on the Plus (already matches its captures).
-3. Light calibration and flat field (issue #15).
-4. Code-built scan (issue #14), all bases. The first scan no replay could
-   do: Base 16 + IR, never captured; the `TLB.dll` table predicts
-   integration `0x9c2` and `0x91` = 49 (`0x31`) on serial 16402.
-5. Film advance and sensor-driven eject (issue #16).
+Done on serial 138 (2026-11-13): setup, light calibration and flat field
+(#15), and the code-built scan at every base with IR on and off (#14),
+from the CLI and the app. Left:
+
+1. Film advance and sensor-driven eject (issue #16): the Plus still runs a
+   timed advance at a captured speed.
+2. Silver B&W, B&W C-41 and slide on a Plus (the per-film duties are the
+   F-135's rules, not checked there).
+3. The code-built scan on a second Plus (serial 16402 or another).
 
 ### Platforms and releases
 
@@ -132,10 +139,6 @@ can stop short of the exit: the OEM polls the film out, a replay cannot.
 Brief; the detail is in [PROTOCOL.md](PROTOCOL.md) and
 [REGISTERS.md](REGISTERS.md).
 
-- Does clearing the acquire bit then `a2` stop the motor on the F-135+, as
-  it does on the F-135?
-- F-135+ Base 16 + IR: row stride (expected 8000 samples) and the predicted
-  integration and `0x91` values.
 - The film-advance speed is the captured one (9500); it is not derived from
   the EEPROM. The DX film-sensor thresholds are this unit's (the sensor pots
   are per unit).

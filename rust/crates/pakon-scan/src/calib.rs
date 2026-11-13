@@ -10,7 +10,7 @@ use std::time::Duration;
 use pakon_proto::calcache::{self, Action, Record};
 use pakon_proto::frame::{Address, PacketType};
 use pakon_proto::lightcal::{self as lc, Film, NCH};
-use pakon_proto::setup::{self, LedValues, Model, Seq, SetupState, PANEL_CALIBRATING, PANEL_IDLE};
+use pakon_proto::setup::{self, LedValues, Seq, SetupState, PANEL_CALIBRATING, PANEL_IDLE};
 
 use crate::cmd;
 use crate::link::Link;
@@ -311,7 +311,7 @@ fn light_cal_inner(link: &mut dyn Link, s: &Session, t: Duration, film: Film, wi
     let mut duty = [0u16; 4];
     let mut curv: [u32; 4] = [1, 1, 1, ir as u32];
     let mut done = [false, false, false, !ir];
-    let ceil = setup::led_ceiling(Model::F135, ir);
+    let ceil = setup::led_ceiling(st.model(), ir);
     let ceilv = [ceil.r as u32, ceil.g as u32, ceil.b as u32, ceil.ir as u32];
     for c in 0..nled {
         cap[c] = lc::duty_cap(period, density[c]);
@@ -324,7 +324,11 @@ fn light_cal_inner(link: &mut dyn Link, s: &Session, t: Duration, film: Film, wi
         }
         out(&format!("current: from the last calibration, R{} G{} B{} IR{}", curv[0], curv[1], curv[2], curv[3]));
     } else {
-        for pass in 1..=8 {
+        // One pass per current step up to the board's highest ceiling (8 on
+        // the F-135, 24 on the F-135+): each pass raises every unfinished
+        // LED by one.
+        let passes = ceilv.iter().copied().max().unwrap_or(8);
+        for pass in 1..=passes {
             let mut seq = Seq::new();
             setup::leds(&mut seq, st, lit_en, leds(curv), duty, period).map_err(bad)?;
             run(link, &seq, t)?;

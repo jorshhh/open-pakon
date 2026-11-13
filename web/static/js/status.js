@@ -33,7 +33,7 @@ async function pollStatus() {
     $('home-state').textContent = labels[d.state] || d.state;
 
     $('scan-mode').textContent = d.eeprom
-      ? `F-135: scan built in code (EEPROM ${d.eeprom}); F-135+: replayed script`
+      ? `Scan built in code (EEPROM ${d.eeprom})`
       : (d.eeprom_unit && d.eeprom_unit.error)
         ? `EEPROM: ${d.eeprom_unit.error} — scans are replayed`
         : 'No EEPROM archive yet — it is read when the scanner is warm; until then scans are replayed';

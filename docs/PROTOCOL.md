@@ -803,15 +803,6 @@ the captures in `resources/`.
 
 ## Open questions
 
-- **F-135+ driven scan.** Clearing the acquire bit then `a2` stops the motor
-  on the F-135; the F-135+ captures show the same order, but it has not been
-  run from code there. Calibration and the code-built scan have not run on
-  an F-135+.
-- **F-135+ Base 16 + IR and Base 8 + IR**: integration `0x9C2` / `0x850` and
-  triggers 49 / 77 are predicted from `TLB.dll`'s table, never captured or
-  run. Row stride at Base 16 + IR on the F-135+ (expected 8000 samples).
-- **LED period on the F-135+** for modes other than the captured ones (the
-  ×0.6 rule assumes the F-135 clock).
 - **Reply flags bit `0x08`** and the host status reply's trailing `0xaa`.
 - **Event status bits** beyond the two groups the engine tests (`0xA4` → DX,
   `0x5B` → lamp); what LOW status `0x42` during a stalled calibration means.

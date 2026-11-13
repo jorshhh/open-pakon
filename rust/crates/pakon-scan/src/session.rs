@@ -123,7 +123,7 @@ impl Session {
         self.st.reg0 & 0x100 != 0
     }
     pub fn led_period(&self) -> u16 {
-        setup::led_period(self.mode.integration)
+        setup::led_period(self.st.model(), self.mode.integration)
     }
 }
 
@@ -137,7 +137,7 @@ pub fn setup_session(link: &mut dyn Link, eeprom: Eeprom, base: u32, ir: bool, t
     let plain = cmd::probe_pic(link, Address::PicM as u8, timeout);
     let (low, scn, led_period) = match (plus, plain) {
         (Pic::Present, Pic::Absent) => {
-            out(&format!("model: F-135+ -> Base {base}"));
+            out(&format!("model: F-135+ -> Base {base}{}", if ir { " + IR" } else { ", IR off" }));
             (Address::PicLPlus as u8, Address::PicMPlus as u8, LED_PERIOD_F135_PLUS)
         }
         (Pic::Absent, Pic::Present) => {
@@ -150,9 +150,9 @@ pub fn setup_session(link: &mut dyn Link, eeprom: Eeprom, base: u32, ir: bool, t
     if (model == Model::F135) != (eeprom.scanner_type == TYPE_F135) {
         return Err(ScanError::Param(format!("EEPROM archive is for a {}, scanner is not", eeprom.model_name())));
     }
-    let mode = setup::scan_mode(model, base, model == Model::F135 && ir, eeprom.base(eb).offset)
+    let mode = setup::scan_mode(model, base, ir, eeprom.base(eb).offset)
         .map_err(|_| ScanError::Param(format!("no Base {base}{} mode for this model", if ir { " + IR" } else { "" })))?;
-    if base != 16 || !mode.ir {
+    if model == Model::F135Plus || base != 16 || !mode.ir {
         out(&format!(
             "mode: trigger {}, integration 0x{:03X}{}{}, window {}..{}",
             mode.trigger,

@@ -12,7 +12,7 @@ use std::time::Duration;
 use pakon_proto::dx;
 use pakon_proto::eeprom::{Base, Eeprom};
 use pakon_proto::lightcal::{self as lc, Film};
-use pakon_proto::setup::{self, Model, Seq, SetupState, HOST_FLAG_EVENT, HOST_FLAG_OVERFLOW, PANEL_FEED, PANEL_IDLE};
+use pakon_proto::setup::{self, Seq, SetupState, HOST_FLAG_EVENT, HOST_FLAG_OVERFLOW, PANEL_FEED, PANEL_IDLE};
 
 use crate::calib::{self, CHUNK, IMG_TIMEOUT};
 use crate::cmd;
@@ -235,15 +235,11 @@ impl Default for ScanOptions {
 
 /// The whole code-built scan into `image` (and `<image>.flat.json`,
 /// `<image>.dx.json`): setup, lamp gate, calibration (reused when recent),
-/// scan start, the image loop, teardown. F-135 only. Returns whether film
+/// scan start, the image loop, teardown. Returns whether film
 /// was seen.
 pub fn scan_code(link: &mut dyn Link, eeprom: Eeprom, eeprom_dir: &Path, image: &Path, opt: &ScanOptions, stop: &AtomicBool, out: Out) -> Result<LoopStats, ScanError> {
     let s = session::setup_session(link, eeprom, opt.base, opt.ir, opt.timeout, out)?;
     let t = opt.timeout.max(Duration::from_millis(2000));
-    if s.model() != Model::F135 {
-        out("scan-code: F-135 only for now");
-        return Err(ScanError::Param("F-135 only".into()));
-    }
     let td = Teardown::new(&mut *link, s.st, t);
     let r = scan_body(&mut *td.link, &s, eeprom_dir, image, opt, stop, out);
     let fin = td.finish();
@@ -273,7 +269,7 @@ fn scan_body(link: &mut dyn Link, s: &crate::session::Session, eeprom_dir: &Path
     calib::write_flat(&with_suffix(image, ".flat.json"), s.eeprom.serial, offset, opt.base, opt.film, &res, Some(scan_duty), out)?;
     // The EEPROM keeps a transport speed per base for IR on and off.
     let (b, a) = (s.eeprom.base(eb), s.eeprom.adjust(eb));
-    let speed = if s.mode.ir { setup::motor_speed(b.motor_speed_ir, a.ir, Model::F135) } else { setup::motor_speed(b.motor_speed, a.normal, Model::F135) };
+    let speed = if s.mode.ir { setup::motor_speed(b.motor_speed_ir, a.ir, s.model()) } else { setup::motor_speed(b.motor_speed, a.normal, s.model()) };
     out(&format!(
         "calibrated: offsets {}/{}/{}, currents {}/{}/{}/{}, scan duties {}/{}/{}/{}, motor speed {speed}",
         res.off[0], res.off[1], res.off[2], res.cur[0], res.cur[1], res.cur[2], res.cur[3], scan_duty[0], scan_duty[1], scan_duty[2], scan_duty[3]

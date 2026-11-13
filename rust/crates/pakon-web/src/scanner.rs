@@ -302,16 +302,16 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
         em.log("Detecting scanner model...");
         model = detect_model().await;
     }
-    if let (Some(Model::F135), Some(dir)) = (model, &eeprom_dir) {
-        return scan_code_stream(&app, &mut em, dir.clone(), film, base).await;
+    if let (Some(m), Some(dir)) = (model, &eeprom_dir) {
+        return scan_code_stream(&app, &mut em, m, dir.clone(), film, base).await;
     }
     if base != 16 {
-        return em.error(format!("Base {base} needs the scan built in code (F-135 with an EEPROM archive); the replayed scan is Base 16 only"));
+        return em.error(format!("Base {base} needs the scan built in code (an EEPROM archive for this scanner); the replayed scan is Base 16 only"));
     }
     if film != "c41" {
         em.log("The replayed scan is set up for colour negative; the film type applies to the decode only");
     }
-    if model == Some(Model::F135) {
+    if model.is_some() {
         em.log("No EEPROM archive in backups/eeprom/ (or PAKON_EEPROM_DIR): falling back to the replayed scan");
     }
 
@@ -364,16 +364,17 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
     }
 }
 
-/// F-135 scan with nothing replayed: setup, light calibration (open gate,
+/// F-135 / F-135+ scan with nothing replayed: setup, light calibration (open gate,
 /// keep the film out; reused for an hour like the OEM software), motor
 /// start, then the operator feeds the film.
-async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, eeprom_dir: PathBuf, film: String, base: u32) {
+async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, model: Model, eeprom_dir: PathBuf, film: String, base: u32) {
     let out = match prepare_out(app) {
         Ok(o) => o,
         Err(e) => return em.error(e),
     };
     em.emit(order_event(&out));
-    em.log(format!("Model: F-135 — scan built in code, Base {base} (EEPROM {}). Keep the film out until the motor starts.", name(&eeprom_dir)));
+    let label = if model == Model::F135Plus { "F-135+" } else { "F-135" };
+    em.log(format!("Model: {label} — scan built in code, Base {base} (EEPROM {}). Keep the film out until the motor starts.", name(&eeprom_dir)));
 
     let (image, stop) = (out.clone(), app.stop.clone());
     let kind: Film = film.parse().unwrap_or_default();

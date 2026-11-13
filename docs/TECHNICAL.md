@@ -153,16 +153,16 @@ They do one step at a time what the app does from its Scan page. Both take
 
 ### `pakon_replay`
 
-Code-built modes (F-135; each needs `--eeprom-dir DIR`, the unit's EEPROM
-archive):
+Code-built modes (F-135 and F-135+; each needs `--eeprom-dir DIR`, the
+unit's EEPROM archive):
 
 | Mode | What it does |
 |---|---|
 | `--scan-code [--base 4\|8\|16] [--ir on\|off] [--film c41\|bw\|bwc41\|slide] [--image OUT] [--recalibrate] [--max-mb N]` | Setup, lamp wait, light calibration (open gate: keep the film out), scan start, then prints `motor start (a0) sent -- feed the film now`. Stops on its own at end of roll; teardown stops the motor. Defaults: Base 16, IR on (off for `bw`), `c41`, `pakon_scan.raw`. `--recalibrate` forces a full calibration instead of the cached one. `--max-mb` (default 4096) is only a runaway guard: a 36-exposure roll at Base 16 with IR is up to about 2 GB. |
 | `--light-cal [--base N] [--ir on\|off] [--flat-out FILE]` | Calibration only, open gate; writes the per-column tables to `DIR/flatfield.json` or `FILE` |
 | `--setup [--base N] [--teardown]` | Setup only, optionally followed by the teardown |
-| `--eject [--eject-seconds N]` | Runs the transport until the DX film sensors say the strip is out, or stalled at the exit (pull it out by hand); default limit 60 s |
-| `--advance-code SECONDS` | Runs the transport for a fixed time (the app's Advance film) |
+| `--eject [--eject-seconds N]` | F-135 only. Runs the transport until the DX film sensors say the strip is out, or stalled at the exit (pull it out by hand); default limit 60 s |
+| `--advance-code SECONDS` | F-135 only. Runs the transport for a fixed time (the app's Advance film) |
 
 Replay and other modes:
 
@@ -181,7 +181,8 @@ per-column tables and row layout) and, when the scanner read the film's DX
 code, `OUT.dx.json`. Open the raw in the app to frame and export it; there is
 no command-line decoder.
 
-F-135+ (replays the scripts from a reference unit):
+F-135+ replay (the scripts of serial 16402; the code-built modes above are
+the normal path, this is the fallback without an EEPROM archive):
 
 ```sh
 R=rust/target/release
