@@ -259,6 +259,20 @@ fn duties_vs_capture() {
     assert!(!lc::duty_settled(G, period - 2, 50000, period));
 }
 
+/// A F-135+ whose red peak swings ±1.1% at a fixed duty (Rybbit report,
+/// 2026-11-13): those passes settle; a real miss or a clipped peak does not.
+#[test]
+fn refine_tolerates_peak_noise() {
+    let period = 2468;
+    for peak in [63267, 63361, 64565, 64588] {
+        assert!(lc::duty_settled(R, 462, peak, period), "R {peak}");
+    }
+    assert!(lc::duty_settled(IR, 547, 39885, period));
+    assert!(!lc::duty_settled(R, 462, 62200, period));
+    assert!(!lc::duty_settled(R, 462, 65535, period), "clipped");
+    assert!(!lc::duty_settled(IR, 547, 38800, period));
+}
+
 #[test]
 fn column_sums() {
     // Pixel p of line l: R = 100 + p, G = 200 + l, B = 300, IR = 50 + p.

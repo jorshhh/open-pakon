@@ -43,6 +43,11 @@ pub const DARK_CLIPPED: f64 = 1.0;
 /// stays clipped (8, 16, 32, ...).
 pub const CLIP_STEP: i32 = 8;
 pub const REFINE_ITERS: u32 = 32;
+/// Refine tolerance: a peak this close to its target (2.5%, ~1/28 stop)
+/// counts as settled. Some units read the red peak with ±1.1% noise from
+/// line to line at a fixed duty, wider than the 64-count window and the
+/// one-tick step, so the strict rule chased the noise for all 32 passes.
+pub const REFINE_TOL: f64 = 0.025;
 
 /// Line origin (start of an RGB block, `0 <= origin < 4 * line_px`): the
 /// offset maximising, over the mean of up to 64 lines, the contrast between
@@ -428,11 +433,14 @@ pub fn duty_next(ch: usize, duty: u16, peak: u32, period: u16) -> u16 {
     next as u16
 }
 
-/// Settled: peak in the refine window, or the refine step would move the
-/// duty by at most one tick (at small duties one tick is wider than the
-/// window).
+/// Settled: peak in the refine window or within [`REFINE_TOL`] of the
+/// target, or the refine step would move the duty by at most one tick (at
+/// small duties one tick is wider than the window). A clipped peak (65535)
+/// hides how far over it is, so it never counts as near.
 pub fn duty_settled(ch: usize, duty: u16, peak: u32, period: u16) -> bool {
-    if peak_ok(ch, peak) {
+    let target = if ch == IR { 39968.0 } else { 63968.0 };
+    let near = peak < 0xFFFF && (peak as f64 - target).abs() <= target * REFINE_TOL;
+    if peak_ok(ch, peak) || near {
         return true;
     }
     let next = duty_next(ch, duty, peak, period) as i32;
