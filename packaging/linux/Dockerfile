@@ -11,7 +11,8 @@ RUN if [ -n "$UBUNTU_MIRROR" ]; then sed -i -E \
         "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#$UBUNTU_MIRROR#" /etc/apt/sources.list; fi
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
         --no-install-recommends ca-certificates curl git build-essential cmake \
-        pkg-config dpkg-dev file libclang-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+        ninja-build pkg-config dpkg-dev file libclang-dev libgtk-3-dev \
+        libwebkit2gtk-4.1-dev \
     && rm -rf /var/lib/apt/lists/*
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
