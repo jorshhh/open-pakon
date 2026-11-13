@@ -32,6 +32,10 @@ const TRAIL_WHITE: u32 = 24;
 const MAX_EMPTY: u32 = 2;
 /// Empty windows before film => nobody fed the film (~2 min).
 const LOAD_WAIT: u32 = 24;
+/// No film within this long of the motor start => nobody fed it. Counted in
+/// time, not empty reads: with acquire on the scanner streams the open gate
+/// the whole while, so the reads are never empty (seen on an F-135+).
+const FEED_WAIT: Duration = Duration::from_secs(120);
 /// A sample above this is real film-band content.
 const FILM_THRESH: u16 = 8000;
 const FILM_FRAC_PCT: usize = 10;
@@ -111,6 +115,7 @@ pub fn scan_loop(
     let mut s = LoopStats::default();
     let mut buf = vec![0u8; CHUNK];
     let (mut trail_white, mut idle) = (0u32, 0u32);
+    let started = std::time::Instant::now();
     out(&format!(
         "  [sm] driven image phase: read 0x86 + event service (no re-arm); stop on {TRAIL_WHITE} trailing open-gate chunks, {MAX_EMPTY} empty windows after film, {} MB cap, or Ctrl-C / SIGTERM",
         max_bytes >> 20
@@ -158,6 +163,10 @@ pub fn scan_loop(
             }
             if max_bytes > 0 && s.bytes >= max_bytes {
                 out(&format!("  [sm] hit safety cap {} MB -> stopping", max_bytes >> 20));
+                break;
+            }
+            if !s.film_seen && started.elapsed() >= FEED_WAIT {
+                out(&format!("  [sm] no film fed within {} s -> aborting", FEED_WAIT.as_secs()));
                 break;
             }
             continue;
