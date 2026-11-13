@@ -270,6 +270,7 @@ fn light_cal_inner(link: &mut dyn Link, s: &Session, t: Duration, film: Film, wi
     setup::acquire(&mut seq, st, true);
     run(link, &seq, t)?;
     let mut dark_ok = false;
+    let mut clipped = [0u32; 3]; // clipped-low reads in a row, per channel
     for it in 1..=lc::DARK_ITERS {
         if dark_ok {
             break;
@@ -291,10 +292,10 @@ fn light_cal_inner(link: &mut dyn Link, s: &Session, t: Duration, film: Film, wi
             off[0], off[1], off[2], black.mean[0], black.mean[1], black.mean[2]
         ));
         dark_ok = true;
-        for (o, &m) in off.iter_mut().zip(&black.mean[..3]) {
+        for ((o, &m), run) in off.iter_mut().zip(&black.mean[..3]).zip(clipped.iter_mut()) {
             if !lc::dark_ok(m) {
                 dark_ok = false;
-                *o = lc::offset_next(*o, m);
+                *o = lc::dark_next(*o, m, run);
             }
         }
     }

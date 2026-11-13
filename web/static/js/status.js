@@ -4,6 +4,7 @@ import { $ } from './util.js';
 import { showWorkDir, setNativePicker } from './browse.js';
 import { showUpdate } from './update.js';
 import { showConsent } from './telemetry.js';
+import { showLogs } from './support.js';
 
 const labels = {
   warm: 'Ready',
@@ -51,6 +52,8 @@ async function pollStatus() {
     setNativePicker(d.native_picker);
     showUpdate(d.update);
     showConsent(d.telemetry);
+    showLogs(!!d.logs);
+    $('scan-foreign').classList.toggle('hidden', d.foreign_firmware !== true);
     if (d.version) $('about-version').textContent = d.version;
   } catch {
     $('home-dot').className = 'dot';

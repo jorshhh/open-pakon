@@ -57,3 +57,11 @@ button.icon {
   display: grid; place-items: center;
 }
 button.icon svg { width: 18px; height: 18px; display: block; }
+
+/* A warm scanner Pakon did not start */
+.warn {
+  display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 10px 12px;
+  border: 2px solid var(--orange); background: #fdf0e6; color: #9a3b07;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; font-weight: 700;
+}
+.warn span { flex: 1; }

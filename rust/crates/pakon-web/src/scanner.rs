@@ -278,6 +278,15 @@ async fn firmware_stream(app: Arc<App>, mut em: Emitter) {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+    // Note where it came back, so a warm scanner Pakon did not start can be
+    // told apart later (crate::loads).
+    let me = app.clone();
+    blocking(move || {
+        if let Some(d) = crate::loads::warm_device() {
+            me.loads.record(&d);
+        }
+    })
+    .await;
     eeprom_sync_events(&app, &mut em).await;
     em.emit(json!({"type": "done"}));
 }
@@ -320,6 +329,12 @@ fn done_event(app: &App, out: &Path, film: &str) -> Value {
 async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
     let Some(_busy) = Busy::take(&app, &mut em) else { return };
     eeprom_sync_events(&app, &mut em).await;
+    // In the log, and so in a failed scan's report: whether a foreign start
+    // goes with calibration failures (#82).
+    let me = app.clone();
+    if blocking(move || me.loads.foreign()).await.flatten() == Some(true) {
+        em.log("Scanner started by other software: if calibration fails, switch it off and on");
+    }
     let eeprom_dir = app.eeprom_dir();
     let over = env("PAKON_PAKSCAN");
     let mut model = None;

@@ -54,8 +54,94 @@ pub async fn api_status(State(app): State<Arc<App>>) -> Response {
         "telemetry": app.telemetry.consent(),
         "version": update::current(),           // the app's, null from a checkout
         "native_picker": app.picker().is_some(), // /api/pick shows the system's dialog
+        "logs": log_dir().is_some() && reveal_label().is_some(), // Settings › Show log
+        // a warm scanner Pakon did not start (TLX, PakonScan, another computer)
+        "foreign_firmware": if state == "warm" { app.loads.foreign() } else { None },
     }))
     .into_response()
+}
+
+// ── Troubleshooting: the log folder and a bug report by email ───────────────
+
+/// Where Settings › Report a problem sends its email.
+pub const REPORT_TO: &str = "jorsh@jor.sh";
+
+/// The app's log folder (PAKON_LOGS: set by the Mac and Windows app and the
+/// Linux launcher); none when the service runs from a checkout.
+fn log_dir() -> Option<PathBuf> {
+    crate::paths::env("PAKON_LOGS").map(PathBuf::from).filter(|d| d.is_dir())
+}
+
+/// Open the log folder in the file manager.
+pub async fn api_logs_open() -> Response {
+    let Some(dir) = log_dir().filter(|_| reveal_label().is_some()) else {
+        return error(StatusCode::NOT_FOUND, "no log folder");
+    };
+    let log = dir.join("pakon.log");
+    if cfg!(target_os = "macos") && log.is_file() {
+        spawn("open", &["-R".as_ref(), log.as_os_str()]);
+    } else if cfg!(target_os = "macos") {
+        spawn("open", &[dir.as_os_str()]);
+    } else if cfg!(windows) && log.is_file() {
+        let select = format!("/select,{}", log.display());
+        spawn("explorer", &[select.as_ref()]);
+    } else if cfg!(windows) {
+        spawn("explorer", &[dir.as_os_str()]);
+    } else {
+        spawn("xdg-open", &[dir.as_os_str()]);
+    }
+    Json(json!({"ok": true})).into_response()
+}
+
+/// RFC 3986 percent-encoding for a mailto: query value.
+fn mail_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// The report email: a short template plus the facts we always ask for.
+fn report_mailto(version: &str, os: &str, scanner: &str) -> String {
+    let subject = format!("Pakon {version}: problem report");
+    let body = format!(
+        "What happened:\n\n\nWhat you were doing (scan, process, export), film type and resolution:\n\n\n\
+         Please attach pakon.log (Settings > Troubleshooting > Show log).\n\n---\n\
+         Pakon {version}\n{os}\nScanner: {scanner}\n"
+    );
+    format!("mailto:{REPORT_TO}?subject={}&body={}", mail_encode(&subject), mail_encode(&body))
+}
+
+/// Open a pre-filled report email in the user's mail app. Returns the
+/// mailto: URL too, for the page to open itself where the service cannot.
+pub async fn api_report(State(app): State<Arc<App>>) -> Response {
+    let (state, _) = tokio::task::spawn_blocking(scanner_state).await.unwrap_or(("unknown", None));
+    let unit = app.eeprom.status();
+    let scanner = match (unit["model"].as_str(), unit["serial"].as_u64()) {
+        (Some(m), Some(s)) => format!("{m} #{s} ({state})"),
+        _ => format!("not identified ({state})"),
+    };
+    let version = update::current().unwrap_or_else(|| "from source".into());
+    let os = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
+    let url = report_mailto(&version, &os, &scanner);
+    let opened = if cfg!(target_os = "macos") {
+        spawn("open", &[url.as_ref()]);
+        true
+    } else if cfg!(windows) {
+        spawn("explorer", &[url.as_ref()]);
+        true
+    } else if reveal_label().is_some() {
+        spawn("xdg-open", &[url.as_ref()]);
+        true
+    } else {
+        false
+    };
+    Json(json!({"opened": opened, "url": url})).into_response()
 }
 
 fn writable(dir: &Path) -> bool {
@@ -275,4 +361,18 @@ pub async fn api_telemetry_error(State(app): State<Arc<App>>, body: Bytes) -> Re
     let s = |k: &str| f.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     app.telemetry.error("PageError", &s("message"), &s("stack"), &s("page"));
     Json(json!({"ok": true})).into_response()
+}
+
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+
+    #[test]
+    fn report_mail() {
+        assert_eq!(mail_encode("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9");
+        let url = report_mailto("1.0.0", "windows x86_64", "F-135 #2233 (warm)");
+        assert!(url.starts_with("mailto:jorsh@jor.sh?subject=Pakon%201.0.0%3A%20problem%20report&body="));
+        assert!(url.contains("F-135%20%232233%20%28warm%29"));
+        assert!(!url.contains(' ') && !url.contains('\n'));
+    }
 }

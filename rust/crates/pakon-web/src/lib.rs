@@ -29,6 +29,7 @@
 pub mod eeprom;
 mod files;
 mod jobs;
+mod loads;
 pub mod orders;
 pub mod paths;
 mod scanner;
@@ -87,6 +88,8 @@ pub struct App {
     pub paths: Paths,
     pub settings: Arc<orders::Settings>,
     pub eeprom: eeprom::Eeprom,
+    /// Which warm scanners Pakon started itself (beside settings.json).
+    pub(crate) loads: loads::Loads,
     pub update: Arc<update::Update>,
     pub telemetry: Arc<telemetry::Telemetry>,
     roll: Mutex<Roll>,
@@ -114,6 +117,7 @@ impl App {
         let settings = Arc::new(orders::Settings::new(paths.settings.clone()));
         Arc::new(App {
             eeprom: eeprom::Eeprom::new(pakon_roll::eeprom_root(&paths.root)),
+            loads: loads::Loads::new(paths.settings.with_file_name("firmware-loads.json")),
             telemetry: Arc::new(telemetry::Telemetry::new(settings.clone())),
             update: Arc::new(update::Update::default()),
             settings,
@@ -222,6 +226,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/app/focus", post(files::api_app_focus))
         .route("/api/pick", post(files::api_pick))
         .route("/api/update/open", post(files::api_update_open))
+        .route("/api/logs/open", post(files::api_logs_open))
+        .route("/api/report", post(files::api_report))
         .route("/api/telemetry/consent", post(files::api_telemetry_consent))
         .route("/api/telemetry/page", post(files::api_telemetry_page))
         .route("/api/telemetry/error", post(files::api_telemetry_error))

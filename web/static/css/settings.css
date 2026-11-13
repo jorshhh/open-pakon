@@ -12,3 +12,19 @@ label.setting strong {
 }
 label.setting:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
 .settings-note { font-size: 0.8rem; color: var(--muted); max-width: 72ch; line-height: 1.45; margin-bottom: 8px; }
+
+/* Troubleshooting: problem, then what to do */
+.trouble {
+  display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px;
+  align-items: baseline; margin-bottom: 18px; max-width: 760px;
+}
+.trouble dt {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; font-weight: 600;
+  text-transform: uppercase;
+}
+.trouble dd { font-size: 0.88rem; line-height: 1.45; }
+.trouble dd .info { margin-left: 6px; }
+@media (max-width: 560px) {
+  .trouble { grid-template-columns: 1fr; gap: 2px; }
+  .trouble dd { margin-bottom: 10px; }
+}

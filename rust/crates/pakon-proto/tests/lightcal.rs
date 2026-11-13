@@ -169,6 +169,60 @@ fn dark_offset() {
     assert_eq!(lc::offset_next(-38, 320.0), -38);
 }
 
+/// A channel's black mean against its A/D offset: about 74.7 counts per
+/// code (offset_next(10, 3884) = -38), clipped at 0, zero at offset `z`.
+fn black(off: i32, z: f64) -> f64 {
+    ((off as f64 - z) * 74.7).clamp(0.0, 65535.0)
+}
+
+/// The dark-offset loop as calib.rs runs it, from offset 10; the passes
+/// it took, or None if it did not converge.
+fn dark_run(z: [f64; 3], clip_aware: bool, iters: u32) -> Option<u32> {
+    let mut off = [10i32; 3];
+    let mut run = [0u32; 3];
+    for it in 1..=iters {
+        let mut ok = true;
+        for c in 0..3 {
+            let m = black(off[c], z[c]);
+            if !lc::dark_ok(m) {
+                ok = false;
+                off[c] = if clip_aware { lc::dark_next(off[c], m, &mut run[c]) } else { lc::offset_next(off[c], m) };
+            }
+        }
+        if ok {
+            return Some(it);
+        }
+    }
+    None
+}
+
+#[test]
+fn dark_offset_from_clipped() {
+    // Windows / Linux reports (0.7.0-0.8.0): 0/0/0 from offset 10 to 34,
+    // then green 121 and blue 176 at 38, red still 0.
+    let reported = [45.0, 36.4, 35.6];
+    assert_eq!(black(34, 36.4), 0.0);
+    assert!((black(38, 36.4) - 121.0).abs() < 5.0 && (black(38, 35.6) - 176.0).abs() < 5.0);
+    assert_eq!(dark_run(reported, false, 8), None, "the old loop runs out, as reported");
+    let n = dark_run(reported, true, lc::DARK_ITERS).expect("converges");
+    assert!(n <= 8, "{n} passes");
+    // Far darker still: zero near offset 120.
+    assert!(dark_run([120.0, 110.0, 118.0], true, lc::DARK_ITERS).is_some());
+    // Units that start bright converge as they did (F-135+ serial 138:
+    // 967/1183/1125 at offset 10, settled at -3/-8/-7).
+    let bright = [-2.9, -5.8, -5.1];
+    assert_eq!(dark_run(bright, true, lc::DARK_ITERS), dark_run(bright, false, lc::DARK_ITERS));
+    assert!(dark_run(bright, true, lc::DARK_ITERS).is_some());
+    // The run of clipped reads doubles the step, then resets.
+    let mut run = 0;
+    assert_eq!(lc::dark_next(10, 0.0, &mut run), 18);
+    assert_eq!(lc::dark_next(18, 0.0, &mut run), 34);
+    assert_eq!(lc::dark_next(34, 0.0, &mut run), 66);
+    assert_eq!(lc::dark_next(66, 2200.0, &mut run), lc::offset_next(66, 2200.0));
+    assert_eq!(run, 0);
+    assert_eq!(lc::dark_next(250, 0.0, &mut 5), 255, "clamped");
+}
+
 #[test]
 fn caps_and_windows() {
     assert!(!lc::peak_over_cap(G, 64000) && lc::peak_over_cap(G, 64001));

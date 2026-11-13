@@ -128,6 +128,11 @@
     <span class="chip" id="scan-ir">IR on</span>
     <button class="info tip-left" id="scan-ir-info" aria-label="About infrared">i</button>
   </div>
+  <div class="warn hidden" id="scan-foreign">
+    <span>Started by other software. Switch the scanner off and on before scanning.</span>
+    <button class="info tip-left" aria-label="Why"
+            data-tip="Pakon didn't load this scanner's firmware, so it may still hold another program's settings (TLX, PakonScan), which can make calibration fail. Switching it off clears them.">i</button>
+  </div>
   <div class="feed-prompt" id="feed-prompt"></div>
   <div class="progress-wrap" id="scan-prog-wrap">
     <progress id="scan-prog" max="2200"></progress>
@@ -304,6 +309,27 @@
     <a href="https://rybbit.com" target="_blank" rel="noopener">Rybbit</a>, not a third party.</p>
   <p class="settings-note hidden" id="privacy-off">This build sends no reports.</p>
   <span class="msg" id="set-msg"></span>
+</div>
+
+<div class="card">
+  <h2>Troubleshooting</h2>
+  <dl class="trouble">
+    <dt>Calibration fails</dt>
+    <dd>Switch the scanner off and on, then open Pakon before TLX or PakonScan.
+      <button class="info" aria-label="Why"
+              data-tip="Other scanning software leaves the scanner in its own state until it is switched off. Keep the film out until the motor starts.">i</button></dd>
+    <dt>Scanner not found</dt>
+    <dd>Check the USB cable and power, then switch the scanner off and on.
+      <button class="info" aria-label="On Windows"
+              data-tip="On Windows, run pakon_driver.exe in %LOCALAPPDATA%\Programs\Pakon\driver to set up the scanner's driver again.">i</button></dd>
+    <dt>Film stuck</dt>
+    <dd><b>Advance film</b> on Scan.</dd>
+  </dl>
+  <div class="row">
+    <button id="report-btn">Report a problem</button>
+    <button class="ghost hidden" id="logs-btn">Show log</button>
+    <span class="msg" id="report-msg"></span>
+  </div>
 </div>
 
 <div class="card">

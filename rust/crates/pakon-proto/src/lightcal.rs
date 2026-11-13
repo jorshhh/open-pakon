@@ -32,7 +32,16 @@ pub const GAIN_MAX: i32 = 0x3E;
 pub const OFFSET_START: i32 = 10;
 pub const DARK_TARGET: f64 = 300.0;
 pub const DARK_TOL: f64 = 32.0;
-pub const DARK_ITERS: u32 = 8;
+/// Dark-offset passes. 16, not 8: a unit whose black level starts clipped
+/// at 0 climbs for several passes before the proportional step can work
+/// (Windows and Linux reports, 0.7.0-0.8.0: 0/0/0 for seven passes).
+pub const DARK_ITERS: u32 = 16;
+/// A black mean at or under this is clipped at zero: it says only that the
+/// level is too low, not by how much.
+pub const DARK_CLIPPED: f64 = 1.0;
+/// First offset step after a clipped read; it doubles while the channel
+/// stays clipped (8, 16, 32, ...).
+pub const CLIP_STEP: i32 = 8;
 pub const REFINE_ITERS: u32 = 32;
 
 /// Line origin (start of an RGB block, `0 <= origin < 4 * line_px`): the
@@ -354,6 +363,25 @@ pub fn dark_ok(black_mean: f64) -> bool {
 /// -0.0133929)`; when that rounds to no change while still outside the
 /// window, one code toward the target. Clamped to ±255.
 pub fn offset_next(offset: i32, black_mean: f64) -> i32 {
+    offset_step(offset, black_mean)
+}
+
+/// Next A/D offset for one channel across the dark passes. A clipped-low
+/// read (mean 0) steps up by [`CLIP_STEP`], doubling for each clipped read
+/// in a row (`run`), because the proportional step from a clipped mean is
+/// only +4 whatever the real level is. Once the level is above zero the
+/// proportional [`offset_next`] takes over. Clamped to ±255.
+pub fn dark_next(offset: i32, black_mean: f64, run: &mut u32) -> i32 {
+    if black_mean <= DARK_CLIPPED {
+        let step = CLIP_STEP << (*run).min(5);
+        *run += 1;
+        return (offset + step).clamp(-255, 255);
+    }
+    *run = 0;
+    offset_step(offset, black_mean)
+}
+
+fn offset_step(offset: i32, black_mean: f64) -> i32 {
     let mut next = offset + ((black_mean - DARK_TARGET) * -0.0133929).round() as i32;
     if next == offset && !dark_ok(black_mean) {
         next += if black_mean > DARK_TARGET { -1 } else { 1 };
