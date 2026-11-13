@@ -6,12 +6,11 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-wrap: wrap;
 }
-.frames-tools-top { justify-content: flex-end; margin: -8px 0 0; }
-.frames-tools-below { margin-top: 10px; min-height: 42px; }
+.tool-sep { width: 2px; height: 28px; background: var(--border); }
+.frames-tools-below { margin-top: 10px; }
 .frames-tools-below .progress-wrap { margin-top: 0; flex: 1; min-width: 0; }
 .frames-tools-below .progress-label { white-space: nowrap; overflow: hidden;
                                       text-overflow: ellipsis; }
-#exp-prog-wrap.show ~ #confirm-hint { display: none; }
 
 .ice-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem;
            cursor: pointer; white-space: nowrap; }
@@ -31,11 +30,11 @@
   background: #3a3836;
   border-top: 2px solid var(--border);
 }
-.strip-wrap::-webkit-scrollbar-thumb {
-  background: var(--accent);
+.strip-wrap::-webkit-scrollbar-thumb {        /* light, so it does not read as progress */
+  background: #d9d4ca;
   border: 2px solid var(--border);
 }
-.strip-wrap::-webkit-scrollbar-thumb:hover { background: var(--accent-hover); }
+.strip-wrap::-webkit-scrollbar-thumb:hover { background: var(--surface); }
 .strip-wrap::before, .strip-wrap::after {
   content: ""; position: absolute; left: 0; right: 0; height: 8px;
   background-image: radial-gradient(circle at 6px 4px, transparent 3px, #f4f1ea 3.5px);

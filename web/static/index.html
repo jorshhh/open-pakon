@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pakon F-135</title>
+  <title>Pakon</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
@@ -19,7 +19,7 @@
 <body>
 
 <header>
-  <h1>Pakon F-135</h1>
+  <h1>Pakon</h1>
   <div class="badge" id="badge">
     <div class="dot" id="dot"></div>
     <span id="badge-text">Checking…</span>
@@ -42,19 +42,15 @@
 
 <div class="card welcome">
   <h2>Welcome</h2>
-  <p class="lead">Scan a roll of 35&nbsp;mm film on the F-135, or pick up a roll you
-    already scanned. Either way it ends up as finished frames in your work folder.</p>
   <div class="choices">
     <button class="choice" id="home-scan">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M3 9h18M3 15h18M7 6v3M11 6v3M15 6v3M19 6v3M7 15v3M11 15v3M15 15v3M19 15v3"/></svg>
       <span class="choice-name">Start a scan</span>
-      <span class="choice-desc">Feed a new roll through the scanner. It opens in Frames when the scan is done.</span>
       <span class="choice-state"><span class="dot" id="home-dot"></span><span id="home-state">Checking…</span></span>
     </button>
     <button class="choice ghost" id="home-raw">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z"/><path d="M12 11v5M9.5 13.5L12 16l2.5-2.5"/></svg>
-      <span class="choice-name">Load a raw</span>
-      <span class="choice-desc">Open a <code>.raw</code> from an earlier scan. Frame positions you saved before come back with it.</span>
+      <span class="choice-name">Open a raw</span>
     </button>
   </div>
 </div>
@@ -67,8 +63,7 @@
 <!-- No scanner (disconnected / unknown) -->
 <div class="card space-empty hidden" id="scan-empty">
   <h2>No scanner</h2>
-  <p id="scan-empty-msg">Connect the F-135 by USB and turn it on. It shows up here by itself.</p>
-  <p>To work on a roll you already scanned, go to <b>Process</b>.</p>
+  <p id="scan-empty-msg">Connect it by USB and turn it on.</p>
 </div>
 
 <!-- Firmware (cold only) -->
@@ -88,48 +83,51 @@
 <!-- Scan (warm only) -->
 <div class="card hidden" id="scan-card">
   <h2>Scan</h2>
-  <table class="scan-table">
-    <thead>
-      <tr><th>Work folder</th><th class="col-order">Next order</th><th class="col-film">Film type</th><th class="col-res">Resolution</th><th class="col-act">Film</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td data-label="Work folder">
-          <div class="folder-cell">
-            <span class="folder-path" id="scan-out">…</span>
-            <button class="ghost icon" id="scan-out-btn" title="Change the work folder"
-                    aria-label="Change the work folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
-          </div>
-        </td>
-        <td data-label="Next order"><span class="order-num" id="scan-order">—</span></td>
-        <td data-label="Film type">
-          <select id="scan-film" aria-label="Film type">
-            <option value="c41">Colour negative</option>
-            <option value="bw">B&amp;W</option>
-            <option value="bwc41">B&amp;W C41</option>
-            <option value="slide">Slide (E-6)</option>
-          </select>
-        </td>
-        <td data-label="Resolution">
-          <select id="scan-base" aria-label="Resolution">
-            <option value="16">Base 16 · 2000 × 3000</option>
-            <option value="8">Base 8 · 1500 × 2250</option>
-            <option value="4">Base 4 · 1000 × 1500</option>
-          </select>
-        </td>
-        <td data-label="Film">
-          <div class="act-cell">
-            <button id="scan-btn">Scan</button>
-            <button class="ghost" id="eject-btn">Advance film</button>
-            <button class="ghost hidden" id="stop-btn"
-                    title="End the roll now: stop the motor and keep what was scanned">Stop</button>
-          </div>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-  <div class="msg" id="scan-msg" style="margin-top: 10px;"></div>
-  <div class="msg" id="scan-mode" style="margin-top: 6px;"></div>
+  <div class="scan-fields">
+    <div class="field-box wide">
+      <span class="field-label">Work folder</span>
+      <div class="field-body folder-cell">
+        <span class="folder-path" id="scan-out">…</span>
+        <button class="ghost icon" id="scan-out-btn" title="Change the work folder"
+                aria-label="Change the work folder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
+      </div>
+    </div>
+    <div class="field-box">
+      <span class="field-label">Next order</span>
+      <div class="field-body"><span class="order-num" id="scan-order">—</span></div>
+    </div>
+    <div class="field-box">
+      <label class="field-label" for="scan-film">Film type</label>
+      <div class="field-body">
+        <select id="scan-film">
+          <option value="c41">Colour negative</option>
+          <option value="bw">B&amp;W</option>
+          <option value="bwc41">B&amp;W C41</option>
+          <option value="slide">Slide (E-6)</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-box">
+      <label class="field-label" for="scan-base">Resolution</label>
+      <div class="field-body">
+        <select id="scan-base">
+          <option value="16">Base 16 · 2000 × 3000</option>
+          <option value="8">Base 8 · 1500 × 2250</option>
+          <option value="4">Base 4 · 1000 × 1500</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="scan-actions">
+    <button id="scan-btn">Scan</button>
+    <button class="ghost" id="eject-btn">Advance film</button>
+    <button class="ghost stop hidden" id="stop-btn" title="Stop and keep what was scanned">Stop</button>
+    <span class="msg" id="scan-msg"></span>
+    <span class="spacer"></span>
+    <span class="msg" id="scan-mode"></span>
+    <span class="chip" id="scan-ir">IR on</span>
+    <button class="info tip-left" id="scan-ir-info" aria-label="About infrared">i</button>
+  </div>
   <div class="feed-prompt" id="feed-prompt"></div>
   <div class="progress-wrap" id="scan-prog-wrap">
     <progress id="scan-prog" max="2200"></progress>
@@ -145,23 +143,14 @@
 
 <!-- Process (always) -->
 <div class="card" id="proc-card">
-  <h2>Process</h2>
-  <p class="lead">Turn a scanned roll into finished frames. A scan you just ran
-    opens here by itself; to work on an older roll, open its
-    <code>.raw</code> from the work folder.</p>
-  <ol class="steps">
-    <li><strong>Open a raw</strong>Scan a roll, or <b>Open…</b> any <code>.raw</code>
-      on this computer. It is read in place, never copied, and processed right
-      away: a preview of the whole strip, in a few seconds to a minute.</li>
-    <li><strong>Place and export</strong>The roll opens in <b>Frames</b>. Pick the
-      <b>Format</b>, then press <b>Auto-frame</b> to put a box on every frame, or
-      place them by hand: click the strip, <kbd>Enter</kbd> adds one,
-      <kbd>Delete</kbd> removes one. Export saves the box positions beside the raw, so
-      opening it again brings them back.</li>
-  </ol>
+  <div class="with-info card-title">
+    <h2>Process</h2>
+    <button class="info" aria-label="About opening a raw"
+            data-tip="A .raw is read where it is, never copied. Its frames open in Frames, with any boxes you saved before.">i</button>
+  </div>
   <div class="raw-slot" id="raw-slot">
     <div class="raw-info">
-      <div class="raw-title" id="raw-name">No raw loaded — run a scan or open one</div>
+      <div class="raw-title" id="raw-name">No raw open</div>
       <div class="raw-sub" id="raw-dir"></div>
       <div class="raw-sub" id="raw-dx" hidden></div>
     </div>
@@ -190,7 +179,7 @@
 <!-- Nothing to place yet: no roll, or still processing -->
 <div class="card space-empty" id="frames-wait">
   <h2 id="frames-wait-title">No roll open</h2>
-  <p id="frames-wait-msg">Scan a roll, or open a <code>.raw</code> in <b>Process</b>. Its frames come up here.</p>
+  <p id="frames-wait-msg">Scan a roll or open a raw.</p>
   <div class="progress-wrap" id="frames-wait-prog-wrap" style="max-width: 420px; margin: 16px auto 0;">
     <progress id="frames-wait-prog" value="0" max="1"></progress>
   </div>
@@ -199,7 +188,13 @@
 <!-- Confirm frames (minilab-style crop placement) -->
 <div class="card hidden" id="confirm-card">
   <div class="frames-header">
-    <h2 id="confirm-title">Confirm frames</h2>
+    <div class="with-info">
+      <h2 id="confirm-title">Confirm frames</h2>
+      <button class="info tip-below" aria-label="Keys"
+              data-tip="Click the strip to place a box. ← → nudge · ↑ ↓ previous / next · Enter add · Delete remove.">i</button>
+    </div>
+  </div>
+  <div class="frames-tools">
     <div class="row">
       <label class="field">
         Format
@@ -209,16 +204,16 @@
           <option value="pano">Panoramic</option>
         </select>
       </label>
-      <button class="ghost" id="frame-auto" title="Put a box on every frame of this format">Auto-frame</button>
+      <button class="ghost" id="frame-auto" title="Put a box on every frame">Auto-frame</button>
+      <span class="tool-sep" aria-hidden="true"></span>
+      <button class="ghost" id="frame-add" title="Add a box (Enter)">+ Add</button>
+      <button class="ghost" id="frame-del" title="Remove the selected box (Delete)">− Remove</button>
     </div>
-  </div>
-  <div class="frames-tools frames-tools-top">
     <div class="row">
-      <label class="ice-opt" id="ice-label"
-             title="Rebuild dust and scratches from the scan's infrared channel">
-        <input type="checkbox" id="ice-on"> Remove dust (ICE)</label>
-      <label class="ice-opt" id="sharpen-label"
-             title="Sharpen the exported frames (stronger also sharpens the film grain)">
+      <label class="ice-opt" id="ice-label">
+        <input type="checkbox" id="ice-on"> Remove dust</label>
+      <button class="info tip-left" id="ice-info" aria-label="About dust removal">i</button>
+      <label class="ice-opt" id="sharpen-label">
         Sharpen
         <select id="sharpen" aria-label="Sharpening">
           <option value="off">Off</option>
@@ -229,24 +224,17 @@
       <button id="export-btn">Export <span id="export-count"></span> frames</button>
     </div>
   </div>
-  <div class="msg" id="frames-msg" style="margin-bottom: 4px;" hidden></div>
+  <div class="msg" id="frames-msg" style="margin-top: 10px;" hidden></div>
   <div class="strip-wrap" id="strip-wrap">
     <div class="strip-inner" id="strip-inner">
       <img id="strip-img" alt="film strip">
       <!-- crop boxes injected here -->
     </div>
   </div>
-  <div class="frames-tools frames-tools-below">
-    <!-- while exporting, the progress takes the hints' place: the page
-         height does not change, so the strip still fits -->
+  <div class="frames-tools-below">
     <div class="progress-wrap" id="exp-prog-wrap">
       <progress id="exp-prog" value="0" max="1"></progress>
       <div class="progress-label" id="exp-prog-label"></div>
-    </div>
-    <span class="msg" id="confirm-hint">← → nudge · ↑ ↓ prev/next · Enter add · Delete remove · click to place</span>
-    <div class="row">
-      <button class="ghost" id="frame-add">+ Add</button>
-      <button class="ghost" id="frame-del">− Remove</button>
     </div>
   </div>
 </div>
@@ -258,7 +246,7 @@
 
 <div class="card space-empty" id="export-empty">
   <h2>Nothing exported yet</h2>
-  <p>Place the boxes in <b>Frames</b> and press <b>Export</b>. The finished frames come up here.</p>
+  <p>Export from <b>Frames</b>.</p>
 </div>
 
 <!-- Downloads -->
@@ -266,25 +254,12 @@
   <div class="frames-header">
     <h2 id="export-title">Save</h2>
   </div>
-  <p class="lead" style="margin-bottom: 14px;">Saves into
-    <code id="export-folder">the work folder</code>, one subfolder per kind.</p>
+  <div class="save-to"><code id="export-folder">the work folder</code></div>
   <div class="dl-grid">
-    <button class="ghost dl" data-save="jpeg">
-      <span class="dl-name">JPEGs</span>
-      <span class="dl-desc">Finished colour, ready to share or print. Into <code>jpeg/</code>.</span>
-    </button>
-    <button class="ghost dl" data-save="tiff">
-      <span class="dl-name">TIFFs</span>
-      <span class="dl-desc">16-bit positives, for editing with the most headroom. Into <code>tiff/</code>.</span>
-    </button>
-    <button class="ghost dl" data-save="raw">
-      <span class="dl-name">Raw negatives</span>
-      <span class="dl-desc">16-bit uninverted TIFFs, to invert in another tool. Into <code>raw/</code>.</span>
-    </button>
-    <button class="ghost dl" data-save="contact">
-      <span class="dl-name">Contact sheet</span>
-      <span class="dl-desc">Every frame on one numbered JPEG, <code>contact_sheet.jpg</code>.</span>
-    </button>
+    <button class="ghost dl" data-save="jpeg"><span class="dl-name">JPEGs</span></button>
+    <button class="ghost dl" data-save="tiff"><span class="dl-name">TIFFs</span></button>
+    <button class="ghost dl" data-save="raw"><span class="dl-name">Raw negatives</span></button>
+    <button class="ghost dl" data-save="contact"><span class="dl-name">Contact sheet</span></button>
   </div>
   <div class="progress-wrap" id="save-prog-wrap">
     <progress id="save-prog" value="0" max="1"></progress>
@@ -310,30 +285,30 @@
 <section class="space" id="space-settings" role="tabpanel" aria-labelledby="tab-settings">
 
 <div class="card">
-  <h2>Privacy</h2>
-  <p class="lead">Anonymous reports to the developer show what breaks on scanners other than the
-    one Pakon was built on, and which parts of the app people use.</p>
-  <div class="settings-list">
-    <label class="setting"><input type="checkbox" id="set-crashes">
-      <span><strong>Crash reports</strong>When something fails: the error, and for a failed scan
-        the scanner's last log lines.</span></label>
-    <label class="setting"><input type="checkbox" id="set-usage">
-      <span><strong>Usage statistics</strong>Which pages you open, and how long scans, processing
-        and exports take, with the film type and number of frames.</span></label>
+  <div class="with-info card-title">
+    <h2>Privacy</h2>
+    <button class="info" aria-label="About reports"
+            data-tip="Anonymous reports show what breaks on other scanners. Never sent: photos, file or folder names, the scanner's serial. Turning both off forgets the random ID.">i</button>
   </div>
-  <p class="settings-note">Never sent: your photos, file or folder names, or your scanner's serial
-    number. Reports carry a random ID, which turning both off forgets.</p>
-  <p class="settings-note hidden" id="privacy-host">Reports go to a self-hosted
-    <a href="https://rybbit.com" target="_blank" rel="noopener">Rybbit</a>
-    (open-source analytics) run by Pakon's developer, not to a third party.</p>
-  <p class="settings-note hidden" id="privacy-off">This build of Pakon doesn't send reports.</p>
+  <div class="settings-list">
+    <div class="setting-row">
+      <label class="setting"><input type="checkbox" id="set-crashes"><strong>Crash reports</strong></label>
+      <button class="info" aria-label="About crash reports" data-tip="When something fails: the error, and for a failed scan the scanner's last log lines.">i</button>
+    </div>
+    <div class="setting-row">
+      <label class="setting"><input type="checkbox" id="set-usage"><strong>Usage statistics</strong></label>
+      <button class="info" aria-label="About usage statistics" data-tip="Pages opened, and how long scans, processing and exports take, with the film type and frame count.">i</button>
+    </div>
+  </div>
+  <p class="settings-note hidden" id="privacy-host">Sent to a self-hosted
+    <a href="https://rybbit.com" target="_blank" rel="noopener">Rybbit</a>, not a third party.</p>
+  <p class="settings-note hidden" id="privacy-off">This build sends no reports.</p>
   <span class="msg" id="set-msg"></span>
 </div>
 
 <div class="card">
   <h2>About</h2>
-  <p class="settings-note">Pakon <span id="about-version">(from source)</span>. Unofficial,
-    independent software, not affiliated with or endorsed by Kodak or Pakon.</p>
+  <p class="settings-note">Pakon <span id="about-version">(from source)</span>. Not affiliated with Kodak or Pakon.</p>
 </div>
 
 </section>
@@ -341,7 +316,7 @@
 <!-- Crash reports / usage statistics: asked once; Settings changes it -->
 <div class="consent-pop hidden" id="consent-card" role="dialog" aria-labelledby="consent-title">
   <h2 id="consent-title">Help improve Pakon</h2>
-  <p>Send anonymous reports so problems on other scanners get fixed. No photos, nothing personal. You can change this in Settings.</p>
+  <p>Send anonymous reports? No photos, nothing personal.</p>
   <div class="consent-opts">
     <label><input type="checkbox" id="consent-crashes" checked> Crash reports</label>
     <label><input type="checkbox" id="consent-usage" checked> Usage statistics</label>
@@ -363,7 +338,7 @@
 <!-- Space switcher, along the bottom like a Resolve page bar -->
 <nav class="spaces" role="tablist" aria-label="Workspace">
   <button role="tab" id="tab-home" data-space="home" aria-controls="space-home" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/></svg>Home</button>
-  <button role="tab" id="tab-scan"data-space="scan" aria-controls="space-scan" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M3 9h18M3 15h18M7 6v3M11 6v3M15 6v3M19 6v3M7 15v3M11 15v3M15 15v3M19 15v3"/></svg>Scan</button>
+  <button role="tab" id="tab-scan" data-space="scan" aria-controls="space-scan" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="6" width="18" height="12"/><path d="M3 9h18M3 15h18M7 6v3M11 6v3M15 6v3M19 6v3M7 15v3M11 15v3M15 15v3M19 15v3"/></svg>Scan</button>
   <button role="tab" id="tab-process" data-space="process" aria-controls="space-process" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="5" width="18" height="14"/><rect x="6" y="8" width="7" height="8"/><path d="M16 9h2M16 12h2M16 15h2"/></svg>Process</button>
   <button role="tab" id="tab-frames" data-space="frames" aria-controls="space-frames" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="2" y="7" width="9" height="10"/><rect x="13" y="7" width="9" height="10"/><path d="M2 4h20M2 20h20"/></svg>Frames</button>
   <button role="tab" id="tab-export" data-space="export" aria-controls="space-export" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 15v5h16v-5"/></svg>Export</button>
@@ -374,7 +349,7 @@
 <div class="modal-backdrop hidden" id="browse-modal">
   <div class="modal">
     <div class="modal-head">
-      <h2 id="browse-title">Choose work folder (on scanner host)</h2>
+      <h2 id="browse-title">Choose work folder</h2>
       <button class="ghost" id="browse-close">✕</button>
     </div>
     <div class="browse-path" id="browse-cur"></div>
@@ -383,6 +358,7 @@
       <button class="ghost" id="browse-new">New folder…</button>
       <span class="spacer"></span>
       <span class="msg err" id="browse-msg"></span>
+      <button class="ghost" id="browse-cancel">Cancel</button>
       <button id="browse-use">Use this folder</button>
     </div>
   </div>

@@ -57,12 +57,11 @@ document.querySelectorAll('[data-save]').forEach(b => b.addEventListener('click'
       $('save-prog').value = ev.pct;
       $('save-prog-label').textContent = ev.step;
     } else if (ev.type === 'done') {
-      $('save-prog').value = 1;
-      $('save-prog-label').textContent = 'Done';
+      $('save-prog-wrap').classList.remove('show');   // the message says it
       savedPath = ev.file || ev.folder;
       setMsg($('save-msg'), ev.count === 1 && ev.file
-        ? `Saved the ${ev.what} to ${ev.file}`
-        : `Saved ${ev.count} ${ev.what} to ${ev.folder}`, 'ok');
+        ? `Saved the ${ev.what}` : `Saved ${ev.count} ${ev.what}`, 'ok');
+      $('save-msg').title = savedPath || '';
       $('save-reveal').classList.toggle('hidden', !canReveal);
     } else if (ev.type === 'error') {
       setMsg($('save-msg'), ev.message, 'err');

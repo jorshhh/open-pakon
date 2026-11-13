@@ -41,13 +41,13 @@ function showIce() {
   const box = $('ice-on'), ok = !!(meta && meta.ice);
   box.disabled = !ok;
   $('ice-label').classList.toggle('off', !ok);
-  $('ice-label').title = ok
-    ? 'Rebuild dust and scratches from the scan\'s infrared channel (slower export)'
+  $('ice-info').dataset.tip = ok
+    ? 'Digital ICE: rebuilds dust and scratches from the infrared channel. Slower export.'
     : (meta && meta.film === 'bw'
-       ? 'B&W is scanned without the infrared channel, so there is nothing to find dust with'
+       ? 'B&W is scanned without infrared, so there is nothing to find dust with.'
        : meta && meta.film === 'slide'
-       ? 'Dust removal is off for slides: it softens the grain of slide film'
-       : 'This scan has no infrared channel to find dust with');
+       ? 'Off for slides: it softens slide grain.'
+       : 'This scan has no infrared channel to find dust with.');
 }
 $('sharpen').value = store.get('pakon-sharpen') || 'off';
 $('sharpen').addEventListener('change', () => store.set('pakon-sharpen', $('sharpen').value));

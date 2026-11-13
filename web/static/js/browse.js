@@ -36,8 +36,7 @@ async function nativePick(raws) {
 
 function openBrowser(raws, start) {
   browseRaws = raws;
-  $('browse-title').textContent = raws
-    ? 'Open a .raw (on scanner host)' : 'Choose work folder (on scanner host)';
+  $('browse-title').textContent = raws ? 'Open a .raw' : 'Choose work folder';
   $('browse-new').classList.toggle('hidden', raws);
   $('browse-use').classList.toggle('hidden', raws);
   $('browse-modal').classList.remove('hidden');
@@ -61,7 +60,10 @@ async function browseTo(path) {
   if (browseRaws) q.set('raws', 'true');
   const d = await fetch('/api/browse?' + q).then(r => r.json());
   browsePath = d.path;
-  $('browse-cur').textContent = d.path;
+  // LRM marks keep the leading "/" in place in the right-to-left box that
+  // cuts long paths at the start.
+  $('browse-cur').textContent = '\u200e' + d.path + '\u200e';
+  $('browse-cur').title = d.path;
   // Windows' list of drives is not a folder to pick or make one in
   $('browse-use').disabled = $('browse-new').disabled = !!d.virtual;
 
@@ -108,6 +110,7 @@ $('raw-open').addEventListener('click', () => pick(true));
 $('home-raw').addEventListener('click', () => pick(true));
 
 $('browse-close').addEventListener('click', closeBrowser);
+$('browse-cancel').addEventListener('click', closeBrowser);
 $('browse-modal').addEventListener('click', e => {
   if (e.target === $('browse-modal')) closeBrowser();
 });

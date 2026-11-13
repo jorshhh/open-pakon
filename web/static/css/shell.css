@@ -103,7 +103,7 @@ body { padding-bottom: 110px; }        /* the bar's room; fitBar() sets it exact
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   direction: rtl; text-align: left; font-weight: 600;
 }
-.browse-list { overflow-y: auto; flex: 1; min-height: 120px; background: var(--bg); }
+.browse-list { overflow-y: auto; height: min(360px, 50vh); background: var(--bg); }
 .browse-item {
   display: flex; align-items: center; gap: 9px;
   padding: 8px 20px; font-family: 'IBM Plex Mono', monospace; font-size: 0.86rem; cursor: pointer;
