@@ -20,7 +20,7 @@
   <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/Pakon-Setup.exe"><b>⬇ Windows</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/jorshhh/open-pakon/releases/latest/download/pakon_amd64.deb"><b>⬇ Linux (.deb)</b></a>
-  <br>macOS 13 or later · Windows 10 or 11 (64-bit) · Ubuntu 24.04, Linux Mint 22
+  <br>macOS 13 or later · Windows 10 or 11 (64-bit) · Ubuntu 22.04 or later, Linux Mint 21 or later
 </p>
 
 ![Pakon's Frames page: a colour roll laid out as a strip, with a box around each picture](docs/images/frames.jpg)
@@ -35,6 +35,9 @@ the original software only runs on old versions of Windows.
 a strip of film, and get finished pictures: JPEGs ready to share, 16-bit TIFFs
 for editing, or the raw negatives. It uses Kodak's own colour processing, so
 your scans look the way a Pakon scan should.
+
+It's built in [Rust](https://www.rust-lang.org): one fast native app with
+nothing else to install, the same on Mac, Windows and Linux.
 
 It's an independent project, not made or supported by Kodak.
 
@@ -81,8 +84,9 @@ It's an independent project, not made or supported by Kodak.
      administrator permission, say yes: that's the installer setting up the
      scanner's USB driver (once; it replaces Kodak's driver if you had it).
    - **Linux:** install `pakon_amd64.deb` with
-     `sudo apt install ./pakon_amd64.deb`. It's built for Ubuntu 24.04 and
-     Linux Mint 22, and lets you use the scanner without `sudo`.
+     `sudo apt install ./pakon_amd64.deb`. It's built for Ubuntu 22.04 or
+     later and Linux Mint 21 or later, and lets you use the scanner without
+     `sudo`.
 2. **Connect the scanner.** Plug it into your computer with USB and switch it
    on.
 3. **Open Pakon** and go to **Scan**. The first time after the scanner is
@@ -141,9 +145,12 @@ More resolutions and everything the F-135+ still lacks. Follow along in the
 
 ## For developers
 
-Building from source, the command-line tools, the web service, the driver's
-design and the scanner's protocol are all in the
-**[technical guide](docs/TECHNICAL.md)**, with deeper notes in [`docs/`](docs/).
+Pakon is written in Rust (`rust/`): one binary holds the scanner driver, the
+image pipeline, the web service and the window. Building from source, the
+command-line tools, the web service, the driver's design and the scanner's
+protocol are all in the **[technical guide](docs/TECHNICAL.md)**, with deeper
+notes in [`docs/`](docs/) and what's next in the
+[roadmap](docs/ROADMAP.md).
 
 ## Privacy
 
@@ -163,7 +170,8 @@ yes, each has its own switch, and you can change your mind any time on the
 
 Pakon also asks GitHub whether there's a newer version. Copies you build
 yourself never send anything; see the
-[technical guide](docs/TECHNICAL.md) and `web/telemetry.py` for details.
+[technical guide](docs/TECHNICAL.md) and
+`rust/crates/pakon-web/src/telemetry.rs` for details.
 
 ## Credits
 
@@ -176,42 +184,49 @@ pakon stands on other people's work:
   barcode layout and the OEM product-code table; its EEPROM layout and safety
   rules are used throughout. Ali also brought up and verified the F-135+ on
   serial 16402: its captures are the source of `resources/f135plus/` and of
-  `docs/F135_PLUS_CAPTURES.md`. Several of the reference's hardware facts
+  the F-135+ facts in `docs/SCANNER_FAMILY.md`. Several of the reference's hardware facts
   were measured with this project.
 - **Mats Fagerberg** ([thetalkingdrum](https://github.com/thetalkingdrum)):
   the base F-135 EEPROM dump (serial 2233) used as a test fixture, via
   pakon-reference, and pointing us to nkscan for Digital ICE.
 - **Digital ICE** ([#37](https://github.com/jorshhh/open-pakon/pull/37)): a
-  numpy port of the dust removal in
+  port of the dust removal in
   [nkscan](https://github.com/activexray/nkscan) (`src/dust.rs`, MIT OR
   Apache-2.0, © the nkscan authors), which implements the pipeline documented
   by [openICE](https://github.com/a6o/openICE) (a6o, GPL-3.0).
 - **Kai Kaufman** ([ktkaufman03/FX35](https://github.com/ktkaufman03/FX35)):
   the open-source FX35 Windows driver. Its package carries the OEM firmware
   as Intel HEX (`firmware/README.md`), and with logging added it recorded the
-  F-135+ captures (`tools/fx35_datalogger.py`).
+  F-135+ captures (`tools/fx35_datalogger.py`, at git tag `python-final`).
 - **Stefan Dierauf**: libpakon, an independent C++ driver, used as a
-  read-only reference (`docs/LIBPAKON_COMPARISON.md`).
+  read-only reference.
 - **Kodak / Pakon**: the original F-X35 software. Its F-135 engine `TLB.dll`
-  was reverse-engineered for interoperability (`docs/TLB_FINDINGS.md`); the
+  was reverse-engineered for interoperability (`docs/PROTOCOL.md`,
+  `docs/IMAGING.md`); the
   colour engine `PakonIMAu.dll`, its scene-balance data, the DX
   product-code table and the Digital ICE library `DMLDICELib.dll` (Applied
   Science Fiction) are used as-is (`oem/`), as are the colour profiles in
   `profiles/` (© Eastman Kodak Company).
-- **Software**: [libusb](https://libusb.info),
-  [FastAPI](https://fastapi.tiangolo.com),
-  [uvicorn](https://www.uvicorn.org), [NumPy](https://numpy.org),
-  [Pillow](https://python-pillow.org) (with littleCMS),
-  [tifffile](https://github.com/cgohlke/tifffile),
-  [PyUSB](https://github.com/pyusb/pyusb),
-  [Unicorn](https://www.unicorn-engine.org) and
-  [pefile](https://github.com/erocarrera/pefile) (to run the OEM scene
-  balance), [pywebview](https://pywebview.flowrl.com) (the app's window),
+- **Software**: [Rust](https://www.rust-lang.org) and its crates, among
+  them [nusb](https://github.com/kevinmehall/nusb) (USB),
+  [axum](https://github.com/tokio-rs/axum) and
+  [tokio](https://tokio.rs) (the web service),
+  [tao](https://github.com/tauri-apps/tao) and
+  [wry](https://github.com/tauri-apps/wry) (the app's window),
+  [ndarray](https://github.com/rust-ndarray/ndarray) and
+  [rayon](https://github.com/rayon-rs/rayon) (the image pipeline),
+  [image](https://github.com/image-rs/image) and
+  [jpeg-encoder](https://github.com/vstroebel/jpeg-encoder);
+  [Unicorn](https://www.unicorn-engine.org) (to run the OEM scene balance
+  and Digital ICE), [LittleCMS](https://www.littlecms.com) (the `rpd.pf`
+  and `romm.pf` tables were computed with it),
   [NSIS](https://nsis.sourceforge.io) and [MinGW-w64](https://www.mingw-w64.org)
   (the Windows installer and tools), [libwdi](https://github.com/pbatard/libwdi)
   (a reference for setting up the Windows USB driver),
   [Ghidra](https://ghidra-sre.org) (reverse engineering) and
-  [Rybbit](https://rybbit.com) (opt-in analytics).
+  [Rybbit](https://rybbit.com) (opt-in analytics). Earlier versions were
+  built on libusb, FastAPI, uvicorn, NumPy, Pillow, tifffile, PyUSB, pefile
+  and pywebview.
 
 ## License
 

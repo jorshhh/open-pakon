@@ -1,64 +1,92 @@
 #!/bin/bash
-# Build a .deb of Pakon for this Debian/Ubuntu machine (amd64/arm64).
+# Build a .deb of Pakon (amd64 or arm64) from the Rust port: one native
+# binary (rust/crates/pakon-app: the service, the scanner driver, the image
+# pipeline and the window, in WebKitGTK) plus the files it reads.
 #
 #   packaging/linux/build-deb.sh [VERSION]
+#   PAKON_DEB_ARCH=amd64 packaging/linux/build-deb.sh [VERSION]   (in Docker)
 #
-# Installs the repo files the app needs to /opt/pakon, the C tools (Release)
-# to /opt/pakon/build, and a venv with web/requirements.txt + pywebview at
-# /opt/pakon/venv (system site-packages for python3-gi). The venv is made in
-# the staging dir and run only as `venv/bin/python`, which finds its
-# site-packages from pyvenv.cfg, so moving it to /opt/pakon is fine.
-# Also: /usr/bin/pakon, a .desktop entry, an icon, and a udev rule so the
-# logged-in user reaches the scanner without sudo.
+# Installs the binary and its files to /opt/pakon, /usr/bin/pakon (the
+# launcher: data in ~/.local/share/pakon, the log in
+# ~/.local/state/pakon/pakon.log), a .desktop entry, an icon, and a udev
+# rule so the logged-in user reaches the scanner without sudo. Depends only
+# on the system's GTK 3 and WebKitGTK 4.1 (dpkg-shlibdeps works them out).
 #
-# Crash reports and usage statistics (web/telemetry.py, opt-in): the same
-# PAKON_RYBBIT_URL / _SITE_ID / _DOMAIN as the Mac build, from the environment
-# or packaging/release.env. They go into /opt/pakon/release.env with
-# PAKON_VERSION, which the launcher loads; without them the app never sends any.
+# Crash reports and usage statistics (opt-in): the same PAKON_RYBBIT_URL /
+# _SITE_ID / _DOMAIN as the Mac build, from the environment or
+# packaging/release.env. They go into /opt/pakon/release.env with
+# PAKON_VERSION, which the app reads; without them it never sends any.
 #
-# Needs: build-essential cmake pkg-config libusb-1.0-0-dev python3-venv
-# dpkg-dev. Output: dist/linux/pakon_<arch>.deb
+# Needs on Debian/Ubuntu: cargo (rustup), build-essential cmake pkg-config
+# libclang-dev libgtk-3-dev libwebkit2gtk-4.1-dev dpkg-dev. Without them (or on a Mac) it
+# builds in Docker from the Dockerfile here, for PAKON_DEB_ARCH (default:
+# this machine's; the other one runs emulated, much slower), with
+# PAKON_UBUNTU_MIRROR in place of archive.ubuntu.com if that is out of reach.
+# Output: dist/linux/pakon_<arch>.deb
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 VERSION="${1:-$(git -C "$REPO" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)}"
 VERSION="${VERSION:-0.1.0}"
-ARCH="$(dpkg --print-architecture)"
 OUT="$REPO/dist/linux"
-STAGE="$OUT/stage"
-APPDIR="$STAGE/opt/pakon"
-PY="${PYTHON:-python3}"
 if [ -f "$REPO/packaging/release.env" ]; then
     set -a; . "$REPO/packaging/release.env"; set +a
 fi
 
 step() { printf '\n==> %s\n' "$*"; }
 
+[[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] \
+    || { echo "version must look like 1.2 or 1.2.3, got '$VERSION'" >&2; exit 1; }
+
+native() {
+    [ "$(uname -s)" = Linux ] && command -v cargo >/dev/null && command -v dpkg-deb >/dev/null \
+        && pkg-config --exists webkit2gtk-4.1 gtk+-3.0 2>/dev/null \
+        && { [ -z "${PAKON_DEB_ARCH:-}" ] || [ "$PAKON_DEB_ARCH" = "$(dpkg --print-architecture)" ]; }
+}
+if ! native; then
+    command -v docker >/dev/null || { echo "needs cargo, dpkg-dev and the GTK 3 / WebKitGTK 4.1" \
+        "headers (see above), or Docker" >&2; exit 1; }
+    case "${PAKON_DEB_ARCH:-$(uname -m)}" in
+        amd64|x86_64) A=amd64 ;;
+        arm64|aarch64) A=arm64 ;;
+        *) echo "PAKON_DEB_ARCH must be amd64 or arm64" >&2; exit 1 ;;
+    esac
+    step "building in Docker (linux/$A)"
+    docker build -q --platform "linux/$A" --build-arg UBUNTU_MIRROR="${PAKON_UBUNTU_MIRROR:-}" \
+        -t "pakon-deb-build:$A" "$HERE" >/dev/null
+    mkdir -p "$OUT/.cache/cargo-registry-$A"
+    exec docker run --rm --platform "linux/$A" -u "$(id -u):$(id -g)" -e HOME=/tmp \
+        -e PAKON_RYBBIT_URL -e PAKON_RYBBIT_SITE_ID -e PAKON_RYBBIT_DOMAIN \
+        -e PAKON_DEB_ARCH="$A" \
+        -v "$OUT/.cache/cargo-registry-$A:/usr/local/cargo/registry" \
+        -v "$REPO:$REPO" -w "$REPO" "pakon-deb-build:$A" "$HERE/build-deb.sh" "$VERSION"
+fi
+
+ARCH="$(dpkg --print-architecture)"
+STAGE="$OUT/stage-$ARCH"
+APPDIR="$STAGE/opt/pakon"
+# its own target folder: the Mac's (rust/target) holds other platforms' build scripts
+TARGET="$OUT/target-$ARCH"
 rm -rf "$STAGE" && mkdir -p "$APPDIR" "$OUT"
 
-step "pakon_probe, pakon_replay, pakon_render"
-cmake -S "$REPO" -B "$OUT/cbuild" -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build "$OUT/cbuild" --target pakon_probe pakon_replay pakon_render -j >/dev/null
-mkdir -p "$APPDIR/build"
-install -m755 "$OUT/cbuild/pakon_probe" "$OUT/cbuild/pakon_replay" \
-    "$OUT/cbuild/libpakon_render.so" "$APPDIR/build/"
+step "pakon_app ($ARCH)"
+(cd "$REPO/rust" && CARGO_TARGET_DIR="$TARGET" cargo build --release --locked -p pakon-app)
+install -m755 "$TARGET/release/pakon_app" "$APPDIR/pakon"
+strip "$APPDIR/pakon"
 
 step "app files"
-# same set as packaging/macos/pakon.spec
-mkdir -p "$APPDIR"/{web,tools,resources/f135plus,firmware,packaging/macos}
-cp "$REPO"/web/*.py "$APPDIR/web/"
+# /opt/pakon mirrors the repo layout the service reads (paths.rs find_root):
+# web/static, resources, firmware, profiles, oem; as the Mac and Windows builds
+mkdir -p "$APPDIR"/{web,resources/f135plus,firmware}
 cp -r "$REPO/web/static" "$APPDIR/web/"
-cp "$REPO"/tools/*.py "$APPDIR/tools/"
 cp "$REPO"/resources/*.pakscan "$REPO"/resources/*.pakfw "$APPDIR/resources/"
 cp "$REPO"/resources/f135plus/*.pakscan "$APPDIR/resources/f135plus/"
-cp "$REPO"/firmware/*.hex "$REPO/firmware/README.md" "$APPDIR/firmware/"
+cp "$REPO"/firmware/*.hex "$REPO/firmware/README.md" "$APPDIR/firmware/" 2>/dev/null || true
 cp -r "$REPO/profiles" "$REPO/oem" "$APPDIR/"
 cp "$REPO/LICENSE" "$REPO/NOTICE" "$APPDIR/"
-cp "$REPO/packaging/macos/pakon_app.py" "$APPDIR/packaging/macos/"
-find "$APPDIR" -name __pycache__ -prune -exec rm -rf {} +
 
-# what the Mac app reads from Info.plist (pakon_app.py)
+# what the Mac app reads from Info.plist
 {
     echo "PAKON_VERSION=$VERSION"
     if [ -n "${PAKON_RYBBIT_URL:-}" ] && [ -n "${PAKON_RYBBIT_SITE_ID:-}" ] \
@@ -72,14 +100,6 @@ find "$APPDIR" -name __pycache__ -prune -exec rm -rf {} +
     fi
 } > "$APPDIR/release.env"
 
-step "Python venv"
-"$PY" -m venv --system-site-packages "$APPDIR/venv"
-"$APPDIR/venv/bin/python" -m pip install --quiet --disable-pip-version-check \
-    --no-cache-dir -r "$REPO/web/requirements.txt" \
-    "$(grep '^pywebview==' "$REPO/packaging/macos/requirements.txt")"
-find "$APPDIR/venv" -name __pycache__ -prune -exec rm -rf {} +
-PYVER="$("$PY" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
-
 step "launcher, desktop entry, icon, udev rule"
 install -Dm755 "$HERE/pakon" "$STAGE/usr/bin/pakon"
 install -Dm644 "$HERE/pakon.desktop" "$STAGE/usr/share/applications/pakon.desktop"
@@ -87,6 +107,14 @@ install -Dm644 "$REPO/brand/logo.png" "$STAGE/usr/share/pixmaps/pakon.png"
 install -Dm644 "$HERE/60-pakon.rules" "$STAGE/usr/lib/udev/rules.d/60-pakon.rules"
 
 step "control"
+# the shared libraries the binary links, as package names (GTK, WebKitGTK, glibc)
+SHL="$OUT/shlibs-$ARCH"
+rm -rf "$SHL" && mkdir -p "$SHL/debian"
+printf 'Source: pakon\n\nPackage: pakon\nArchitecture: any\n' > "$SHL/debian/control"
+DEPENDS="$(cd "$SHL" && dpkg-shlibdeps -O "$APPDIR/pakon" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')"
+rm -rf "$SHL"
+[ -n "$DEPENDS" ] || { echo "dpkg-shlibdeps found no dependencies" >&2; exit 1; }
+echo "Depends: $DEPENDS"
 mkdir -p "$STAGE/DEBIAN"
 SIZE="$(du -sk "$STAGE" | cut -f1)"
 cat > "$STAGE/DEBIAN/control" <<CONTROL
@@ -95,7 +123,7 @@ Version: $VERSION
 Architecture: $ARCH
 Maintainer: Pakon <https://github.com/jorshhh/open-pakon>
 Installed-Size: $SIZE
-Depends: python$PYVER, python3-gi, gir1.2-webkit2-4.1, libusb-1.0-0
+Depends: $DEPENDS
 Section: graphics
 Priority: optional
 Homepage: https://github.com/jorshhh/open-pakon

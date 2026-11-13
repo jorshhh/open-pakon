@@ -1,0 +1,13 @@
+/* ── Settings space ── */
+.settings-list { display: grid; gap: 10px; margin-bottom: 14px; max-width: 720px; }
+label.setting {
+  display: flex; gap: 12px; align-items: flex-start; cursor: pointer;
+  border: 2px solid var(--border); background: var(--surface2); padding: 12px 14px;
+  font-size: 0.86rem; line-height: 1.45;
+}
+label.setting input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--border); flex-shrink: 0; }
+label.setting strong {
+  display: block; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; text-transform: uppercase;
+}
+label.setting:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+.settings-note { font-size: 0.8rem; color: var(--muted); max-width: 72ch; line-height: 1.45; margin-bottom: 8px; }

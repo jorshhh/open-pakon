@@ -1,0 +1,10 @@
+[package]
+name = "pakon-usb"
+version = "0.1.0"
+description = "Pakon transport: USB enumeration, FX2 firmware load, bulk/control I/O. No packet knowledge."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+nusb = "0.2"

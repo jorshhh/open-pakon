@@ -1,0 +1,123 @@
+/* Around the spaces: the space bar along the bottom, the new-build banner,
+   the consent popup and the folder picker. */
+
+/* ── Spaces: one page per step, switched from the bar along the bottom ── */
+body { padding-bottom: 110px; }        /* the bar's room; fitBar() sets it exactly */
+.space { display: none; }
+.space > .card:last-child { margin-bottom: 0; }
+.space.active { display: block; }
+.space-empty { text-align: center; padding: 48px 24px; }
+.space-empty p { color: var(--muted); font-size: 0.92rem; margin-top: 6px; }
+.spaces {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: flex; justify-content: center; gap: 4px;
+  background: var(--border); padding: 6px 16px 8px;
+}
+.spaces button {
+  all: unset; cursor: pointer; position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-width: 96px; padding: 8px 14px;
+  color: #9a968e; border-top: 3px solid transparent;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.spaces button svg { width: 24px; height: 24px; }
+.spaces button:hover { color: var(--surface); }
+.spaces button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.spaces button[aria-selected="true"] { color: var(--accent); border-top-color: var(--accent); }
+.spaces button.busy::after {          /* work still running in that space */
+  content: ""; position: absolute; top: 8px; right: 26px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── New-build banner ── */
+.update-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--accent); border: 2px solid var(--border);
+  box-shadow: var(--shadow); padding: 12px 16px; margin: -16px 0 24px;
+}
+.update-bar svg { width: 26px; height: 26px; flex-shrink: 0; }
+.update-text { flex: 1 1 260px; min-width: 0; font-size: 0.9rem; line-height: 1.4; }
+.update-text strong {
+  display: block; font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem;
+  text-transform: uppercase;
+}
+.update-bar button:not(.ghost) { background: var(--border); color: var(--accent); }
+
+/* ── Consent popup: crash reports / usage statistics ── */
+.consent-pop {
+  position: fixed; right: 20px; bottom: 96px; z-index: 60;   /* above the space bar */
+  width: 340px; max-width: calc(100vw - 32px);
+  background: var(--surface); border: 2px solid var(--border);
+  box-shadow: var(--shadow); padding: 16px 16px 14px;
+}
+.consent-pop h2 {
+  font-family: 'Space Grotesk', sans-serif; font-size: 1rem; font-weight: 700;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.consent-pop p { font-size: 0.82rem; line-height: 1.45; margin-bottom: 10px; }
+.consent-opts { display: grid; gap: 6px; margin-bottom: 8px; }
+.consent-opts label {
+  display: flex; gap: 8px; align-items: center; cursor: pointer;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; font-weight: 600;
+  text-transform: uppercase;
+}
+.consent-opts input { width: 16px; height: 16px; accent-color: var(--border); }
+.consent-pop details { font-size: 0.76rem; line-height: 1.45; color: var(--muted); margin-bottom: 12px; }
+.consent-pop summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.consent-pop details ul { margin: 6px 0 0 16px; }
+.consent-pop .row { gap: 8px; }
+@media (max-width: 560px) { .consent-pop { right: 16px; left: 16px; width: auto; } }
+
+/* ── Folder picker modal ── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;                 /* above the space bar */
+}
+.modal {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  box-shadow: 8px 8px 0px 0px rgba(227, 38, 54, 1);
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 2px solid var(--border);
+  background: var(--accent);
+}
+.modal-head h2 {
+  font-size: 1rem; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  text-transform: uppercase; color: var(--text); margin: 0;
+}
+.browse-path {
+  padding: 10px 20px; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem;
+  color: var(--text); border-bottom: 2px solid var(--border);
+  background: var(--surface2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: rtl; text-align: left; font-weight: 600;
+}
+.browse-list { overflow-y: auto; flex: 1; min-height: 120px; background: var(--bg); }
+.browse-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 20px; font-family: 'IBM Plex Mono', monospace; font-size: 0.86rem; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.browse-item:hover { background: var(--surface); font-weight: 600; }
+.browse-item .ic { color: var(--red); flex-shrink: 0; font-weight: bold; }
+.browse-empty { padding: 16px 20px; color: var(--muted); font-size: 0.82rem; font-family: 'IBM Plex Mono', monospace; }
+.modal-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 20px; border-top: 2px solid var(--border);
+  background: var(--surface);
+}
+.modal-foot .spacer { flex: 1; }
+#browse-close {
+  padding: 4px 10px; font-size: 1rem; line-height: 1;
+}

@@ -1,0 +1,57 @@
+/* ── Scan space: firmware, then the work folder / order / actions table ── */
+.feed-prompt {
+  margin-top: 14px; padding: 12px; display: none;
+  border: 2px solid var(--green); color: var(--green);
+  font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 1rem;
+}
+.feed-prompt.show { display: block; }
+
+.log-box {
+  margin-top: 14px;
+  background: var(--border);
+  border: 2px solid var(--border);
+  padding: 10px;
+  font-size: 0.76rem; font-family: 'IBM Plex Mono', monospace;
+  color: var(--green);
+  max-height: 120px; overflow-y: auto;
+  display: none;
+  box-shadow: inset 2px 2px 0px rgba(0,0,0,0.5);
+}
+.log-box.show { display: block; }
+
+.scan-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid var(--border); }
+.scan-table th {
+  text-align: left; padding: 8px 12px;
+  background: var(--border); color: var(--surface);
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.scan-table td {
+  padding: 10px 12px; vertical-align: middle; background: var(--surface2);
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.88rem;
+}
+.scan-table td + td, .scan-table th + th { border-left: 2px solid var(--border); }
+.scan-table .col-order { width: 9.5em; }
+.scan-table .col-film { width: 190px; }
+.scan-table .col-res { width: 250px; }
+.scan-table select { width: 100%; }
+.scan-table .col-act { width: 262px; }      /* Scan + Advance film buttons + gap + padding + shadow */
+/* narrow: one labelled row per cell instead of three squeezed columns */
+@media (max-width: 560px) {
+  .scan-table thead { display: none; }
+  .scan-table tr, .scan-table td { display: block; }
+  .scan-table td + td { border-left: none; border-top: 2px solid var(--border); }
+  .scan-table td::before {
+    content: attr(data-label); display: block; margin-bottom: 6px;
+    font-size: 0.72rem; font-weight: 600; text-transform: uppercase; color: var(--muted);
+  }
+}
+.folder-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.folder-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.order-num { font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; font-weight: 700; }
+.act-cell { display: flex; gap: 8px; }
+button.icon {
+  width: 36px; height: 36px; padding: 0; flex-shrink: 0;
+  display: grid; place-items: center;
+}
+button.icon svg { width: 18px; height: 18px; display: block; }

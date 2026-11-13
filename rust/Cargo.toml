@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/pakon-proto", "crates/pakon-usb", "crates/pakon-image", "crates/pakon-oem", "crates/pakon-roll", "crates/pakon-scan", "crates/pakon-cli", "crates/pakon-web", "crates/pakon-app"]
+
+[workspace.package]
+edition = "2021"
+license-file = "../LICENSE"
+publish = false
+
+# The capture and image tests crunch real data; unoptimised they are slow.
+[profile.test]
+opt-level = 2

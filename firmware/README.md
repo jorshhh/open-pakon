@@ -24,14 +24,17 @@ standard FX2 sequence (`0xA0` internal RAM + `0xA3` external RAM + CPUCS
 control-transfer sequence from a capture and replay it:
 
 ```sh
-# from a capture that includes the f235->f135 load (e.g. a scan capture):
+# from a capture that includes the f235->f135 load (e.g. a scan capture),
+# with tools/analyze_capture.py from git tag `python-final`:
 python3 tools/analyze_capture.py CAPTURE.pcapng --extract-firmware resources/f135.pakfw
 # then, with the cold 0F05:F235 device attached to the host (not a VM):
-sudo ./build/pakon_probe --load-firmware resources/f135.pakfw
+rust/target/release/pakon_probe --load-firmware resources/f135.pakfw
 ```
 
-`pakon_usb_load_firmware()` opens the cold `0F05:F235` device, replays each
-control transfer, and waits for re-enumeration to operational `0F05:F135`.
+`pakon_probe` (`cd rust && cargo build --release -p pakon-cli`; on Linux run
+it as root or install `packaging/linux/60-pakon.rules`) opens the cold
+`0F05:F235` device, replays each control transfer, and waits for
+re-enumeration to operational `0F05:F135` (`rust/crates/pakon-usb/src/device.rs`).
 
 The generated `.pakfw` contains Kodak firmware bytes; this repo currently
 ships one at `resources/f135.pakfw` (see the provenance note above — same
@@ -59,7 +62,7 @@ from an F-135 load) leaves exactly the OEM `Pakon7.hex` image in RAM
 (verified byte-for-byte, 10355/10355) and brings a real F-135+ up as
 operational `0F05:F135`. The Plus differences live entirely in the PIC
 boards (NL/NM firmware), which keep their own flash and are not loaded over
-USB at power-on. See `docs/F135_PLUS_CAPTURES.md`.
+USB at power-on. See `docs/SCANNER_FAMILY.md`.
 
 ## Loading from Intel HEX (no capture)
 
@@ -71,12 +74,13 @@ an EZ-Loader record table compiled into the OEM loader driver `F235Ldr.sys`
 
 Both files are committed here: `Pakon7.hex` copied as-is from the OEM
 install, and `PknLdr.hex` extracted from its `F235Ldr.sys`. To regenerate them
-from your own OEM install (`FX35Driver\`):
+from your own OEM install (`FX35Driver\`), with `tools/extract_fx2_loader.py`
+from git tag `python-final`:
 
 ```sh
 python3 tools/extract_fx2_loader.py ".../FX35Driver/F235Ldr.sys" firmware/PknLdr.hex
 cp ".../FX35Driver/Pakon7.hex" firmware/
-./build/pakon_probe --load-firmware-hex firmware/PknLdr.hex firmware/Pakon7.hex
+rust/target/release/pakon_probe --load-firmware-hex firmware/PknLdr.hex firmware/Pakon7.hex
 ```
 
 | File         | SHA-256 |
@@ -84,7 +88,7 @@ cp ".../FX35Driver/Pakon7.hex" firmware/
 | `Pakon7.hex` | `edd840680ef7714c5d93b89c3def5ed6ba3085166bc8e0a6a15a0390bef3f2b4` |
 | `F235Ldr.sys` (source of `PknLdr.hex`, not committed) | `785bd29f37f8e49286be7a9b033e3741825952f5c293e2e143906504838ed2f1` |
 
-`pakon_fw_build` builds the same 1104
-transfers as `resources/f135.pakfw` (`test_fw` checks it), and the loader stops before the main image unless the
+`rust/crates/pakon-usb/src/fw.rs` builds the same 1104
+transfers as `resources/f135.pakfw` (`cargo test` checks it), and the loader stops before the main image unless the
 personality read (`0xA9`, `wIndex 0`) is `F235_AA07`: a wrong image once lit
 a fault LED on another project's unit.

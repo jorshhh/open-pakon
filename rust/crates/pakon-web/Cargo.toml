@@ -1,0 +1,37 @@
+[package]
+name = "pakon-web"
+version = "0.1.0"
+description = "The Pakon web service in Rust: the /api/* routes and event streams of web/app.py behind the same page (web/static/index.html)."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+pakon-proto = { path = "../pakon-proto" }
+pakon-usb = { path = "../pakon-usb" }
+pakon-scan = { path = "../pakon-scan" }
+pakon-image = { path = "../pakon-image" }
+pakon-roll = { path = "../pakon-roll" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
+tokio-stream = "0.1"
+tower-http = { version = "0.6", features = ["fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+ureq = "2"
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+dunce = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[[bin]]
+name = "pakon_web"
+path = "src/main.rs"

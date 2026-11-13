@@ -1,0 +1,42 @@
+/* ── Process space: the steps + the loaded raw ── */
+.steps {
+  list-style: none; counter-reset: step;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px; margin-bottom: 20px;
+}
+.steps li {
+  counter-increment: step;
+  border: 2px solid var(--border); background: var(--surface2);
+  padding: 12px 14px 12px 50px; position: relative;
+  font-size: 0.84rem; line-height: 1.45;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute; left: 12px; top: 12px;
+  width: 26px; height: 26px; display: grid; place-items: center;
+  background: var(--border); color: var(--accent);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+}
+.steps strong {
+  display: block; margin-bottom: 2px;
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; text-transform: uppercase;
+}
+.steps kbd {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem;
+  border: 1px solid var(--border); padding: 0 4px; background: var(--surface);
+}
+.raw-slot {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 2px dashed var(--border); padding: 12px 14px;
+}
+.raw-slot.set { border-style: solid; background: var(--surface2); }
+.raw-info { flex: 1 1 220px; min-width: 0; }
+.raw-title {
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 0.92rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.raw-slot:not(.set) .raw-title { color: var(--muted); font-weight: 400; }
+.raw-sub {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px;
+}

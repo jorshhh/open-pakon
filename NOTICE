@@ -1,4 +1,4 @@
-pakon — clean-room driver and web app for the Kodak/Pakon F-X35 film scanner
+pakon — clean-room driver and app for the Kodak/Pakon F-X35 film scanner
 Copyright (C) 2025-2026 Jorge Rangel
 
 This program is free software: you can redistribute it and/or modify it under
@@ -26,13 +26,20 @@ firmware/
     They are NOT covered by the AGPL and are not a work of this project. See firmware/README.md for provenance and the legal
     note.
 
-libusb-1.0
-    Linked at build time. LGPL-2.1-or-later. Not distributed as part of this
-    source tree.
+Rust crates (rust/Cargo.toml, versions pinned in rust/Cargo.lock)
+    Compiled into the app's binary, each under its own license (mostly MIT
+    and/or Apache-2.0): among them nusb, axum, tokio, tao, wry, muda,
+    ndarray, rayon, image and jpeg-encoder. Not distributed as part of this
+    source tree; cargo downloads them.
 
-Python runtime dependencies (web/requirements.txt, packaging/macos)
-    FastAPI, uvicorn, numpy, tifffile, Pillow, pyusb, unicorn, pefile,
-    certifi, and pywebview for the Mac app — each under its own license. Not
+Unicorn (unicorn-engine, unicorn-engine-sys)
+    The CPU emulator that runs the OEM DLLs, built from source by its crate
+    and linked into the binary. GPL-2.0 (with bundled QEMU and GLib parts
+    under their own terms). Not distributed as part of this source tree.
+
+WebView2Loader.dll (Windows installer only)
+    Microsoft's WebView2 loader, shipped beside Pakon.exe from the
+    webview2-com-sys crate under the Microsoft WebView2 SDK license. Not
     distributed as part of this source tree.
 
 oem/, profiles/

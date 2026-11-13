@@ -1,9 +1,9 @@
 ---
 name: pakon-scanner
 description: >
-  Working knowledge for the pakon project — a cross-platform (Linux + macOS)
-  driver, decoder and web app for the Kodak/Pakon F-135 / F-135+ film scanner,
-  now working toward a replay-free client. Use when implementing, debugging,
+  Working knowledge for the pakon project — a cross-platform (macOS, Windows,
+  Linux) driver, decoder and app for the Kodak/Pakon F-135 / F-135+ film
+  scanner, written in Rust, now working toward a replay-free client. Use when implementing, debugging,
   building, or testing any part of this repo: goal and roadmap, layering rules,
   build & test, the protocol, safety rules, and the related projects.
 ---
@@ -12,14 +12,18 @@ description: >
 
 ## Start here
 
-- `STATUS.md` — goal, what works, the roadmap to a replay-free client, open
-  questions. Read first.
-- `docs/PROTOCOL.md` — frames, replies, handshake, event service, scan sequence.
+- `docs/ROADMAP.md` — goal, what works on which model and platform, open
+  work, open questions, known issues. Read first.
+- `docs/TECHNICAL.md` — the Rust crates, building, testing, the CLI tools,
+  the HTTP API, settings, packaging, implementation facts.
+- `docs/PROTOCOL.md` — USB, firmware load, frames, replies, handshake,
+  calibration, event service, scan sequence, transport, safety rules.
 - `docs/REGISTERS.md` — every register/command we write, with encodings.
-- `docs/TLB_FINDINGS.md` — facts from the OEM F-135 engine (`TLB.dll`).
-- `docs/IMAGING.md` — image layout, decoder, colour pipeline.
-- `docs/F135_PLUS_CAPTURES.md`, `docs/F135_PLUS_NOTES.md`,
-  `docs/SCANNER_FAMILY.md` — F-135+ support and model differences.
+- `docs/EEPROM.md` — the EEPROM layout, decoding and the archive.
+- `docs/IMAGING.md` — raw stream, decode, flat field, framing, OEM colour,
+  Digital ICE, output.
+- `docs/SCANNER_FAMILY.md` — model differences, the F-135+, supporting
+  another model.
 
 ## Goal
 
@@ -42,9 +46,10 @@ as test fixtures: generated command streams must match them byte for byte.
   type byte `0`; never address the bootloaders `0x22`/`0x26`/`0x42`/`0x46`; never
   write unknown bus addresses; never issue vendor request `0xA2`; replay the OEM
   TEC values, never sweep them; respect the LED current ceilings.
-- **Layer separation in the C driver:** transport (`pakon_usb`: libusb,
+- **Layer separation:** transport (`rust/crates/pakon-usb`: `nusb`,
   enumeration, firmware, bulk/control I/O, no packet knowledge) vs protocol
-  (`pakon_proto`: frames, encode/decode, no libusb). `pakon_log` is shared.
+  (`rust/crates/pakon-proto`: frames, sequences, pure logic, no USB).
+  `pakon-scan` is the one crate that uses both.
 - **No invented commands.** Every new frame must come from a capture, the OEM
   engine, or the reference, and should be checked against a capture in a unit
   test. A synthesized teardown built on assumptions once left the unit dark and
@@ -52,7 +57,7 @@ as test fixtures: generated command streams must match them byte for byte.
 - **Addresses come from the probes**, never constants: base `0x20`/`0x24`, Plus
   `0x40`/`0x44`.
 - **Per-unit values come from the EEPROM**, never from our unit (serial 3054).
-- Every packet goes through `pakon_log`; `PAKON_DEBUG=0..4` (4 hexdumps).
+- Every transfer can be logged: `PAKON_DEBUG=0..4` (4 hexdumps).
 - Hardware steps need the human: stop and give exact commands to run.
 
 ## Key protocol facts
@@ -71,35 +76,52 @@ as test fixtures: generated command streams must match them byte for byte.
 
 ## Build & test
 
-Deps: C11, CMake ≥ 3.16, pkg-config, libusb-1.0 (`brew install cmake pkg-config
-libusb` / `apt install build-essential cmake pkg-config libusb-1.0-0-dev`).
+Deps: rustup (stable), CMake and libclang (Unicorn is built from source);
+on Linux also `libgtk-3-dev libwebkit2gtk-4.1-dev`. No libusb, no Python.
 
 ```sh
-cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure
+cd rust && cargo test                       # hardware-free tests
+cargo run --release -p pakon-app            # the app in its window
+cargo run --release -p pakon-web            # the service alone, http://127.0.0.1:8000 (--host, --port)
+cargo build --release -p pakon-cli          # rust/target/release/pakon_probe, pakon_replay
 ```
 
-Builds static `libpakon`, tools `pakon_probe` and `pakon_replay`, tests
-`test_proto`, `test_hex`, `test_setup`, `test_lightcal` and others (hardware-free). Decoder venv: `numpy
-pillow tifffile`. Web: `pip install -r web/requirements.txt`, then `uvicorn
-web.app:app --host 0.0.0.0 --port 8000`.
+`pakon_probe` / `pakon_replay` take the C tools' flags. Not ported (C tools at
+git tag `python-final`): `--read-params`, `--params-out`, `--calib-probe`,
+`--film-sense`, `--trace-status`, advance scripts (`--steps`, `--limit`).
+Packages: `packaging/macos/build.sh`, `packaging/windows/build.sh`,
+`packaging/linux/build-deb.sh` (one native binary each). The Windows and
+Linux builds have not been run on a scanner yet.
 
 ## Hardware and workflow
 
 - Test unit here: base F-135, serial 3054 (EEPROM type 1350), connected to the
-  Mac directly; macOS needs no sudo (Linux does).
-- F-135+ support was verified by Ali Bosworth on serial 16402 (not on this
+  Mac directly; macOS needs no sudo (Linux needs root or the udev rule
+  `packaging/linux/60-pakon.rules`).
+- EEPROM archive: the app reads it when a warm scanner connects and writes
+  `<data folder>/eeprom/F135-<serial>-<date>/` (`backups/eeprom/` from a
+  checkout); there is no standalone backup tool.
+- F-135+ replays were verified by Ali Bosworth on serial 16402 (not on this
   machine). Plus scripts are in `resources/f135plus/`; they carry that unit's
   per-unit values (motor speeds), so treat them as one unit's recording.
+- F-135+ code-built scans (all bases, IR on and off, CLI and app) ran on a
+  demo unit, serial 138, on this Mac on 2026-11-13. Plus LED period =
+  integration × 0.24 (F-135: × 0.6); current search runs to the board's
+  ceiling (Plus 4/20/20, IR on 8/24/24/8). Plus eject: `--eject` runs at
+  the unit's Base 4 MotorSpeed with acquire on (OEM advance sequence), stops
+  on the DX sensors, motor stop = teardown.
 - Plus decode: rows have no IR block when IR is off; stride follows the
-  resolution (6000/4500/3000 samples at Base 16/8/4). `pakon_image.py
-  --linewidth N --no-ir-lane`; the web UI auto-detects the layout.
+  resolution (6000/4500/3000 samples at Base 16/8/4). The decoder detects
+  the layout per raw; `PAKON_LINEWIDTH=N PAKON_IR_LANE=0` forces it.
 - Cold `0f05:f235` needs firmware; warm `0f05:f135` is operational. Firmware is
   RAM-only; a power cycle returns to cold.
 - A truncated scan without teardown leaves the device dirty; power-cycle.
-- Film stuck in the transport: `pakon_replay --advance --advance-seconds 3`
-  (model-aware) or `pakon_replay resources/advance.pakscan --steps N`.
-- `tools/fx35_datalogger.py` converts OEM driver-level captures (FX35 driver
-  with logging) into `.pakscan` scripts.
+- Film stuck in the transport: `pakon_replay --eject --eeprom-dir DIR` (or
+  the app's Advance film) on both models; on an F-135+ without an archive
+  `pakon_replay --advance --advance-seconds 3`.
+- The capture tools (`tools/fx35_datalogger.py` for OEM driver-level
+  captures, `tools/analyze_capture.py` for USB captures, both to `.pakscan`)
+  were removed with the Python code; they are at git tag `python-final`.
 - Captures and scripts live in `resources/`; large scan outputs (`*.raw`) live
   outside the repo (e.g. `/Volumes/Video/`).
 - Commit only when asked; end commit messages with the Co-Authored-By trailer.

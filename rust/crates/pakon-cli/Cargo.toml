@@ -1,0 +1,21 @@
+[package]
+name = "pakon-cli"
+version = "0.1.0"
+description = "pakon_replay and pakon_probe in Rust: the same flags and output lines as the C tools, for the modes the web app uses."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+pakon-proto = { path = "../pakon-proto" }
+pakon-usb = { path = "../pakon-usb" }
+pakon-scan = { path = "../pakon-scan" }
+ctrlc = { version = "3", features = ["termination"] }
+
+[[bin]]
+name = "pakon_replay"
+path = "src/bin/pakon_replay.rs"
+
+[[bin]]
+name = "pakon_probe"
+path = "src/bin/pakon_probe.rs"

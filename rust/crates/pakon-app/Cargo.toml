@@ -1,0 +1,29 @@
+[package]
+name = "pakon-app"
+version = "0.1.0"
+description = "Pakon in its own window: the web service on a free localhost port, shown in the system webview (WKWebView, WebView2, WebKitGTK). Replaces packaging/macos/pakon_app.py."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+pakon-web = { path = "../pakon-web" }
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
+tao = "0.37.2"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync"] }
+ureq = "2"
+wry = "0.57.1"
+
+[[bin]]
+name = "pakon_app"
+path = "src/main.rs"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.191"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = "0.21.2"
+plist = "1.10.3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }

@@ -1,0 +1,25 @@
+[package]
+name = "pakon-roll"
+version = "0.1.0"
+description = "A scanned roll from raw to exported frames: prescan, autoframe, export (today: web/decode.py)."
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+pakon-image = { path = "../pakon-image" }
+pakon-oem = { path = "../pakon-oem" }
+pakon-proto = { path = "../pakon-proto" }
+ndarray = { version = "0.16", features = ["rayon"] }
+ndarray-npy = "0.9"
+memmap2 = "0.9"
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }
