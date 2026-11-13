@@ -53,6 +53,7 @@ async function pollStatus() {
     showUpdate(d.update);
     showConsent(d.telemetry);
     showLogs(!!d.logs);
+    $('scan-foreign').classList.toggle('hidden', d.foreign_firmware !== true);
     if (d.version) $('about-version').textContent = d.version;
   } catch {
     $('home-dot').className = 'dot';

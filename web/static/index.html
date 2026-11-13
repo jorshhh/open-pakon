@@ -128,6 +128,11 @@
     <span class="chip" id="scan-ir">IR on</span>
     <button class="info tip-left" id="scan-ir-info" aria-label="About infrared">i</button>
   </div>
+  <div class="warn hidden" id="scan-foreign">
+    <span>Started by other software. Switch the scanner off and on before scanning.</span>
+    <button class="info tip-left" aria-label="Why"
+            data-tip="Pakon didn't load this scanner's firmware, so it may still hold another program's settings (TLX, PakonScan), which can make calibration fail. Switching it off clears them.">i</button>
+  </div>
   <div class="feed-prompt" id="feed-prompt"></div>
   <div class="progress-wrap" id="scan-prog-wrap">
     <progress id="scan-prog" max="2200"></progress>

@@ -55,6 +55,8 @@ pub async fn api_status(State(app): State<Arc<App>>) -> Response {
         "version": update::current(),           // the app's, null from a checkout
         "native_picker": app.picker().is_some(), // /api/pick shows the system's dialog
         "logs": log_dir().is_some() && reveal_label().is_some(), // Settings › Show log
+        // a warm scanner Pakon did not start (TLX, PakonScan, another computer)
+        "foreign_firmware": if state == "warm" { app.loads.foreign() } else { None },
     }))
     .into_response()
 }
