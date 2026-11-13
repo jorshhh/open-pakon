@@ -1,13 +1,12 @@
 /* ── Export space: the save options and the exported frames ── */
+.save-to { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.save-to code { font-family: 'IBM Plex Mono', monospace; font-size: 0.88rem; font-weight: 600; }
 .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 button.dl {
-  text-align: left; text-transform: none; display: flex; flex-direction: column; gap: 4px;
-  padding: 14px 16px; background: var(--surface2);
+  text-transform: none; text-align: left; padding: 14px 16px; background: var(--surface2);
 }
 button.dl:hover:not(:disabled) { background: var(--accent); }
 .dl-name { font-family: 'Space Grotesk', sans-serif; font-size: 1rem; font-weight: 700; text-transform: uppercase; }
-.dl-desc { font-family: 'Inter', sans-serif; font-size: 0.8rem; font-weight: 400; line-height: 1.4; color: var(--muted); }
-button.dl:hover .dl-desc { color: var(--text); }
 
 #frames-section { margin-top: 4px; }
 .frames-grid {

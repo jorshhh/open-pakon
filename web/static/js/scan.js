@@ -22,7 +22,7 @@ $('fw-btn').addEventListener('click', async () => {
       el.scrollTop = el.scrollHeight;
     } else if (ev.type === 'done') {
       $('fw-prog').value = 1; $('fw-prog').max = 1;
-      setMsg($('fw-msg'), 'Firmware loaded — scanner re-enumerating', 'ok');
+      setMsg($('fw-msg'), 'Firmware loaded', 'ok');
     } else if (ev.type === 'error') {
       setMsg($('fw-msg'), ev.message, 'err');
     }
@@ -63,12 +63,11 @@ $('scan-btn').addEventListener('click', async () => {
       logLine('scan-log', ev.message);
     } else if (ev.type === 'progress') {
       $('scan-prog').value = ev.mb;
-      $('scan-prog-label').textContent = `${ev.mb} MB received`;
+      $('scan-prog-label').textContent = `${ev.mb} MB`;
       $('scan-msg').textContent = '';
     } else if (ev.type === 'done') {
-      $('scan-prog').value = $('scan-prog').max;
-      $('scan-prog-label').textContent = `Complete — ${ev.mb} MB`;
-      setMsg($('scan-msg'), `Scan complete (${ev.mb} MB)`, 'ok');
+      $('scan-prog-wrap').classList.remove('show');   // the message says it
+      setMsg($('scan-msg'), `Done · ${ev.mb} MB`, 'ok');
       if (ev.path) {
         showRaw(ev.path, ev.dx);
         if (ev.film) $('proc-film').value = ev.film;
@@ -92,7 +91,7 @@ $('scan-btn').addEventListener('click', async () => {
 $('stop-btn').addEventListener('click', async () => {
   $('stop-btn').disabled = true;
   $('stop-btn').textContent = 'Stopping…';
-  logLine('scan-log', 'Stop pressed — ending the roll and stopping the motor');
+  logLine('scan-log', 'Stop pressed: ending the roll');
   try {
     const r = await fetch('/api/scan/stop', { method: 'POST' });
     if (!r.ok) {
@@ -129,7 +128,23 @@ $('eject-btn').addEventListener('click', async () => {
 
 // The scan's film type and resolution are remembered in this browser.
 $('scan-film').value = store.get('pakon-scan-film') || 'c41';
-$('scan-film').addEventListener('change', () => store.set('pakon-scan-film', $('scan-film').value));
+$('scan-film').addEventListener('change', () => {
+  store.set('pakon-scan-film', $('scan-film').value);
+  showIr();
+});
+
+// Whether the scan records the infrared channel (silver B&W does not).
+function showIr() {
+  const film = $('scan-film').value, on = film !== 'bw';
+  $('scan-ir').textContent = on ? 'IR on' : 'IR off';
+  $('scan-ir').classList.toggle('on', on);
+  $('scan-ir-info').dataset.tip = !on
+    ? 'Silver B&W blocks infrared: no dust removal for this roll.'
+    : film === 'slide'
+    ? 'Infrared is recorded, but dust removal stays off for slides: it softens their grain.'
+    : 'Infrared is recorded: dust removal (ICE) can be used at export.';
+}
+showIr();
 $('scan-base').value = store.get('pakon-scan-base') || '16';
 if (!$('scan-base').value) $('scan-base').value = '16';
 $('scan-base').addEventListener('change', () => store.set('pakon-scan-base', $('scan-base').value));

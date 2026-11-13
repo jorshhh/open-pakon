@@ -15,6 +15,9 @@
   --shadow: 4px 4px 0px 0px rgba(26, 25, 24, 1);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* The page scrollbar comes and goes between spaces; keep its room so the
+   bar along the bottom does not shift sideways. */
+html { scrollbar-gutter: stable; }
 body {
   font-family: 'Inter', sans-serif;
   background: var(--bg);
@@ -166,8 +169,8 @@ progress {
   appearance: none;
 }
 progress::-webkit-progress-bar   { background: var(--surface); }
-progress::-webkit-progress-value { background: var(--red); }
-progress::-moz-progress-bar      { background: var(--red); }
+progress::-webkit-progress-value { background: var(--accent); }
+progress::-moz-progress-bar      { background: var(--accent); }
 .progress-label { font-size: 0.78rem; font-family: 'IBM Plex Mono', monospace; color: var(--muted); margin-top: 5px; }
 
 .msg { font-size: 0.83rem; font-family: 'IBM Plex Mono', monospace; font-weight: 600; color: var(--muted); }
@@ -175,3 +178,47 @@ progress::-moz-progress-bar      { background: var(--red); }
 .msg.err { color: var(--red); }
 
 .hidden { display: none !important; }
+
+/* Square checkboxes in the house style */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 20px; height: 20px; flex-shrink: 0; margin: 0;
+  border: 2px solid var(--border); background: var(--surface);
+  box-shadow: 2px 2px 0 0 var(--border); cursor: pointer;
+}
+input[type="checkbox"]:checked {
+  background: var(--border);
+  box-shadow: inset 0 0 0 3px var(--accent), 2px 2px 0 0 var(--border);
+}
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:disabled { cursor: not-allowed; box-shadow: none; }
+
+/* The "i": the longer explanation, on hover or keyboard focus.
+   <button class="info" data-tip="…" aria-label="…">i</button> */
+button.info {
+  position: relative; display: inline-grid; place-items: center; flex-shrink: 0;
+  width: 20px; height: 20px; padding: 0; border-radius: 50%;
+  background: var(--surface); box-shadow: none;
+  font-size: 0.72rem; font-weight: 700; text-transform: none; line-height: 1;
+  cursor: help; vertical-align: middle;
+}
+button.info:hover:not(:disabled), button.info:focus-visible {
+  transform: none; box-shadow: none; background: var(--accent); outline: none;
+}
+button.info::after {
+  content: attr(data-tip);
+  position: absolute; z-index: 40; bottom: calc(100% + 10px); left: -8px;
+  width: max-content; max-width: 280px; padding: 8px 10px;
+  background: var(--border); color: var(--bg);
+  font-family: 'Inter', sans-serif; font-size: 0.8rem; font-weight: 500;
+  line-height: 1.45; text-align: left; text-transform: none; letter-spacing: 0;
+  white-space: normal; box-shadow: 3px 3px 0 0 var(--accent);
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
+}
+button.info.tip-left::after { left: auto; right: -8px; }
+button.info.tip-below::after { bottom: auto; top: calc(100% + 10px); }
+button.info:hover::after, button.info:focus-visible::after { opacity: 1; }
+/* A title with its "i" */
+.with-info { display: flex; align-items: center; gap: 10px; }
+.with-info > h2 { margin-bottom: 0; }
+.card > .card-title { margin-bottom: 16px; }

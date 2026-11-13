@@ -1,6 +1,6 @@
 /* ── Home space: welcome + the two ways in ── */
 .welcome { padding: 40px 32px; }
-.welcome h2 { font-size: 2rem; letter-spacing: -0.02em; margin-bottom: 8px; }
+.welcome h2 { font-size: 2rem; letter-spacing: -0.02em; margin-bottom: 24px; }
 .welcome .lead { margin-bottom: 28px; }
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 button.choice {

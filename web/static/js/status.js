@@ -6,11 +6,20 @@ import { showUpdate } from './update.js';
 import { showConsent } from './telemetry.js';
 
 const labels = {
-  warm: 'Scanner ready',
-  cold: 'Scanner detected — needs firmware',
-  disconnected: 'No scanner detected',
-  unknown: 'Scanner status unknown',
+  warm: 'Ready',
+  cold: 'Needs firmware',
+  disconnected: 'No scanner',
+  unknown: 'Status unknown',
 };
+
+// "F-135+ · #138 · Ready" once the EEPROM names the unit, else the state alone.
+function badgeText(d) {
+  if (d.state === 'unknown' && d.state_error) return 'Status unknown';
+  const u = d.eeprom_unit || {};
+  const label = labels[d.state] || d.state;
+  return d.state === 'warm' && u.model && u.serial != null
+    ? `${u.model} · #${u.serial} · ${label}` : label;
+}
 
 async function pollStatus() {
   try {
@@ -19,24 +28,24 @@ async function pollStatus() {
     // Badge
     $('badge').className = 'badge ' + d.state;
     $('dot').className   = 'dot '   + d.state;
-    $('badge-text').textContent = d.state === 'unknown' && d.state_error
-      ? `Status unknown — ${d.state_error}`
-      : (labels[d.state] || d.state);
+    $('badge-text').textContent = badgeText(d);
+    $('badge').title = d.state_error || '';
 
     $('fw-card').classList.toggle('hidden', d.state !== 'cold');
     $('scan-card').classList.toggle('hidden', d.state !== 'warm');
     $('scan-empty').classList.toggle('hidden', d.state === 'cold' || d.state === 'warm');
     $('scan-empty-msg').textContent = d.state === 'unknown' && d.state_error
       ? d.state_error
-      : 'Connect the F-135 by USB and turn it on. It shows up here by itself.';
+      : 'Connect it by USB and turn it on.';
     $('home-dot').className = 'dot ' + d.state;
-    $('home-state').textContent = labels[d.state] || d.state;
+    $('home-state').textContent = badgeText(d);
 
-    $('scan-mode').textContent = d.eeprom
-      ? `Scan built in code (EEPROM ${d.eeprom})`
-      : (d.eeprom_unit && d.eeprom_unit.error)
-        ? `EEPROM: ${d.eeprom_unit.error} — scans are replayed`
-        : 'No EEPROM archive yet — it is read when the scanner is warm; until then scans are replayed';
+    // Only the exception is worth a word: no calibration data, so the scan
+    // is a replay.
+    $('scan-mode').textContent = d.eeprom ? '' : 'Replayed scan';
+    $('scan-mode').title = d.eeprom ? '' : (d.eeprom_unit && d.eeprom_unit.error)
+      ? `EEPROM: ${d.eeprom_unit.error}`
+      : 'The EEPROM is read once the scanner is warm; until then scans are replayed';
 
     showWorkDir(d.work_dir, d.next_order);
     setNativePicker(d.native_picker);
@@ -45,7 +54,7 @@ async function pollStatus() {
     if (d.version) $('about-version').textContent = d.version;
   } catch {
     $('home-dot').className = 'dot';
-    $('home-state').textContent = 'Scanner status unknown';
+    $('home-state').textContent = labels.unknown;
   }
 }
 
