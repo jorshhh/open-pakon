@@ -307,6 +307,27 @@
 </div>
 
 <div class="card">
+  <h2>Troubleshooting</h2>
+  <dl class="trouble">
+    <dt>Calibration fails</dt>
+    <dd>Switch the scanner off and on, then open Pakon before TLX or PakonScan.
+      <button class="info" aria-label="Why"
+              data-tip="Other scanning software leaves the scanner in its own state until it is switched off. Keep the film out until the motor starts.">i</button></dd>
+    <dt>Scanner not found</dt>
+    <dd>Check the USB cable and power, then switch the scanner off and on.
+      <button class="info" aria-label="On Windows"
+              data-tip="On Windows, run pakon_driver.exe in %LOCALAPPDATA%\Programs\Pakon\driver to set up the scanner's driver again.">i</button></dd>
+    <dt>Film stuck</dt>
+    <dd><b>Advance film</b> on Scan.</dd>
+  </dl>
+  <div class="row">
+    <button id="report-btn">Report a problem</button>
+    <button class="ghost hidden" id="logs-btn">Show log</button>
+    <span class="msg" id="report-msg"></span>
+  </div>
+</div>
+
+<div class="card">
   <h2>About</h2>
   <p class="settings-note">Pakon <span id="about-version">(from source)</span>. Not affiliated with Kodak or Pakon.</p>
 </div>

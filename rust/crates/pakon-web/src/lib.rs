@@ -222,6 +222,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/app/focus", post(files::api_app_focus))
         .route("/api/pick", post(files::api_pick))
         .route("/api/update/open", post(files::api_update_open))
+        .route("/api/logs/open", post(files::api_logs_open))
+        .route("/api/report", post(files::api_report))
         .route("/api/telemetry/consent", post(files::api_telemetry_consent))
         .route("/api/telemetry/page", post(files::api_telemetry_page))
         .route("/api/telemetry/error", post(files::api_telemetry_error))

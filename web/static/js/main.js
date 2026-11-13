@@ -10,6 +10,7 @@ import './process.js';
 import './frames.js';
 import './export.js';
 import './browse.js';
+import './support.js';
 import { startPolling } from './status.js';
 
 $('home-scan').addEventListener('click', () => showSpace('scan'));
