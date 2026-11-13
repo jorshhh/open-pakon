@@ -425,6 +425,9 @@ on and off):
 - A channel counts as settled when its peak is in the window or the next
   refine step moves its duty by at most one tick (at B's duty of ~273, one
   tick is ~234 counts, wider than the 64-count window).
+  It also counts as settled within 2.5% of the target: one F-135+ reads its
+  red peak with ±1.1% noise at a fixed duty, so the strict rule never saw
+  two quiet passes.
 - Reuse rules as the OEM (60 min / 20 h), one saved record per film type,
   resolution base and IR state.
 
