@@ -13,7 +13,8 @@ hardware); **[INF]** inferred. OEM addresses refer to `TLB.dll` 3.1.0.28
 (the F-135 / F-135+ engine), `PakonIMAu.dll` (the colour engine, built on
 Kodak's Ansel library) and `DMLDICELib.dll` (Applied Science Fiction
 Digital ICE). Hardware measurements are on F-135 serial 3054 unless noted;
-F-135+ stream facts come from serial 16402.
+F-135+ stream facts come from serial 16402 (captures) and serial 138
+(code-built scans in all six modes).
 
 ## Overview
 
@@ -58,12 +59,12 @@ Base 16).
 
 | Resolution | IR | Samples/row | Width (px) | Seen on |
 |---|---|---|---|---|
-| Base 16 | on | 8000 | 2000 | F-135 (the usual colour mode) |
-| Base 16 | off | 6000 | 2000 | F-135+ captures; F-135 with IR off |
-| Base 8 | on | 6000 | 1500 | F-135 (from the rule; not separately confirmed) |
-| Base 8 | off | 4500 | 1500 | F-135+ captures; F-135 with IR off |
-| Base 4 | on | 4000 | 1000 | F-135+ captures |
-| Base 4 | off | 3000 | 1000 | F-135+ captures; F-135 with IR off |
+| Base 16 | on | 8000 | 2000 | F-135 (the usual colour mode); F-135+ serial 138 |
+| Base 16 | off | 6000 | 2000 | F-135+ captures and serial 138; F-135 with IR off |
+| Base 8 | on | 6000 | 1500 | F-135+ serial 138; F-135 from the rule |
+| Base 8 | off | 4500 | 1500 | F-135+ captures and serial 138; F-135 with IR off |
+| Base 4 | on | 4000 | 1000 | F-135+ captures and serial 138 |
+| Base 4 | off | 3000 | 1000 | F-135+ captures and serial 138; F-135 with IR off |
 
 The stride alone is ambiguous: 6000 is both Base 16 without IR and Base 8
 with IR. The scan therefore records `row_samples` and `ir_lane` in
