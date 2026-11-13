@@ -12,9 +12,8 @@ parameters (the unit's EEPROM, a calibration we run, the chosen resolution
 and film). The captures stay in the repo as test fixtures: generated command
 streams are checked byte for byte against them.
 
-The F-135 is there. The F-135+ scans in code too, at every base with IR
-on and off; only its film advance and eject are still timed runs at a
-captured speed.
+The F-135 is there. The F-135+ is there too (serial 138): scans at every
+base with IR on and off, and the film-sensor eject, all built in code.
 
 ## What works today
 
@@ -57,8 +56,8 @@ Base 16 scan.
 | Scan, Base 16 / 8 / 4, IR on and off, colour negative | In code, stops on its own at end of strip, DX read | Rust, CLI (macOS), serial 138: all six modes on a 4-frame strip; app: Base 16 + IR |
 | Scan, replayed (`resources/f135plus/`) | Capture replay, kept as a fallback without an EEPROM archive | C driver on 16402 (Base 16, 8); Rust on 138 (Base 16) |
 | Film types other than colour negative | Per-film LED duties, as on the F-135 | Not run on a Plus |
-| Film advance | Timed run at the captured motor speed (`--advance`) | C driver on 16402; Rust on 138 |
-| Eject by film sensors | Not in code (`--eject`, `--advance-code` are F-135 only) | — |
+| Eject by film sensors | In code: the unit's Base 4 `MotorSpeed`, the OEM advance sequence (acquire on), DX sensors `0x93`, teardown to stop | Rust, CLI and app (macOS), serial 138: strip out, stall at the exit, empty transport |
+| Timed advance (`--advance`) | The captured run of 16402; the app's fallback without an EEPROM archive | C driver on 16402; Rust on 138 |
 | Decode | Row layout detected per raw: 6000 / 4500 / 3000 samples IR off, 8000 / 6000 / 4000 IR on | Works on the Plus raws, Digital ICE included |
 
 The code-built scan stops by itself at the end of the strip and its
@@ -77,14 +76,12 @@ teardown stops the motor (serial 138).
 ### F-135+ built in code
 
 Done on serial 138 (2026-11-13): setup, light calibration and flat field
-(#15), and the code-built scan at every base with IR on and off (#14),
-from the CLI and the app. Left:
+(#15), the code-built scan at every base with IR on and off (#14), and the
+film-sensor eject (#16), from the CLI and the app. Left:
 
-1. Film advance and sensor-driven eject (issue #16): the Plus still runs a
-   timed advance at a captured speed.
-2. Silver B&W, B&W C-41 and slide on a Plus (the per-film duties are the
+1. Silver B&W, B&W C-41 and slide on a Plus (the per-film duties are the
    F-135's rules, not checked there).
-3. The code-built scan on a second Plus (serial 16402 or another).
+2. The code-built scan and eject on a second Plus (serial 16402 or another).
 
 ### Platforms and releases
 

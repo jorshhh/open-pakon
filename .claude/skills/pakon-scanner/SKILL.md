@@ -107,17 +107,18 @@ Linux builds have not been run on a scanner yet.
 - F-135+ code-built scans (all bases, IR on and off, CLI and app) ran on a
   demo unit, serial 138, on this Mac on 2026-11-13. Plus LED period =
   integration × 0.24 (F-135: × 0.6); current search runs to the board's
-  ceiling (Plus 4/20/20, IR on 8/24/24/8). Advance and eject on a Plus are
-  still the timed run.
+  ceiling (Plus 4/20/20, IR on 8/24/24/8). Plus eject: `--eject` runs at
+  the unit's Base 4 MotorSpeed with acquire on (OEM advance sequence), stops
+  on the DX sensors, motor stop = teardown.
 - Plus decode: rows have no IR block when IR is off; stride follows the
   resolution (6000/4500/3000 samples at Base 16/8/4). The decoder detects
   the layout per raw; `PAKON_LINEWIDTH=N PAKON_IR_LANE=0` forces it.
 - Cold `0f05:f235` needs firmware; warm `0f05:f135` is operational. Firmware is
   RAM-only; a power cycle returns to cold.
 - A truncated scan without teardown leaves the device dirty; power-cycle.
-- Film stuck in the transport: on an F-135 `pakon_replay --advance-code 5
-  --eeprom-dir DIR` or `--eject --eeprom-dir DIR` (or the app's Advance
-  film); on an F-135+ `pakon_replay --advance --advance-seconds 3`.
+- Film stuck in the transport: `pakon_replay --eject --eeprom-dir DIR` (or
+  the app's Advance film) on both models; on an F-135+ without an archive
+  `pakon_replay --advance --advance-seconds 3`.
 - The capture tools (`tools/fx35_datalogger.py` for OEM driver-level
   captures, `tools/analyze_capture.py` for USB captures, both to `.pakscan`)
   were removed with the Python code; they are at git tag `python-final`.

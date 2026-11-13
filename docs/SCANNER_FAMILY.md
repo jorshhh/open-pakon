@@ -34,7 +34,7 @@ LOW) and PICM (= SCN); the "+" suffix (PICL+, PICM+) marks the Plus boards.
 | APS (IX240) film | no | no | yes (`AP` board) [DOC] | yes (`AP` board) [DOC] |
 | EEPROM scanner type word | 1350 [C] | 1351 [C] | unknown | unknown |
 | Units run by this project | serial 3054 | serial 16402, serial 138 | none | none |
-| State here | everything built in code: firmware, setup, light calibration, scan at Base 16/8/4, advance/eject; Rust port run on 3054 | everything built in code but film advance and eject: firmware, setup, light calibration, scan at Base 16/8/4 with IR on and off; Rust port run on 138 (2026-11-13). Replayed scans at Base 16 and 8 on 16402 with the C tools | untested | untested |
+| State here | everything built in code: firmware, setup, light calibration, scan at Base 16/8/4, advance/eject; Rust port run on 3054 | everything built in code: firmware, setup, light calibration, scan at Base 16/8/4 with IR on and off, film-sensor eject; Rust port run on 138 (2026-11-13). Replayed scans at Base 16 and 8 on 16402 with the C tools | untested | untested |
 
 ## Identity and firmware selection
 
@@ -288,9 +288,8 @@ Base 8 + IR) have no script; the code-built scan runs them (serial 138).
 
 ### Not known yet on the F-135+
 
-- A code-built advance or eject: `--advance-code` and `--eject` are F-135
-  only. (The code-built scan, light calibration and teardown ran on serial
-  138; the teardown stops the motor as on the F-135.)
+- The DX film-sensor levels of other Plus units (serial 138: empty ~244,
+  film 45–125; the clear level 170 holds there).
 - The DX detector levels (`0x93`) and film-present thresholds; the `0x90`
   payload with film; whether the unit decodes barcodes at all.
 - Line registration: measuring the R/G/B line leads on the captured streams

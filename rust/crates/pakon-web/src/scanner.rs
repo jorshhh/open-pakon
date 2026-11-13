@@ -447,11 +447,14 @@ async fn eject_stream(app: Arc<App>, mut em: Emitter) {
         return em.error("could not detect the scanner model (is it warm?)");
     };
     let stop = app.stop.clone();
-    let ok = if model == Model::F135 {
-        eeprom_sync_events(&app, &mut em).await;
-        let Some(dir) = app.eeprom_dir() else {
-            return em.error("eject needs an EEPROM archive in backups/eeprom/ (or PAKON_EEPROM_DIR)");
-        };
+    eeprom_sync_events(&app, &mut em).await;
+    let dir = app.eeprom_dir();
+    if model == Model::F135 && dir.is_none() {
+        return em.error("eject needs an EEPROM archive in backups/eeprom/ (or PAKON_EEPROM_DIR)");
+    }
+    // Both models eject on the film sensors with an EEPROM archive; an
+    // F-135+ without one falls back to the timed advance.
+    let ok = if let Some(dir) = dir {
         em.log("Running the transport until the film sensors say the strip is out (at most 60 s)");
         run_streaming(&app, &mut em, None, Some(EJECT_LOG_KEYS), false, move |print| {
             let Some(eeprom) = session::load_eeprom_archive(&dir) else {
@@ -475,7 +478,7 @@ async fn eject_stream(app: Arc<App>, mut em: Emitter) {
         })
         .await
     } else {
-        em.log("F-135+: running the transport for 15 s");
+        em.log("F-135+ without an EEPROM archive: running the transport for 15 s");
         run_streaming(&app, &mut em, None, Some(EJECT_LOG_KEYS), false, move |print| {
             let mut dev = match Device::open() {
                 Ok(d) => d,

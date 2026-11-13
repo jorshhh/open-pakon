@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use pakon_proto::eeprom::Eeprom;
+use pakon_proto::eeprom::{Base, Eeprom};
 use pakon_proto::frame::{Address, Frame, PacketType};
 use pakon_proto::setup::{self, Model, Seq, Sensor, SetupState, ADVANCE_SPEED_F135};
 
@@ -39,10 +39,26 @@ impl Drop for MotorStop<'_> {
     }
 }
 
+/// F-135: `a2` (acquire is off). F-135+: the code-built teardown (acquire
+/// off, LEDs off, ResetFifos, `92`, `a2`), as its transport runs with
+/// acquire on, like the OEM's advance.
 fn stop_motor(link: &mut dyn Link, st: &SetupState, t: Duration) -> Result<(), ScanError> {
+    if st.model() == Model::F135Plus {
+        return session::teardown(link, st, t);
+    }
     let mut seq = Seq::new();
     setup::motor_stop(&mut seq, st);
     cmd::run_seq(link, &seq, t)
+}
+
+/// Transport speed: F-135 the OEM's 9500; F-135+ the unit's Base 4
+/// `MotorSpeed`, as the OEM's advance on serial 16402 (`0x647E` = its Base 4
+/// speed).
+pub fn advance_speed(eeprom: &Eeprom, model: Model) -> u16 {
+    match model {
+        Model::F135 => ADVANCE_SPEED_F135,
+        Model::F135Plus => setup::motor_speed(eeprom.base(Base::B4).motor_speed, 1000, model),
+    }
 }
 
 fn read_levels(link: &mut dyn Link, st: &SetupState, t: Duration) -> Option<[u8; 4]> {
@@ -50,6 +66,9 @@ fn read_levels(link: &mut dyn Link, st: &SetupState, t: Duration) -> Option<[u8;
     let d = r.data();
     (r.raw_type() == PacketType::Read as u8 && d.len() >= 6 && d[0] == st.low).then(|| [d[2], d[3], d[4], d[5]])
 }
+
+/// Polls in a row (100 ms apart) with film under a sensor before it counts.
+const FILM_POLLS: u32 = 3;
 
 /// How a transport run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,26 +92,32 @@ impl TransportEnd {
     }
 }
 
-/// Run the F-135 transport at the OEM advance speed for at most `limit`;
-/// with `eject`, until the DX sensors see the strip leave.
+/// Run the transport at the advance speed for at most `limit`; with
+/// `eject`, until the DX sensors see the strip leave. On the F-135+ the
+/// motor runs as in the OEM's advance: speed, `a0`, then acquire on.
 pub fn transport(link: &mut dyn Link, eeprom: Eeprom, eject: bool, limit: Duration, timeout: Duration, stop: &AtomicBool, out: Out) -> Result<TransportEnd, ScanError> {
     let s = session::setup_session(link, eeprom, 16, true, timeout, out)?;
     let t = timeout.max(Duration::from_millis(2000));
-    if s.model() != Model::F135 {
-        out("transport: F-135 only for now");
-        return Err(ScanError::Param("F-135 only".into()));
-    }
+    let plus = s.model() == Model::F135Plus;
+    let speed = advance_speed(&s.eeprom, s.model());
     let guard = MotorStop { link: &mut *link, st: s.st, t, armed: true };
     let mut seq = Seq::new();
-    setup::motor_run(&mut seq, &s.st, ADVANCE_SPEED_F135).map_err(|e| ScanError::Param(e.to_string()))?;
+    setup::motor_run(&mut seq, &s.st, speed).map_err(|e| ScanError::Param(e.to_string()))?;
+    if plus {
+        setup::acquire(&mut seq, &s.st, true);
+    }
     cmd::run_seq(guard.link, &seq, t).inspect_err(|_| out("transport: motor start failed"))?;
-    out(&format!("motor running ({}, at most {} s)", if eject { "eject" } else { "advance" }, limit.as_secs()));
+    out(&format!("motor running at {speed} ({}, at most {} s)", if eject { "eject" } else { "advance" }, limit.as_secs()));
 
     let t0 = Instant::now();
     let (mut film_seen, mut exit_seen) = (false, false);
     let (mut exit_clear, mut flat, mut nothing) = (0u32, 0u32, 0u32);
+    // Polls in a row with film under each sensor: a strip covers one for
+    // seconds, so a single odd reading cannot arm "strip is out".
+    let (mut in_film, mut out_film) = (0u32, 0u32);
     let mut prev = [0u8; 4];
     let mut end = TransportEnd::TimeLimit;
+    let (mut polls, mut last_state) = (0u32, None);
     while t0.elapsed() < limit {
         if stop.load(Ordering::Relaxed) {
             end = TransportEnd::Stopped;
@@ -103,8 +128,26 @@ pub fn transport(link: &mut dyn Link, eeprom: Eeprom, eject: bool, limit: Durati
             if let Some(v) = read_levels(guard.link, &s.st, t) {
                 let in_clear = setup::sense_clear(v, Sensor::Entry);
                 let out_clear = setup::sense_clear(v, Sensor::Exit);
-                film_seen |= !in_clear || !out_clear;
-                exit_seen |= !out_clear;
+                // The levels once a second and on every change of state:
+                // the DX pots, so the clear level, are per unit.
+                if polls % 10 == 0 || last_state != Some((in_clear, out_clear)) {
+                    out(&format!(
+                        "  sensors {:>4.1} s: entry {:>3} {:>3} ({}), exit {:>3} {:>3} ({})",
+                        t0.elapsed().as_secs_f32(),
+                        v[0],
+                        v[1],
+                        if in_clear { "clear" } else { "film" },
+                        v[2],
+                        v[3],
+                        if out_clear { "clear" } else { "film" }
+                    ));
+                }
+                last_state = Some((in_clear, out_clear));
+                polls += 1;
+                in_film = if in_clear { 0 } else { in_film + 1 };
+                out_film = if out_clear { 0 } else { out_film + 1 };
+                film_seen |= in_film >= FILM_POLLS || out_film >= FILM_POLLS;
+                exit_seen |= out_film >= FILM_POLLS;
                 // out: the exit sensor had film and both are now clear
                 exit_clear = if exit_seen && in_clear && out_clear { exit_clear + 1 } else { 0 };
                 nothing = if in_clear && out_clear && !film_seen { nothing + 1 } else { 0 };

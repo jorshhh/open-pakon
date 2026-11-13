@@ -689,7 +689,8 @@ stops it.
   F-135+.
 - F-135+ advance (serial 16402 capture): speed `0x647E` (25726, that unit's
   Base 4 `MotorSpeed`), engage, acquire on (reg 0 `0x63`), then acquire off
-  → `a2`.
+  → `a2`. The code-built Plus transport does the same with the unit's own
+  Base 4 `MotorSpeed` (25381 on serial 138) and stops with the teardown.
 
 **Film sensing.** `01 03 LOW 04 93` returns the four DX detector levels:
 bytes 0–1 the entry sensor, 2–3 the exit sensor [C, serial 3054]. Empty:
@@ -702,11 +703,18 @@ are per unit (the DX pots are). The OEM's film-track test
 empty baseline minus a margin (default not found); pakon-reference reports
 it polling `0x93` about every 3 ms on an F-135+.
 
-This implementation's eject (F-135, `pakon-scan` `transport`): motor at 9500,
-event service and `0x93` every 100 ms; out when the exit sensor saw film and
-both are clear for 5 polls; stalled when the entry is clear and the exit
-covered and flat (±4) for 15 polls; no film after 150 polls. The motor stop
-is sent on every way out.
+Serial 138 (F-135+): empty 244/242/246/242; under film at least one byte of
+each pair drops to 45–125, so the F-135 level of 170 holds. The sensors are
+0.6 s apart at 25381. The strip stops under the exit sensor as on the
+F-135. [C]
+
+This implementation's eject (`pakon-scan` `transport`, both models): F-135
+motor at 9500, F-135+ at the unit's Base 4 `MotorSpeed` with acquire on;
+event service and `0x93` every 100 ms; a sensor counts as covered after 3
+polls in a row; out when the exit sensor was covered and both are clear for
+5 polls; stalled when the entry is clear and the exit covered and flat (±4)
+for 15 polls; no film after 150 polls. The motor stop (F-135 `a2`, F-135+
+the teardown) is sent on every way out.
 
 ## Timings
 
