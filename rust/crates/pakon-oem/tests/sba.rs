@@ -23,6 +23,18 @@ fn dpi_for_follows_sba_map() {
     assert_eq!(f(Some(43), Some(2)), "sba-CN-default-43-1.dpi");
 }
 
+/// Runs the emulator once: on an x86_64 build this catches a Unicorn with
+/// the wrong host code generator (it crashed every Intel Mac, 1.0.2).
+#[test]
+fn sba_loads() {
+    let dll = sba::default_dll(&repo());
+    if !dll.is_file() {
+        eprintln!("skipped: no {}", dll.display());
+        return;
+    }
+    sba::Sba::new(&dll, &sba::sba_dir(&repo()), "sba-CN-default.dpi").unwrap();
+}
+
 #[test]
 fn sba_matches_python() {
     let (Some(gold), Some(full)) = (std::env::var_os("PAKON_GOLDEN"), std::env::var_os("PAKON_GOLDEN_FULL")) else { return };

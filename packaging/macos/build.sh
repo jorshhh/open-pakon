@@ -83,6 +83,11 @@ for A in $ARCHS; do
     rustup target list --installed | grep -qx "$T" \
         || { echo "missing Rust target: rustup target add $T" >&2; exit 1; }
     (cd "$REPO/rust" && cargo build --release --locked -p pakon-app --target "$T")
+    # Unicorn's JIT must emit this arch's code (packaging/macos/cc-x86_64)
+    H="$( [ "$A" = arm64 ] && echo AARCH64 || echo X86_64 )"
+    CH="$(ls -t "$REPO"/rust/target/"$T"/release/build/unicorn-engine-sys-*/out/build/config-host.h | head -1)"
+    grep -q "^#define HOST_$H 1" "$CH" || { echo "Unicorn built for the wrong host ($CH):" \
+        "cargo clean --release -p unicorn-engine-sys --target $T" >&2; exit 1; }
 done
 BIN="$CACHE/pakon_app"
 rm -f "$BIN.universal"   # an earlier universal build's, not this one's

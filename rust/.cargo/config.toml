@@ -1,0 +1,3 @@
+[env]
+# see packaging/macos/cc-x86_64
+CC_x86_64_apple_darwin = { value = "../packaging/macos/cc-x86_64", relative = true }
