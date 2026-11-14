@@ -90,8 +90,13 @@ jobs:
           security create-keychain -p "$KCPW" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KCPW" "$KC"
+          [ -n "$P12_PASSWORD" ] || { echo "MACOS_CERT_PASSWORD is not set" >&2; exit 1; }
           echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin env:P12_PASSWORD -nokeys 2>/dev/null \
+              | grep -q 'Developer ID Application' \
+            || { echo "MACOS_CERT_P12 is not a .p12 with the Developer ID Application certificate" \
+                   "($(wc -c < "$RUNNER_TEMP/cert.p12") bytes decoded), or the password is wrong" >&2; exit 1; }
+          security import "$RUNNER_TEMP/cert.p12" -f pkcs12 -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
           rm "$RUNNER_TEMP/cert.p12"
           security set-key-partition-list -S apple-tool:,apple: -k "$KCPW" "$KC" >/dev/null
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
