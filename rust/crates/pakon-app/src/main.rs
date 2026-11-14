@@ -26,6 +26,9 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Window, WindowBuilder};
 use wry::{NewWindowResponse, WebViewBuilder};
 
+#[cfg(target_os = "macos")]
+mod sparkle;
+
 #[derive(Debug)]
 enum UserEvent {
     /// A second launch: bring the window to the front.
@@ -38,6 +41,9 @@ enum UserEvent {
     /// Quit from the menu (Cmd-Q): as closing the window.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Quit,
+    /// Install the newer release in place (POST /api/update/open; Sparkle).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Update,
 }
 
 /// Running from inside a Mac app bundle (`Pakon.app/Contents/MacOS/`).
@@ -165,6 +171,8 @@ fn focus_running(dir: &Path) {
 
 #[cfg(target_os = "macos")]
 const QUIT_ID: &str = "quit";
+#[cfg(target_os = "macos")]
+const UPDATE_ID: &str = "update";
 
 /// The macOS menu bar: without one, a Mac app has no Quit (Cmd-Q) and the
 /// page no Copy / Paste. Quit is our own item, not the system's, so it ends a
@@ -172,7 +180,7 @@ const QUIT_ID: &str = "quit";
 /// Linux get no menu: the page's shortcuts work without one, and closing the
 /// window quits.
 #[cfg(target_os = "macos")]
-fn menu() -> muda::Menu {
+fn menu(updates: bool) -> muda::Menu {
     use muda::{Menu, PredefinedMenuItem as P, Submenu};
     let menu = Menu::new();
     {
@@ -184,6 +192,10 @@ fn menu() -> muda::Menu {
             &[&P::about(None, None), &P::separator(), &P::services(None), &P::separator(), &P::hide(None), &P::hide_others(None), &P::show_all(None), &P::separator(), &quit],
         )
         .expect("menu");
+        if updates {
+            // Sparkle (sparkle.rs)
+            let _ = app.insert(&muda::MenuItem::with_id(UPDATE_ID, "Check for Updates…", true, None), 1);
+        }
         let _ = menu.append(&app);
     }
     let edit = Submenu::with_items("Edit", true, &[&P::undo(None), &P::redo(None), &P::separator(), &P::cut(None), &P::copy(None), &P::paste(None), &P::select_all(None)])
@@ -299,12 +311,16 @@ fn main() {
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
+    let updater = objc2::MainThreadMarker::new().zip(bundle_contents()).and_then(|(main, c)| sparkle::Sparkle::start(&c, main));
+    #[cfg(target_os = "macos")]
     {
-        let menu = menu();
+        let menu = menu(updater.is_some());
         let menu_proxy = event_loop.create_proxy();
         muda::MenuEvent::set_event_handler(Some(move |e: muda::MenuEvent| {
             if e.id() == QUIT_ID {
                 let _ = menu_proxy.send_event(UserEvent::Quit);
+            } else if e.id() == UPDATE_ID {
+                let _ = menu_proxy.send_event(UserEvent::Update);
             }
         }));
         menu.init_for_nsapp();
@@ -323,6 +339,13 @@ fn main() {
         Some(r) => start_service(r.clone(), event_loop.create_proxy()),
         None => Err("its files (web/static) were not found".to_string()),
     };
+    #[cfg(target_os = "macos")]
+    if let (Ok((_, _, app)), true) = (&service, updater.is_some()) {
+        let proxy = std::sync::Mutex::new(event_loop.create_proxy());
+        app.set_updater(move || {
+            let _ = proxy.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Update);
+        });
+    }
     let downloads = home().join("Downloads");
     let builder = WebViewBuilder::new()
         // the frame and zip links save to Downloads
@@ -369,6 +392,12 @@ fn main() {
                 let _ = reply.send(pick(&window, kind, start));
             }
             Event::UserEvent(UserEvent::Stopped) => *flow = ControlFlow::Exit,
+            Event::UserEvent(UserEvent::Update) => {
+                #[cfg(target_os = "macos")]
+                if let Some(u) = &updater {
+                    u.check();
+                }
+            }
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } | Event::UserEvent(UserEvent::Quit) => match stop.take() {
                 // end a scan as at the end of the roll, wait for the
                 // teardown (Stopped), then quit

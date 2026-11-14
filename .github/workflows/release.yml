@@ -1,6 +1,7 @@
 # Builds the three installers with the packaging scripts and, on a v* tag,
 # puts them in a draft release with their SHA-256 sums. Write the notes and
-# publish it by hand: the in-app updater reads releases/latest.
+# publish it by hand: the in-app updater reads releases/latest, and
+# publishing makes the Mac app's update feed (appcast.yml).
 #
 # A pull request that touches packaging builds them unsigned, as a check.
 #
@@ -121,6 +122,14 @@ jobs:
 
       - name: Build
         run: packaging/macos/build.sh "${{ needs.version.outputs.version }}"
+
+      # the Intel app's emulator, under Rosetta (1.0.2 crashed every Intel Mac)
+      - name: Emulator, both architectures
+        working-directory: rust
+        run: |
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo test --release --locked -p pakon-oem --target "$t" --test sba sba_loads
+          done
 
       - uses: actions/upload-artifact@v7
         with:

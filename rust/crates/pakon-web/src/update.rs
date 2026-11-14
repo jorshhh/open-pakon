@@ -6,6 +6,11 @@
 //! GitHub API once at startup and then every few hours, in the background;
 //! any failure (offline, rate limit) just means no banner.
 //! PAKON_UPDATE_CHECK=0 turns the check off.
+//!
+//! The Mac app installs it in place with Sparkle when the release carries
+//! an `appcast.xml` (made when the release is published:
+//! .github/workflows/appcast.yml); otherwise, and elsewhere, the banner
+//! opens the release page.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -24,6 +29,7 @@ const TIMEOUT: Duration = Duration::from_secs(8);
 struct State {
     latest: Option<String>,
     url: Option<String>,
+    appcast: bool,
     checked: Option<Instant>,
 }
 
@@ -56,17 +62,18 @@ pub fn newer(latest: &str, installed: &str) -> bool {
     matches!((parse(latest), parse(installed)), (Some(a), Some(b)) if a > b)
 }
 
-/// What a release from the API means: (version, page), or None for a draft,
-/// a prerelease or a tag that is not a plain version. Only this repo's
-/// release pages are ever opened.
-fn release(rel: &Value) -> Option<(String, String)> {
+/// What a release from the API means: (version, page, has an appcast), or
+/// None for a draft, a prerelease or a tag that is not a plain version. Only
+/// this repo's release pages are ever opened.
+fn release(rel: &Value) -> Option<(String, String, bool)> {
     let tag = rel["tag_name"].as_str().unwrap_or("");
     let url = rel["html_url"].as_str().unwrap_or("");
     if rel["draft"].as_bool().unwrap_or(false) || rel["prerelease"].as_bool().unwrap_or(false) || parse(tag).is_none() {
         return None;
     }
     let url = if url.starts_with(&format!("{RELEASES}/")) { url.to_string() } else { format!("{RELEASES}/latest") };
-    Some((tag.trim_start_matches('v').to_string(), url))
+    let appcast = rel["assets"].as_array().is_some_and(|a| a.iter().any(|x| x["name"] == "appcast.xml"));
+    Some((tag.trim_start_matches('v').to_string(), url, appcast))
 }
 
 impl Update {
@@ -100,14 +107,15 @@ impl Update {
                 return;
             }
         };
-        if let Some((latest, url)) = release(&rel) {
+        if let Some((latest, url, appcast)) = release(&rel) {
             let mut s = self.state();
             s.latest = Some(latest);
             s.url = Some(url);
+            s.appcast = appcast;
         }
     }
 
-    /// `{"current", "latest", "url"}` when a newer release is out, else
+    /// `{"current", "latest", "url", "appcast"}` when a newer release is out, else
     /// None. Starts a background check when the last one is old.
     pub fn status(self: &Arc<Self>) -> Option<Value> {
         let version = current().filter(|_| enabled())?;
@@ -117,7 +125,7 @@ impl Update {
         }
         let s = self.state();
         let (latest, url) = (s.latest.clone()?, s.url.clone());
-        newer(&latest, &version).then(|| json!({"current": version, "latest": latest, "url": url}))
+        newer(&latest, &version).then(|| json!({"current": version, "latest": latest, "url": url, "appcast": s.appcast}))
     }
 }
 
@@ -141,7 +149,9 @@ mod tests {
     #[test]
     fn releases() {
         let ok = json!({"tag_name": "v0.4.1", "html_url": format!("{RELEASES}/tag/v0.4.1")});
-        assert_eq!(release(&ok), Some(("0.4.1".into(), format!("{RELEASES}/tag/v0.4.1"))));
+        assert_eq!(release(&ok), Some(("0.4.1".into(), format!("{RELEASES}/tag/v0.4.1"), false)));
+        let cast = json!({"tag_name": "v0.4.1", "assets": [{"name": "Pakon.dmg"}, {"name": "appcast.xml"}]});
+        assert!(release(&cast).unwrap().2);
         let elsewhere = json!({"tag_name": "v0.4.1", "html_url": "https://example.com/x"});
         assert_eq!(release(&elsewhere).unwrap().1, format!("{RELEASES}/latest"));
         assert_eq!(release(&json!({"tag_name": "v0.4.1", "prerelease": true})), None);

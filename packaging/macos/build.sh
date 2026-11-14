@@ -11,6 +11,12 @@
 # for the universal app), cmake (Unicorn is built from source by its crate)
 # and Python 3 with Pillow for the icon, the first time only.
 #
+# In-place updates (Sparkle, sparkle.sh): with the EdDSA public key in
+# sparkle-public-key (or PAKON_SPARKLE_PUBLIC_KEY) the app carries
+# Sparkle.framework and the feed; without it the banner opens the release
+# page. PAKON_SPARKLE_FEED replaces the feed (a test); PAKON_RYBBIT=0 leaves
+# the reports out.
+#
 # Signing, notarization and crash reports:
 # PAKON_SIGN_IDENTITY or the first "Developer ID Application" identity (else
 # ad hoc), PAKON_NOTARY_PROFILE, and PAKON_RYBBIT_URL / _SITE_ID / _DOMAIN
@@ -46,8 +52,8 @@ step() { printf '\n==> %s\n' "$*"; }
 [ "$(uname -m)" = arm64 ] || { echo "build on Apple silicon" >&2; exit 1; }
 [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] \
     || { echo "version must look like 1.2 or 1.2.3, got '$VERSION'" >&2; exit 1; }
-if [ -n "${PAKON_RYBBIT_URL:-}" ] && [ -n "${PAKON_RYBBIT_SITE_ID:-}" ] \
-        && [ -n "${PAKON_RYBBIT_DOMAIN:-}" ]; then
+if [ "${PAKON_RYBBIT:-1}" != 0 ] && [ -n "${PAKON_RYBBIT_URL:-}" ] \
+        && [ -n "${PAKON_RYBBIT_SITE_ID:-}" ] && [ -n "${PAKON_RYBBIT_DOMAIN:-}" ]; then
     echo "reports: on (opt-in) to $PAKON_RYBBIT_URL, site $PAKON_RYBBIT_DOMAIN"
     RYBBIT=1
 else
@@ -59,6 +65,16 @@ IDENTITY="${PAKON_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
 if [ -n "${PAKON_NOTARY_PROFILE:-}" ] && [ -z "$IDENTITY" ]; then
     echo "notarization needs a Developer ID Application certificate in the keychain" >&2
     exit 1
+fi
+SPARKLE_KEY="${PAKON_SPARKLE_PUBLIC_KEY:-$(cat "$HERE/sparkle-public-key" 2>/dev/null || true)}"
+SPARKLE_KEY="$(echo "$SPARKLE_KEY" | tr -d '[:space:]')"
+FEED="${PAKON_SPARKLE_FEED:-https://github.com/jorshhh/open-pakon/releases/latest/download/appcast.xml}"
+if [ -n "$SPARKLE_KEY" ]; then
+    SPARKLE="$("$HERE/sparkle.sh")"
+    echo "updates: in place (Sparkle), $FEED"
+else
+    SPARKLE=""
+    echo "updates: the release page (no sparkle-public-key)"
 fi
 mkdir -p "$CACHE" "$OUT"
 rm -rf "$APP" "$UNIVERSAL" "$OUT/Pakon.dmg" "$OUT/Pakon-Universal.dmg"
@@ -113,6 +129,19 @@ assemble() {  # binary app
     cp -R "$REPO/profiles" "$REPO/oem" "$res/"
     cp "$REPO/LICENSE" "$REPO/NOTICE" "$res/"
     cp "$CACHE/AppIcon.icns" "$res/AppIcon.icns"
+    local sparkle=""
+    if [ -n "$SPARKLE" ]; then
+        mkdir -p "$app/Contents/Frameworks"
+        ditto "$SPARKLE/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
+        # the XPC services are for sandboxed apps only
+        rm -rf "$app/Contents/Frameworks/Sparkle.framework/XPCServices" \
+            "$app/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices"
+        # checks only when the banner's Install asks (update.rs)
+        sparkle="    <key>SUFeedURL</key><string>$FEED</string>
+    <key>SUPublicEDKey</key><string>$SPARKLE_KEY</string>
+    <key>SUEnableAutomaticChecks</key><false/>
+    <key>SUAutomaticallyUpdate</key><false/>"
+    fi
     local rybbit=""
     if [ "$RYBBIT" = 1 ]; then
         rybbit="    <key>PakonRybbitURL</key><string>$PAKON_RYBBIT_URL</string>
@@ -137,6 +166,7 @@ assemble() {  # binary app
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>AGPL-3.0-or-later. Not affiliated with Kodak or Pakon.</string>
 $rybbit
+$sparkle
 </dict>
 </plist>
 PLIST
@@ -177,6 +207,12 @@ package() {  # app dmg-name
 
     step "sign ($(basename "$app"))"
     # the hardened runtime needs JIT for Unicorn (the OEM DLLs' emulator)
+    local fw="$app/Contents/Frameworks/Sparkle.framework"
+    if [ -d "$fw" ]; then  # inside out
+        "${SIGN[@]}" "$fw/Versions/B/Autoupdate"
+        "${SIGN[@]}" "$fw/Versions/B/Updater.app"
+        "${SIGN[@]}" "$fw"
+    fi
     "${SIGN[@]}" --entitlements "$HERE/entitlements.plist" "$app"
     codesign --verify --deep --strict "$app"
 
