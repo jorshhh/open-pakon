@@ -7,8 +7,9 @@
 # Repository variables: PAKON_RYBBIT_URL, PAKON_RYBBIT_SITE_ID,
 # PAKON_RYBBIT_DOMAIN (opt-in reports; left out, the builds never send any).
 # Secrets, macOS: MACOS_CERT_P12 (base64 Developer ID Application .p12),
-# MACOS_CERT_PASSWORD; to notarize as well, APPLE_API_KEY (base64 .p8),
-# APPLE_API_KEY_ID, APPLE_API_ISSUER.
+# MACOS_CERT_PASSWORD, and to notarize either APPLE_API_KEY (base64 .p8),
+# APPLE_API_KEY_ID, APPLE_API_ISSUER or APPLE_ID, APPLE_TEAM_ID,
+# APPLE_APP_PASSWORD (app-specific). A tag build fails without both.
 name: release
 
 on:
@@ -74,6 +75,9 @@ jobs:
           API_KEY: ${{ secrets.APPLE_API_KEY }}
           API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           if [ -z "$P12" ]; then
             if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -97,8 +101,16 @@ jobs:
             xcrun notarytool store-credentials pakon-ci --key "$RUNNER_TEMP/key.p8" \
               --key-id "$API_KEY_ID" --issuer "$API_ISSUER" --keychain "$KC"
             rm "$RUNNER_TEMP/key.p8"
-            echo "PAKON_NOTARY_PROFILE=pakon-ci" >> "$GITHUB_ENV"
+          elif [ -n "$APPLE_ID" ]; then
+            xcrun notarytool store-credentials pakon-ci --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --keychain "$KC"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # signed but not notarized: Gatekeeper blocks it on download (1.0.0–1.0.2)
+            echo "a release needs notarization: APPLE_API_KEY* or APPLE_ID secrets" >&2; exit 1
+          else
+            exit 0
           fi
+          echo "PAKON_NOTARY_PROFILE=pakon-ci" >> "$GITHUB_ENV"
 
       - name: Build
         run: packaging/macos/build.sh "${{ needs.version.outputs.version }}"
