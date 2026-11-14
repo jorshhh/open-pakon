@@ -1,0 +1,6 @@
+#!/bin/sh
+# C compiler for x86_64-apple-darwin (rust/.cargo/config.toml). Unicorn's
+# CMake and QEMU configure pick the JIT backend from `cc -dM -E` without
+# -arch, which on Apple silicon reports arm64: the Intel app then ran ARM64
+# code and crashed (1.0.2).
+exec clang -arch x86_64 "$@"

@@ -22,7 +22,7 @@
 //! POST /api/reveal                  show a saved export folder (Finder, Explorer, xdg-open)
 //! POST /api/app/focus               bring the app's window to the front (second launch)
 //! POST /api/pick                    the system's folder / .raw dialog (window app only)
-//! POST /api/update/open             open the newer release's page in the browser
+//! POST /api/update/open             install the newer release (Mac, Sparkle) or open its page
 //! POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
 //! POST /api/telemetry/page|error    a page opened / a page error
 
@@ -108,6 +108,9 @@ pub struct App {
     focus: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Set by the window app: the system's own folder / file dialog.
     picker: Mutex<Option<Arc<Picker>>>,
+    /// Set by the Mac app when it carries Sparkle: installs the update in
+    /// place (POST /api/update/open).
+    updater: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     update_seen: Mutex<HashSet<String>>,
 }
 
@@ -130,6 +133,7 @@ impl App {
             jobs: Mutex::new(()),
             focus: Mutex::new(None),
             picker: Mutex::new(None),
+            updater: Mutex::new(None),
             update_seen: Mutex::new(HashSet::new()),
         })
     }
@@ -156,6 +160,23 @@ impl App {
     /// The window app's native dialog for POST /api/pick.
     pub fn set_picker(&self, picker: impl Fn(Pick, Option<PathBuf>) -> Option<PathBuf> + Send + Sync + 'static) {
         *self.picker.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(picker));
+    }
+
+    /// The Mac app's in-place update (Sparkle), for a release with an appcast.
+    pub fn set_updater(&self, updater: impl Fn() + Send + Sync + 'static) {
+        *self.updater.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(updater));
+    }
+
+    pub(crate) fn updater(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        self.updater.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The update status for the page: `install` when it installs in place.
+    pub(crate) fn update_status(self: &Arc<Self>) -> Option<Value> {
+        let mut u = self.update.status()?;
+        let install = u["appcast"].as_bool() == Some(true) && self.updater().is_some();
+        u["install"] = json!(install);
+        Some(u)
     }
 
     pub(crate) fn picker(&self) -> Option<Arc<Picker>> {

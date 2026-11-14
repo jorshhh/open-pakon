@@ -1,0 +1,49 @@
+# The Mac app's update feed (Sparkle): when a release is published, sign its
+# Pakon-Universal.dmg, write appcast.xml with the release notes and attach
+# it to the release. The app reads releases/latest/download/appcast.xml, so
+# a draft never reaches it; the in-app banner installs in place only for a
+# release that carries the feed (pakon-web update.rs).
+#
+# Secret: SPARKLE_ED_PRIVATE_KEY, the private half of
+# packaging/macos/sparkle-public-key (generate_keys -x). Run it by hand to
+# redo a release's feed (after editing its notes).
+name: appcast
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag, e.g. v1.0.3
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: appcast
+
+jobs:
+  appcast:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          [ -n "$SPARKLE_ED_PRIVATE_KEY" ] || { echo "SPARKLE_ED_PRIVATE_KEY is not set" >&2; exit 1; }
+          [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+){1,2}$ ]] || { echo "bad tag: $TAG" >&2; exit 1; }
+          if [ "$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isPrerelease -q .isPrerelease)" = true ]; then
+            echo "a prerelease: no feed"; exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/dl"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p Pakon-Universal.dmg -D "$RUNNER_TEMP/dl"
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body > "$RUNNER_TEMP/notes.md"
+          packaging/macos/appcast.sh "${TAG#v}" "$RUNNER_TEMP/dl/Pakon-Universal.dmg" \
+            "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP/appcast.xml"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP/appcast.xml"

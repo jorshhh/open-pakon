@@ -31,7 +31,7 @@ pub async fn api_status(State(app): State<Arc<App>>) -> Response {
         let roll = app.roll();
         (roll.frames.len(), roll.processing)
     };
-    let update = app.update.status();
+    let update = app.update_status();
     if let Some(latest) = update.as_ref().and_then(|u| u["latest"].as_str()) {
         // once per run and version
         if app.update_seen.lock().unwrap_or_else(|e| e.into_inner()).insert(latest.to_string()) {
@@ -324,7 +324,16 @@ pub async fn api_pick(State(app): State<Arc<App>>, body: Bytes) -> Response {
 /// Open the newer release's page in the default browser (the app window
 /// cannot); elsewhere the page opens the returned URL itself.
 pub async fn api_update_open(State(app): State<Arc<App>>) -> Response {
-    let st = app.update.status();
+    let st = app.update_status();
+    if let Some(install) = app.updater().filter(|_| st.as_ref().is_some_and(|s| s["install"] == true)) {
+        // installing quits the app: not in the middle of a scan
+        if app.device_busy.load(std::sync::atomic::Ordering::SeqCst) {
+            return Json(json!({"busy": true})).into_response();
+        }
+        app.telemetry.event("update_install", "", json!({"latest": st.as_ref().map(|s| s["latest"].clone())}));
+        install();
+        return Json(json!({"installing": true})).into_response();
+    }
     let url = st.as_ref().and_then(|s| s["url"].as_str()).map(str::to_string).unwrap_or_else(|| format!("{}/latest", update::RELEASES));
     app.telemetry.event("update_download", "", json!({"latest": st.as_ref().map(|s| s["latest"].clone())}));
     if cfg!(target_os = "macos") {
