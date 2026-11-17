@@ -54,6 +54,11 @@ pub const REFINE_TOL: f64 = 0.025;
 /// scan as streaks. 2.5% over the target would reach 65567, past the clip.
 pub const NEAR_MAX: u32 = 65000;
 
+/// A peak at the A/D's ceiling (65533-65534 in every log): the light is
+/// over by an unknown amount. Peaks between [`NEAR_MAX`] and this are still
+/// readings, if too high to settle on.
+pub const CLIPPED: u32 = 65500;
+
 /// Line origin (start of an RGB block, `0 <= origin < 4 * line_px`): the
 /// offset maximising, over the mean of up to 64 lines, the contrast between
 /// each block's first `black_px` pixels and the rest of that block (RGB block
@@ -425,10 +430,21 @@ pub fn duty_start(cap: u16, current: u32) -> u16 {
 }
 
 /// Refine step: `duty * 63968 / peak` (IR 39968), clamped to `[1, period - 2]`.
+/// A [`CLIPPED`] peak hides how far over the target the light is, so the
+/// step halves the duty instead: the next, unclipped, peak then gives the
+/// exact step. (Scaling by the clipped peak moved the duty 2.4% a pass: 26
+/// passes for a 1.8x overshoot, none settled at 2.2x.) Only a clipped peak:
+/// halving one LED also shifts the others' peaks by several percent.
 pub fn duty_next(ch: usize, duty: u16, peak: u32, period: u16) -> u16 {
     let target = if ch == IR { 39968.0 } else { 63968.0 };
     let max = period as i64 - 2;
-    let mut next = if peak != 0 { (duty as f64 * target / peak as f64).round() as i64 } else { max };
+    let mut next = if peak >= CLIPPED {
+        duty as i64 / 2
+    } else if peak != 0 {
+        (duty as f64 * target / peak as f64).round() as i64
+    } else {
+        max
+    };
     if next < 1 {
         next = 1;
     }

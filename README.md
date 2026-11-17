@@ -163,8 +163,9 @@ yes, each has its own switch, and you can change your mind any time on the
 - **Crash reports:** the error and where it happened in the code, and for a
   failed scan the last lines of the scanner log.
 - **Usage statistics:** which pages you open, how long scans, processing and
-  exports take, the film type, the number of frames, the export format and
-  the scanner model.
+  exports take, the film type, the number of frames, the export format, the
+  scanner model, and the light calibration before each scan (LED currents
+  and duties, A/D gains and offsets, the light levels it measured).
 - **Never sent:** your pictures, file or folder names, roll names, or your
   scanner's serial number or factory settings.
 

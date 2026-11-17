@@ -38,7 +38,7 @@ const openLogs = () => fetch('/api/logs/open', { method: 'POST' });
 
 const reports = [
   { key: 'crashes' as const, name: 'Crash reports', tip: 'When something fails: the error, and for a failed scan the scanner\'s last log lines.' },
-  { key: 'usage' as const, name: 'Usage statistics', tip: 'Pages opened, and how long scans, processing and exports take, with the film type and frame count.' },
+  { key: 'usage' as const, name: 'Usage statistics', tip: 'Pages opened, and how long scans, processing and exports take, with the film type and frame count, and the scanner\'s light calibration.' },
 ];
 const note = 'mb-2 max-w-[72ch] text-[0.8rem] leading-snug text-muted';
 </script>

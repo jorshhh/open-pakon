@@ -203,6 +203,7 @@ where
                 // Every line goes to the app's log (pakon.log in the app),
                 // shown on the page or not.
                 eprintln!("[scanner] {line}");
+                em.observe(line);
                 if line.contains(FEED_KEY) {
                     em.emit(json!({"type": "feed", "message": "Motor running — feed the film now"}));
                 } else if keys.is_none_or(|ks| ks.iter().any(|k| line.contains(k))) && !line.contains("0x81: timeout") {
