@@ -7,13 +7,19 @@
 # Nothing here runs on Windows. Pakon.exe is the Rust app (rust/crates/
 # pakon-app: the service, the scanner driver, the image pipeline and the
 # window, in WebView2) cross-compiled with MinGW, next to WebView2Loader.dll
-# (Microsoft's, from the webview2-com-sys crate) and the files it reads;
+# (Microsoft's, from the webview2-com-sys crate), WinSparkle.dll (in-place
+# updates; winsparkle.sh) and the files it reads;
 # pakon_driver.exe (pakon_driver.c) sets up the scanner's WinUSB driver; and
 # NSIS (installer.nsi) packs it all into a per-user installer.
 #
 # Crash reports and usage statistics (opt-in): as the Linux build,
 # PAKON_RYBBIT_URL / _SITE_ID / _DOMAIN from the environment or
 # packaging/release.env go into release.env in the install, with PAKON_VERSION.
+#
+# In-place updates (WinSparkle): the app reads the release's
+# appcast-windows.xml with the key in packaging/macos/sparkle-public-key. A
+# test build sets PAKON_SPARKLE_FEED (another feed URL) and
+# PAKON_SPARKLE_PUBLIC_KEY (its key), as the Mac build does.
 #
 # Needs: rustup with the x86_64-pc-windows-gnu target, gcc-mingw-w64-x86-64
 # g++-mingw-w64-x86-64 cmake libclang-dev nsis python3-venv; without them it builds in
@@ -50,6 +56,7 @@ if ! command -v "$CC" >/dev/null || ! command -v makensis >/dev/null \
     mkdir -p "$CACHE/cargo-registry"
     exec docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
         -e PAKON_RYBBIT_URL -e PAKON_RYBBIT_SITE_ID -e PAKON_RYBBIT_DOMAIN -e PAKON_WEB_BUILT=1 \
+        -e PAKON_SPARKLE_FEED -e PAKON_SPARKLE_PUBLIC_KEY \
         -v "$CACHE/cargo-registry:/usr/local/cargo/registry" \
         -v "$REPO:$REPO" -w "$REPO" pakon-win-build "$HERE/build.sh" "$VERSION"
 fi
@@ -99,6 +106,8 @@ x86_64-w64-mingw32-strip "$APP/Pakon.exe"
 WV="$(sed -n '/^name = "webview2-com-sys"$/{n;s/^version = "\(.*\)"$/\1/p;}' "$REPO/rust/Cargo.lock")"
 LOADER="$(ls "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/webview2-com-sys-"$WV"/x64/WebView2Loader.dll | head -1)"
 cp "$LOADER" "$APP/"
+# in-place updates: WinSparkle, loaded at run time (pakon-app winsparkle.rs)
+cp "$("$HERE/winsparkle.sh" "$CACHE")" "$APP/WinSparkle.dll"
 # only Windows' own DLLs, and the loader
 BAD="$(x86_64-w64-mingw32-objdump -p "$APP/Pakon.exe" | sed -n 's/^\s*DLL Name: //p' \
     | grep -v -i -E '^(kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|ws2_32|bcrypt|bcryptprimitives|ntdll|userenv|winusb|setupapi|cfgmgr32|comctl32|combase|rpcrt4|uxtheme|dwmapi|shlwapi|version|imm32|crypt32|secur32|ncrypt|iphlpapi|winmm|propsys|uiautomationcore|api-ms-win-[a-z0-9-]*|msvcrt|ucrtbase|webview2loader)\.dll$' || true)"
@@ -129,6 +138,14 @@ cp "$REPO/LICENSE" "$REPO/NOTICE" "$APP/"
         echo "PAKON_RYBBIT_DOMAIN=$PAKON_RYBBIT_DOMAIN"
     else
         echo "reports: off (no PAKON_RYBBIT_URL / _SITE_ID / _DOMAIN)" >&2
+    fi
+    # a test of in-place updates: its own WinSparkle feed and key
+    if [ -n "${PAKON_SPARKLE_FEED:-}" ]; then
+        echo "updates: test feed $PAKON_SPARKLE_FEED" >&2
+        echo "PAKON_UPDATE_FEED=$PAKON_SPARKLE_FEED"
+    fi
+    if [ -n "${PAKON_SPARKLE_PUBLIC_KEY:-}" ]; then
+        echo "PAKON_UPDATE_KEY=$PAKON_SPARKLE_PUBLIC_KEY"
     fi
 } > "$APP/release.env"
 

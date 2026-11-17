@@ -260,7 +260,7 @@ missing required field answers 422.
 | `/api/save` | POST, stream | Saves a format (raw negative TIFF, TIFF, JPEG, contact sheet) into the order folder |
 | `/api/reveal` | POST | Shows a file in the system file manager |
 | `/api/app/focus` | POST | Brings the window to the front (a second launch calls it) |
-| `/api/update/open` | POST | Opens the newer release's page |
+| `/api/update/open` | POST | Installs the newer release in place (Sparkle on macOS, WinSparkle on Windows, when the release has the platform's feed), else opens its page |
 | `/api/telemetry/consent`, `/page`, `/error` | POST | The opt-in switches, page views, page errors |
 
 Scans, eject and the firmware load call `pakon-scan` / `pakon-usb` in

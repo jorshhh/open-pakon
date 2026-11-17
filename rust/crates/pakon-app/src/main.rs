@@ -28,6 +28,8 @@ use wry::{NewWindowResponse, WebViewBuilder};
 
 #[cfg(target_os = "macos")]
 mod sparkle;
+#[cfg(windows)]
+mod winsparkle;
 
 #[derive(Debug)]
 enum UserEvent {
@@ -38,11 +40,13 @@ enum UserEvent {
     Pick(Pick, Option<PathBuf>, mpsc::Sender<Option<PathBuf>>),
     /// The service has torn the scanner down and stopped: quit.
     Stopped,
-    /// Quit from the menu (Cmd-Q): as closing the window.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    /// Quit from the menu (Cmd-Q), or for WinSparkle's installer: as
+    /// closing the window.
+    #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
     Quit,
-    /// Install the newer release in place (POST /api/update/open; Sparkle).
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    /// Install the newer release in place (POST /api/update/open; Sparkle,
+    /// WinSparkle).
+    #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
     Update,
 }
 
@@ -352,6 +356,30 @@ fn main() {
             let _ = proxy.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Update);
         });
     }
+    // WinSparkle: only in a release build (PAKON_VERSION) that checks for
+    // updates, with WinSparkle.dll next to Pakon.exe
+    #[cfg(windows)]
+    let updater = match (&service, pakon_web::update::current().filter(|_| pakon_web::update::enabled())) {
+        (Ok((_, _, app)), Some(version)) => {
+            let busy = app.clone();
+            let quit = std::sync::Mutex::new(event_loop.create_proxy());
+            let ws = winsparkle::WinSparkle::start(
+                &version,
+                move || !busy.device_busy(),
+                move || {
+                    let _ = quit.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Quit);
+                },
+            );
+            if ws.is_some() {
+                let proxy = std::sync::Mutex::new(event_loop.create_proxy());
+                app.set_updater(move || {
+                    let _ = proxy.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Update);
+                });
+            }
+            ws
+        }
+        _ => None,
+    };
     let downloads = home().join("Downloads");
     let builder = WebViewBuilder::new()
         // the frame and zip links save to Downloads
@@ -399,7 +427,7 @@ fn main() {
             }
             Event::UserEvent(UserEvent::Stopped) => *flow = ControlFlow::Exit,
             Event::UserEvent(UserEvent::Update) => {
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", windows))]
                 if let Some(u) = &updater {
                     u.check();
                 }
@@ -421,6 +449,11 @@ fn main() {
             Event::LoopDestroyed => {
                 if let Some(app) = &app {
                     app.shutdown();
+                }
+                // WinSparkle's own threads stop with it
+                #[cfg(windows)]
+                if let Some(u) = &updater {
+                    u.cleanup();
                 }
             }
             _ => {}

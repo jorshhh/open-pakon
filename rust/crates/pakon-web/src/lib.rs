@@ -164,7 +164,14 @@ impl App {
         *self.picker.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(picker));
     }
 
-    /// The Mac app's in-place update (Sparkle), for a release with an appcast.
+    /// A scan, firmware load or eject has the scanner (installing an
+    /// update must wait for it).
+    pub fn device_busy(&self) -> bool {
+        self.device_busy.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The window app's in-place update (Sparkle on macOS, WinSparkle on
+    /// Windows), for a release with this platform's appcast.
     pub fn set_updater(&self, updater: impl Fn() + Send + Sync + 'static) {
         *self.updater.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(updater));
     }

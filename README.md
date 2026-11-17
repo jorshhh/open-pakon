@@ -113,9 +113,9 @@ If a strip stays inside the scanner, press **Advance film** on the Scan page.
 
 ## Good to know
 
-- To update, quit Pakon and install the new version over the old one: drag
-  it into Applications on a Mac, run the new installer on Windows, install
-  the new `.deb` on Linux. Your scans and settings stay where they are.
+- When a new version is out, Pakon shows a banner. On a Mac and on Windows,
+  **Install** updates it in place and restarts it. On Linux, install the new
+  `.deb` over the old one. Your scans and settings stay where they are.
 - For B&W film developed in colour chemistry (Ilford XP2, Kodak BW400CN),
   pick **B&W C41** as the film type. Dust removal works on it, as it does
   on colour negative.
