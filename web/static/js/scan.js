@@ -2,6 +2,7 @@
 import { $, setMsg, postSSE, logLine, store } from './util.js';
 import { showSpace, setBusy } from './spaces.js';
 import { showRaw, processRaw } from './process.js';
+import { scanOrder, orderUsed } from './order.js';
 
 // ── Firmware load ────────────────────────────────────────────────────────
 $('fw-btn').addEventListener('click', async () => {
@@ -52,9 +53,15 @@ $('scan-btn').addEventListener('click', async () => {
   $('scan-prog').value = 0;
   $('scan-log').textContent = '';
   $('feed-prompt').classList.remove('show');
-  await postSSE('/api/scan', { film: $('scan-film').value, base }, ev => {
+  const order = scanOrder();
+  $('scan-order-btn').disabled = true;
+  await postSSE('/api/scan', { film: $('scan-film').value, base, order }, ev => {
     if (ev.type === 'order') {
       logLine('scan-log', `Order ${ev.order}: ${ev.path}`);
+      orderUsed();
+      if (order && ev.order !== order) {
+        logLine('scan-log', `Order ${order} already has a folder; this scan is ${ev.order}`);
+      }
     } else if (ev.type === 'log') {
       logLine('scan-log', ev.message);
     } else if (ev.type === 'feed') {
@@ -80,6 +87,7 @@ $('scan-btn').addEventListener('click', async () => {
   });
 
   $('feed-prompt').classList.remove('show');
+  $('scan-order-btn').disabled = false;
   $('stop-btn').classList.add('hidden');
   $('eject-btn').classList.remove('hidden');
   btn.disabled = false;

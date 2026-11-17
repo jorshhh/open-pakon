@@ -19,6 +19,12 @@ export function postJSON(url, body) {
 // Consume a POST SSE stream; bodyData is sent as JSON.
 export async function postSSE(url, bodyData, onEvent) {
   const resp = await postJSON(url, bodyData);
+  // a request refused before the stream starts (400 etc.) arrives as JSON
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    onEvent({ type: 'error', message: d.error || d.detail || `${resp.status} ${resp.statusText}` });
+    return;
+  }
   const reader = resp.body.getReader();
   const dec = new TextDecoder();
   let buf = '';

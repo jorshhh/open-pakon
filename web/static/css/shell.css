@@ -118,6 +118,13 @@ body { padding-bottom: 110px; }        /* the bar's room; fitBar() sets it exact
   background: var(--surface);
 }
 .modal-foot .spacer { flex: 1; }
+.modal-small { width: min(420px, 92vw); }
+.modal-body { padding: 18px 20px; }
+.modal-top { z-index: 101; }
+input.ask-input {
+  width: 100%;
+  font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; font-weight: 700;
+}
 #browse-close {
   padding: 4px 10px; font-size: 1rem; line-height: 1;
 }

@@ -215,7 +215,7 @@ missing required field answers 422.
 |---|---|---|
 | `/api/status` | GET | Scanner state, the current raw and its size, frame count, processing state, work folder and next order, the EEPROM archive in use, whether the HEX firmware is present, a newer release |
 | `/api/firmware` | POST, stream | Loads the firmware (HEX files, else `f135.pakfw`) |
-| `/api/scan` | POST, stream | Scans into a new order folder; `film` (`c41`, `bw`, `bwc41`, `slide`), `base` (4, 8, 16) |
+| `/api/scan` | POST, stream | Scans into a new order folder; `film` (`c41`, `bw`, `bwc41`, `slide`), `base` (4, 8, 16), optional `order` (the folder name, e.g. a lab's order number; `-2`, `-3`, ... when taken; blank or the next ID itself = the counter) |
 | `/api/scan/stop` | POST | Ends a running scan as at the end of the roll (teardown still runs) |
 | `/api/eject` | POST, stream | Ejects the strip (F-135, code-built) |
 | `/api/workdir` | POST | Sets the work folder |

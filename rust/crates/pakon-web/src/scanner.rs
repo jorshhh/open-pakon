@@ -304,9 +304,10 @@ pub async fn api_firmware(State(app): State<Arc<App>>) -> Response {
 
 // ── Scan ─────────────────────────────────────────────────────────────────────
 
-/// Open the next order and make its raw the current roll.
-fn prepare_out(app: &App) -> Result<PathBuf, String> {
-    let (_, out) = app.settings.new_order().map_err(|e| format!("cannot create the order folder in {}: {e}", app.settings.work_dir().display()))?;
+/// Open the order (the operator's, else the next ID) and make its raw the
+/// current roll.
+fn prepare_out(app: &App, order: Option<&str>) -> Result<PathBuf, String> {
+    let (_, out) = app.settings.new_order(order).map_err(|e| format!("cannot create the order folder in {}: {e}", app.settings.work_dir().display()))?;
     let mut roll = app.roll();
     roll.scan_path = Some(out.clone());
     roll.frames.clear();
@@ -326,7 +327,7 @@ fn done_event(app: &App, out: &Path, film: &str) -> Value {
     })
 }
 
-async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
+async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32, order: Option<String>) {
     let Some(_busy) = Busy::take(&app, &mut em) else { return };
     eeprom_sync_events(&app, &mut em).await;
     // In the log, and so in a failed scan's report: whether a foreign start
@@ -343,7 +344,7 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
         model = detect_model().await;
     }
     if let (Some(m), Some(dir)) = (model, &eeprom_dir) {
-        return scan_code_stream(&app, &mut em, m, dir.clone(), film, base).await;
+        return scan_code_stream(&app, &mut em, m, dir.clone(), film, base, order.as_deref()).await;
     }
     if base != 16 {
         return em.error(format!("Base {base} needs the scan built in code (an EEPROM archive for this scanner); the replayed scan is Base 16 only"));
@@ -373,7 +374,7 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
         return em.error(format!("scan script not found: {}", pakscan.display()));
     }
 
-    let out = match prepare_out(&app) {
+    let out = match prepare_out(&app, order.as_deref()) {
         Ok(o) => o,
         Err(e) => return em.error(e),
     };
@@ -407,8 +408,8 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32) {
 /// F-135 / F-135+ scan with nothing replayed: setup, light calibration (open gate,
 /// keep the film out; reused for an hour like the OEM software), motor
 /// start, then the operator feeds the film.
-async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, model: Model, eeprom_dir: PathBuf, film: String, base: u32) {
-    let out = match prepare_out(app) {
+async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, model: Model, eeprom_dir: PathBuf, film: String, base: u32, order: Option<&str>) {
+    let out = match prepare_out(app, order) {
         Ok(o) => o,
         Err(e) => return em.error(e),
     };
@@ -461,9 +462,14 @@ pub async fn api_scan(State(app): State<Arc<App>>, body: Bytes) -> Response {
     let Some(base) = base.filter(|b| SCAN_BASES.contains(b)) else {
         return error(StatusCode::BAD_REQUEST, format!("unknown resolution: Base {}", f.get("base").cloned().unwrap_or_default()));
     };
+    // The order number stays out of the telemetry report.
+    let order = match crate::orders::custom_order(f.get("order").and_then(Value::as_str).unwrap_or("")) {
+        Ok(o) => o,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
     let (tx, resp) = sse::channel();
     let em = Emitter::reported(tx, app.telemetry.clone(), "scan", "scan", json!({"film": film, "base": base}));
-    tokio::spawn(scan_stream(app, em, film, base as u32));
+    tokio::spawn(scan_stream(app, em, film, base as u32, order));
     resp
 }
 

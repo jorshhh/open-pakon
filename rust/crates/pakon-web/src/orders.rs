@@ -9,6 +9,10 @@
 //! scan succeeds. The counter also skips past any order folder already in
 //! the work folder, so two installs sharing one work folder never write
 //! into the same order.
+//!
+//! The operator can instead give the scan an order of their own, e.g. the
+//! number on a lab's order sticker (#95). It names the folder as typed and
+//! leaves the counter alone; a name already taken gets `-2`, `-3`, ...
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -18,6 +22,35 @@ use serde_json::{Map, Value};
 use crate::paths::{expand_user, home, resolve};
 
 const ID_DIGITS: usize = 6;
+/// Longest custom order name.
+const ORDER_MAX: usize = 64;
+
+/// A custom order name as typed, trimmed; `None` when blank. Letters,
+/// digits, space, `-`, `_` and `.`, not starting with `.` or ending in `.`
+/// or space, so it is one plain folder name on every platform.
+pub fn custom_order(s: &str) -> Result<Option<String>, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Ok(None);
+    }
+    if s.chars().count() > ORDER_MAX {
+        return Err(format!("order number is longer than {ORDER_MAX} characters"));
+    }
+    if let Some(c) = s.chars().find(|c| !(c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))) {
+        return Err(format!("order number can't contain \"{c}\" (use letters, digits, spaces, - _ .)"));
+    }
+    if s.starts_with('.') || s.ends_with('.') {
+        return Err("order number can't start or end with \".\"".into());
+    }
+    // Windows refuses these as folder names, with or without an extension
+    let stem = s.split('.').next().unwrap_or(s).trim_end().to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
+    if reserved {
+        return Err(format!("\"{s}\" can't be a folder name on Windows"));
+    }
+    Ok(Some(s.to_string()))
+}
 
 pub struct Settings {
     path: PathBuf,
@@ -91,7 +124,9 @@ impl Settings {
                     .filter(|e| e.path().is_dir())
                     .filter_map(|e| {
                         let name = e.file_name().to_string_lossy().into_owned();
-                        (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit())).then(|| name.parse::<u64>().ok()).flatten()
+                        // only our own IDs: a long custom order number
+                        // (#95) must not throw the counter far ahead
+                        (name.len() == ID_DIGITS && name.bytes().all(|b| b.is_ascii_digit())).then(|| name.parse::<u64>().ok()).flatten()
                     })
                     .max()
             })
@@ -106,15 +141,29 @@ impl Settings {
         format!("{:0ID_DIGITS$}", Self::next_id(&data, &Self::work_dir_of(&data)))
     }
 
-    /// Use up the next order ID: create its folder in the work folder and
-    /// return (id, raw path).
-    pub fn new_order(&self) -> Result<(String, PathBuf), String> {
+    /// Create the order folder in the work folder and return (id, raw
+    /// path): `custom` (from [`custom_order`]) as given, with `-2`, `-3`, ...
+    /// when taken; else, or when `custom` is the next ID itself (the page
+    /// prefills it), the next ID, used up.
+    pub fn new_order(&self, custom: Option<&str>) -> Result<(String, PathBuf), String> {
         let stamp = chrono::Local::now().format("%Y-%m-%d-%H-%M");
         let _g = self.guard();
         let mut data = self.load();
         let base = Self::work_dir_of(&data);
         std::fs::create_dir_all(&base).map_err(io)?;
-        let n = Self::next_id(&data, &base);
+        let next = Self::next_id(&data, &base);
+        if let Some(name) = custom.filter(|&c| c != format!("{next:0ID_DIGITS$}")) {
+            for k in 1u32.. {
+                let order = if k == 1 { name.to_string() } else { format!("{name}-{k}") };
+                let folder = base.join(&order);
+                match std::fs::create_dir(&folder) {
+                    Ok(()) => return Ok((order, folder.join(format!("{stamp}-scan.raw")))),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => return Err(io(e)),
+                }
+            }
+        }
+        let n = next;
         let order = format!("{n:0ID_DIGITS$}");
         let folder = base.join(&order);
         std::fs::create_dir(&folder).map_err(io)?;
@@ -157,7 +206,7 @@ mod tests {
         s.set_work_dir(&work).unwrap();
         assert_eq!(s.work_dir(), work);
         assert_eq!(s.next_order(), "000008");
-        let (id, raw) = s.new_order().unwrap();
+        let (id, raw) = s.new_order(None).unwrap();
         assert_eq!(id, "000008");
         assert_eq!(raw.parent().unwrap(), work.join("000008"));
         assert!(raw.file_name().unwrap().to_string_lossy().ends_with("-scan.raw"));
@@ -167,6 +216,45 @@ mod tests {
         s.set_setting("next_order", Value::from(40)).unwrap();
         assert_eq!(s.next_order(), "000040");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn custom_orders_name_the_folder_and_leave_the_counter() {
+        let d = temp("custom");
+        let s = Settings::new(d.join("settings.json"));
+        let work = d.join("work");
+        s.set_work_dir(&work).unwrap();
+        assert_eq!(s.next_order(), "000001");
+        // the prefilled next number, sent back unedited, uses the counter
+        assert_eq!(s.new_order(Some("000001")).unwrap().0, "000001");
+        assert_eq!(s.next_order(), "000002");
+        let (id, raw) = s.new_order(Some("LAB 4471-A")).unwrap();
+        assert_eq!(id, "LAB 4471-A");
+        assert_eq!(raw.parent().unwrap(), work.join("LAB 4471-A"));
+        // the same sticker again (a second strip): its own folder
+        assert_eq!(s.new_order(Some("LAB 4471-A")).unwrap().0, "LAB 4471-A-2");
+        assert_eq!(s.new_order(Some("LAB 4471-A")).unwrap().0, "LAB 4471-A-3");
+        // a long numeric sticker does not move the counter; a 6-digit one does
+        s.new_order(Some("123456789")).unwrap();
+        assert_eq!(s.next_order(), "000002");
+        assert_eq!(s.new_order(None).unwrap().0, "000002");
+        s.new_order(Some("000050")).unwrap();
+        assert_eq!(s.next_order(), "000051");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn custom_order_names() {
+        assert_eq!(custom_order("  "), Ok(None));
+        assert_eq!(custom_order(" A-12_3.4 "), Ok(Some("A-12_3.4".into())));
+        assert_eq!(custom_order("Pedido 7"), Ok(Some("Pedido 7".into())));
+        assert_eq!(custom_order("CONTACT"), Ok(Some("CONTACT".into())));
+        assert_eq!(custom_order("COM"), Ok(Some("COM".into())));
+        for bad in ["../x", "a/b", "a\\b", "c:d", ".hidden", "trail.", "a*b", "a?b", "<a>", "a|b", "a\"b", "con", "NUL.txt", "com1", "Lpt9"] {
+            assert!(custom_order(bad).is_err(), "{bad}");
+        }
+        assert!(custom_order(&"9".repeat(65)).is_err());
+        assert!(custom_order(&"9".repeat(64)).is_ok());
     }
 
     #[test]
