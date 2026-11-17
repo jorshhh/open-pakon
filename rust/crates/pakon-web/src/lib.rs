@@ -45,6 +45,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use axum::body::Bytes;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::handler::HandlerWithoutStateExt;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Map, Value};
@@ -224,8 +225,24 @@ pub(crate) fn missing(field: &str) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"detail": format!("field required: {field}")}))).into_response()
 }
 
+/// The page in a checkout where it is not built yet (web/, `npm run build`).
+async fn page_not_built() -> Response {
+    let body = "<!doctype html><meta charset=utf-8><title>Pakon</title><body style=\"font:16px/1.5 system-ui;padding:40px\">\
+                <h1>The page is not built</h1><p>In a checkout, build it once: <code>cd web &amp;&amp; npm ci &amp;&amp; npm run build</code>, \
+                then reload. <code>npm run dev</code> serves it with hot reload.</p>";
+    (StatusCode::SERVICE_UNAVAILABLE, axum::response::Html(body)).into_response()
+}
+
 pub fn router(app: Arc<App>) -> Router {
     let static_dir = app.paths.static_dir();
+    // Checked per request, so building the page while the service runs is
+    // picked up at the next reload.
+    let dir = static_dir.clone();
+    let missing = move || {
+        let built = dir.join("index.html").is_file();
+        async move { if built { StatusCode::NOT_FOUND.into_response() } else { page_not_built().await } }
+    };
+    let files = tower_http::services::ServeDir::new(static_dir).fallback(missing.into_service());
     Router::new()
         .route("/api/status", get(files::api_status))
         .route("/api/firmware", post(scanner::api_firmware))
@@ -252,7 +269,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/telemetry/consent", post(files::api_telemetry_consent))
         .route("/api/telemetry/page", post(files::api_telemetry_page))
         .route("/api/telemetry/error", post(files::api_telemetry_error))
-        .fallback_service(tower_http::services::ServeDir::new(static_dir))
+        .fallback_service(files)
         .with_state(app)
 }
 

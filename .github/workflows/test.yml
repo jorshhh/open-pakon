@@ -1,4 +1,5 @@
-# The Rust workspace's tests on every pull request. Ubuntu 22.04, as the
+# The Rust workspace's tests and the page's type check and build on every
+# pull request. Ubuntu 22.04, as the
 # Linux build (packaging/linux/Dockerfile), with the same toolchain.
 name: test
 
@@ -36,5 +37,32 @@ jobs:
         with:
           workspaces: rust
 
+      # the built page, so pakon-web's route test checks it is served
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Page
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
+
       - name: Tests
         run: cargo test --workspace --exclude pakon-app --locked
+
+  page:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Type check and build
+        run: npm run build
