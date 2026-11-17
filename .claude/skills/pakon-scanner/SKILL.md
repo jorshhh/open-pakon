@@ -76,7 +76,8 @@ as test fixtures: generated command streams must match them byte for byte.
 
 ## Build & test
 
-Deps: rustup (stable), CMake and libclang (Unicorn is built from source);
+Deps: rustup (stable), CMake and libclang (Unicorn is built from source),
+Node.js 20.19+ or 22.12+ for the page;
 on Linux also `libgtk-3-dev libwebkit2gtk-4.1-dev`. No libusb, no Python.
 
 ```sh
@@ -85,6 +86,11 @@ cargo run --release -p pakon-app            # the app in its window
 cargo run --release -p pakon-web            # the service alone, http://127.0.0.1:8000 (--host, --port)
 cargo build --release -p pakon-cli          # rust/target/release/pakon_probe, pakon_replay
 ```
+
+The page is `web/` (Vue 3 + TypeScript + Tailwind 4, Vite): `cd web && npm ci
+&& npm run build` builds it into `web/static/` (not in git) before the app
+can show it; `npm run dev` gives hot reload against a running `pakon_web`.
+The macOS window is WKWebView: no `prompt()`/`alert()`/`confirm()`.
 
 `pakon_probe` / `pakon_replay` take the C tools' flags. Not ported (C tools at
 git tag `python-final`): `--read-params`, `--params-out`, `--calib-probe`,

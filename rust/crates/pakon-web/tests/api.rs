@@ -139,14 +139,22 @@ async fn routes_without_a_scanner() {
     let (_, v) = call(&r, "POST", "/api/telemetry/page", Some(json!({"page": "scan"}))).await;
     assert_eq!(v, json!({"ok": true}));
 
-    // the page
+    // the page: built (web/, npm run build; CI builds it first), or how to
+    // build it
     let (s, v) = call(&r, "GET", "/", None).await;
-    assert_eq!(s, StatusCode::OK);
-    assert!(v.as_str().unwrap().contains("js/main.js"));
-    // and its modules, beside it
-    let (s, v) = call(&r, "GET", "/js/status.js", None).await;
-    assert_eq!(s, StatusCode::OK);
-    assert!(v.as_str().unwrap().contains("/api/status"));
+    let html = v.as_str().unwrap().to_string();
+    if repo().join("web/static/index.html").is_file() {
+        assert_eq!(s, StatusCode::OK);
+        assert!(html.contains(r#"id="app""#));
+        // and its script, beside it
+        let script = html.split(r#"src="./"#).nth(1).and_then(|t| t.split('"').next()).expect("a script in the page");
+        let (s, v) = call(&r, "GET", &format!("/{script}"), None).await;
+        assert_eq!(s, StatusCode::OK);
+        assert!(v.as_str().unwrap().contains("/api/status"));
+    } else {
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(html.contains("npm run build"));
+    }
 
     let _ = std::fs::remove_dir_all(&work);
     let _ = std::fs::remove_dir_all(&data);

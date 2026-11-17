@@ -10,6 +10,7 @@
 # Needs rustup with the aarch64-apple-darwin target (and x86_64-apple-darwin
 # for the universal app), cmake (Unicorn is built from source by its crate)
 # and Python 3 with Pillow for the icon, the first time only.
+# Node.js 20.19+ or 22.12+ (npm) builds the page (packaging/build-web.sh).
 #
 # In-place updates (Sparkle, sparkle.sh): with the EdDSA public key in
 # sparkle-public-key (or PAKON_SPARKLE_PUBLIC_KEY) the app carries
@@ -112,6 +113,8 @@ if [ "$ARCHS" = "arm64 x86_64" ]; then
         "$REPO/rust/target/x86_64-apple-darwin/release/pakon_app" -output "$BIN.universal"
 fi
 cp "$REPO/rust/target/aarch64-apple-darwin/release/pakon_app" "$BIN.arm64"
+
+"$REPO/packaging/build-web.sh"
 
 # --- the bundle -----------------------------------------------------------------
 # Contents/Resources mirrors the repo layout the service reads (paths.rs

@@ -22,6 +22,7 @@
 # builds in Docker from the Dockerfile here, for PAKON_DEB_ARCH (default:
 # this machine's; the other one runs emulated, much slower), with
 # PAKON_UBUNTU_MIRROR in place of archive.ubuntu.com if that is out of reach.
+# Node.js 20.19+ or 22.12+ (npm) builds the page, outside Docker (packaging/build-web.sh).
 # Output: dist/linux/pakon_<arch>.deb
 set -euo pipefail
 
@@ -52,13 +53,15 @@ if ! native; then
         arm64|aarch64) A=arm64 ;;
         *) echo "PAKON_DEB_ARCH must be amd64 or arm64" >&2; exit 1 ;;
     esac
+    # the page is the same everywhere: build it here, where Node is
+    "$REPO/packaging/build-web.sh"
     step "building in Docker (linux/$A)"
     docker build -q --platform "linux/$A" --build-arg UBUNTU_MIRROR="${PAKON_UBUNTU_MIRROR:-}" \
         -t "pakon-deb-build:$A" "$HERE" >/dev/null
     mkdir -p "$OUT/.cache/cargo-registry-$A"
     exec docker run --rm --platform "linux/$A" -u "$(id -u):$(id -g)" -e HOME=/tmp \
         -e PAKON_RYBBIT_URL -e PAKON_RYBBIT_SITE_ID -e PAKON_RYBBIT_DOMAIN \
-        -e PAKON_DEB_ARCH="$A" \
+        -e PAKON_DEB_ARCH="$A" -e PAKON_WEB_BUILT=1 \
         -v "$OUT/.cache/cargo-registry-$A:/usr/local/cargo/registry" \
         -v "$REPO:$REPO" -w "$REPO" "pakon-deb-build:$A" "$HERE/build-deb.sh" "$VERSION"
 fi
@@ -74,6 +77,8 @@ step "pakon_app ($ARCH)"
 (cd "$REPO/rust" && CARGO_TARGET_DIR="$TARGET" cargo build --release --locked -p pakon-app)
 install -m755 "$TARGET/release/pakon_app" "$APPDIR/pakon"
 strip "$APPDIR/pakon"
+
+"$REPO/packaging/build-web.sh"
 
 step "app files"
 # /opt/pakon mirrors the repo layout the service reads (paths.rs find_root):

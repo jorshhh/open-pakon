@@ -48,13 +48,16 @@ pub struct Paths {
     pub settings: PathBuf,
 }
 
+/// An install holds the built page (`web/static/index.html`); a checkout
+/// holds its sources (`web/package.json`) whether or not it is built yet.
 fn is_root(dir: &Path) -> bool {
-    dir.join("web").join("static").join("index.html").is_file()
+    let web = dir.join("web");
+    web.join("static").join("index.html").is_file() || web.join("package.json").is_file()
 }
 
 /// The root: `PAKON_ROOT`; else the first folder above the executable or the
-/// working directory that holds `web/static/index.html` (in a Mac bundle,
-/// `Contents/Resources` beside `Contents/MacOS`).
+/// working directory that holds the page, built or as sources (in a Mac
+/// bundle, `Contents/Resources` beside `Contents/MacOS`).
 pub fn find_root() -> Option<PathBuf> {
     if let Some(r) = env("PAKON_ROOT") {
         return Some(PathBuf::from(r));

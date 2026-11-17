@@ -1,0 +1,94 @@
+/* Tailwind, the house tokens, and the few things utilities don't express
+   well: native controls, the film grain, the "i" tips, the strip's
+   scrollbar and sprocket holes. Everything else is utilities in the
+   components. */
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f4f1ea;      /* page */
+  --color-surface: #ffffff;
+  --color-surface-2: #f9f6f0;
+  --color-ink: #1a1918;        /* text, borders */
+  --color-muted: #666666;
+  --color-accent: #ffb500;
+  --color-ok: #059669;
+  --color-warn: #ea580c;
+  --color-danger: #e32636;
+  --color-tab: #9a968e;
+
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-display: 'Space Grotesk', sans-serif;
+
+  --shadow-hard: 4px 4px 0 0 var(--color-ink);
+  --shadow-hard-sm: 2px 2px 0 0 var(--color-ink);
+  --shadow-modal: 8px 8px 0 0 var(--color-danger);
+
+  --animate-blink: blink 1s steps(2) infinite;
+  @keyframes blink { 50% { opacity: 0; } }
+}
+
+@layer base {
+  /* the scrollbar comes and goes between spaces; keep its room so the
+     bar along the bottom does not shift sideways */
+  html { scrollbar-gutter: stable; }
+  body { @apply min-h-screen bg-paper px-6 pt-10 pb-28 font-sans text-ink; }
+  /* film grain */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+    opacity: 0.4; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+
+  select, input[type="text"] {
+    @apply border-2 border-ink bg-surface px-2 py-1.5 font-mono text-[0.88rem] text-ink;
+  }
+  select { @apply cursor-pointer pr-1.5; }
+  select:disabled { @apply cursor-not-allowed opacity-60; }
+
+  /* square checkboxes */
+  input[type="checkbox"] {
+    @apply m-0 size-5 shrink-0 cursor-pointer appearance-none border-2 border-ink bg-surface shadow-hard-sm;
+  }
+  input[type="checkbox"]:checked {
+    background: var(--color-ink);
+    box-shadow: inset 0 0 0 3px var(--color-accent), var(--shadow-hard-sm);
+  }
+  input[type="checkbox"]:focus-visible { @apply outline-2 outline-offset-2 outline-accent; }
+  input[type="checkbox"]:disabled { @apply cursor-not-allowed shadow-none; }
+
+  progress { @apply block h-3 w-full appearance-none border-2 border-ink bg-surface; }
+  progress::-webkit-progress-bar { background: var(--color-surface); }
+  progress::-webkit-progress-value { background: var(--color-accent); }
+  progress::-moz-progress-bar { background: var(--color-accent); }
+}
+
+@layer components {
+  /* The "i": its tip shows on hover or keyboard focus (InfoTip.vue). */
+  .tip::after {
+    content: attr(data-tip);
+    position: absolute; z-index: 40; bottom: calc(100% + 10px); left: -8px;
+    width: max-content; max-width: 280px; padding: 8px 10px;
+    background: var(--color-ink); color: var(--color-paper);
+    font: 500 0.8rem/1.45 var(--font-sans); text-align: left; text-transform: none;
+    white-space: normal; box-shadow: 3px 3px 0 0 var(--color-accent);
+    opacity: 0; pointer-events: none; transition: opacity 0.12s;
+  }
+  .tip.tip-left::after { left: auto; right: -8px; }
+  .tip.tip-below::after { bottom: auto; top: calc(100% + 10px); }
+  .tip:hover::after, .tip:focus-visible::after { opacity: 1; }
+
+  /* The film strip: a solid scrollbar (macOS's overlay one is a faint line
+     on the dark strip; the app is WebKit) and sprocket holes. */
+  .strip::-webkit-scrollbar { height: 16px; }
+  .strip::-webkit-scrollbar-track { background: #3a3836; border-top: 2px solid var(--color-ink); }
+  .strip::-webkit-scrollbar-thumb { background: #d9d4ca; border: 2px solid var(--color-ink); }
+  .strip::-webkit-scrollbar-thumb:hover { background: var(--color-surface); }
+  .strip::before, .strip::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 8px;
+    background-image: radial-gradient(circle at 6px 4px, transparent 3px, var(--color-paper) 3.5px);
+    background-size: 12px 8px; background-repeat: repeat-x;
+  }
+  .strip::before { top: 2px; }
+  .strip::after { bottom: 2px; }
+}

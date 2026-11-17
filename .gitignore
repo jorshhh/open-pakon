@@ -51,3 +51,7 @@ scratch/
 
 # local GitHub release download counter
 /downloads.sh
+
+# the page: built by Vite from web/src into web/static (npm run build)
+/web/node_modules/
+/web/static/

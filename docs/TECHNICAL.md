@@ -9,7 +9,7 @@ works on which platform and model, and what is still open, is in
 
 Everything is Rust, in the workspace under `rust/`. One native binary per
 platform runs the scanner driver, the image pipeline and a web service, and
-shows the page (`web/static/index.html`) in its own window. Any machine on
+shows the page (`web/`, built into `web/static/`) in its own window. Any machine on
 the local network can use the same service from a browser. The earlier
 Python app and C tools are kept at the git tag `python-final`.
 
@@ -51,8 +51,35 @@ Rules the layering enforces:
   client that disconnects does not stop a job: a scan always runs to its
   teardown.
 
-The page is unchanged HTML/JS (`fetch` plus server-sent events) served from
-`web/static/`.
+## The page
+
+`web/` is the page: Vue 3 and TypeScript, styled with Tailwind 4, built by
+Vite into `web/static/` (not in git), which the service serves and every
+app carries. It talks to the service only through `/api/*`: `fetch` plus
+server-sent events for long jobs.
+
+| Path | What |
+|---|---|
+| `web/src/state.ts` | Shared state and the actions that cross spaces (a scan opens Process, processing opens Frames, export fills Export); the status poll |
+| `web/src/api.ts` | JSON posts, the event-stream reader, browser storage, reports |
+| `web/src/components/` | One component per space (`HomeSpace`, `ScanCard`, `FramesSpace`, …) and the shell (bar, banner, dialogs) |
+| `web/src/ui/` | The house pieces: `Btn`, `Card`, `Modal`, `InfoTip`, `ProgressBar`, `LogBox` |
+| `web/src/main.css` | Tailwind, the colour and font tokens (`@theme`), native controls, tooltips, the film strip |
+
+The app window is WebKit on macOS (wry's WKWebView), WebView2 on Windows and
+WebKitGTK on Linux; WKWebView has no `alert`/`confirm`/`prompt`, so the page
+uses its own dialog (`ask.ts`).
+
+```sh
+cd web
+npm ci                # once, and after package-lock.json changes
+npm run build         # type check, then build into web/static
+npm run dev           # hot reload; /api goes to pakon_web on :8000 (PAKON_API to change)
+```
+
+Node.js 20.19+ or 22.12+ is needed to build it; the packaging scripts run
+`packaging/build-web.sh`. A checkout that is not built yet still runs: the
+service answers every page with how to build it.
 
 ## Building and testing
 
@@ -60,6 +87,7 @@ The page is unchanged HTML/JS (`fetch` plus server-sent events) served from
 
 Stable Rust from [rustup](https://rustup.rs), CMake and libclang: the
 `unicorn-engine` crate builds Unicorn from source and links it in. No libusb.
+Node.js 20.19+ or 22.12+ for the page (see [The page](#the-page)).
 
 | OS | Install |
 |---|---|
@@ -119,7 +147,8 @@ cargo run --release -p pakon-web -- --host 127.0.0.1 --port 8000   # this machin
 
 Both find the page, `oem/`, `profiles/`, `firmware/` and `resources/` by
 walking up from the executable or the working directory to the first folder
-holding `web/static/index.html` (in a Mac bundle, `Contents/Resources`);
+holding the page, built (`web/static/index.html`) or as sources
+(`web/package.json`) (in a Mac bundle, `Contents/Resources`);
 `PAKON_ROOT` names it instead. Open `http://<host>:8000` for the service
 alone. Ctrl-C ends a running scan as at the end of the roll and waits for
 the teardown before exiting. A build from a checkout never sends crash
@@ -236,7 +265,7 @@ missing required field answers 422.
 
 Scans, eject and the firmware load call `pakon-scan` / `pakon-usb` in
 process and stream the same progress lines `pakon_replay` prints. Any other
-path is a file from `web/static/`.
+path is a file from `web/static/`, the built page.
 
 ## Environment variables
 

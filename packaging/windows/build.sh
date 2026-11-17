@@ -17,7 +17,8 @@
 #
 # Needs: rustup with the x86_64-pc-windows-gnu target, gcc-mingw-w64-x86-64
 # g++-mingw-w64-x86-64 cmake libclang-dev nsis python3-venv; without them it builds in
-# Docker (Dockerfile here). Output: dist/windows/Pakon-Setup.exe
+# Docker (Dockerfile here). Node.js 20.19+ or 22.12+ (npm) builds the page, outside
+# Docker (packaging/build-web.sh). Output: dist/windows/Pakon-Setup.exe
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -42,11 +43,13 @@ if ! command -v "$CC" >/dev/null || ! command -v makensis >/dev/null \
         || ! rustup target list --installed 2>/dev/null | grep -qx "$TRIPLE"; then
     command -v docker >/dev/null || { echo "needs MinGW, NSIS and rustup's $TRIPLE target" \
         "(see above), or Docker" >&2; exit 1; }
+    # the page is the same everywhere: build it here, where Node is
+    "$REPO/packaging/build-web.sh"
     step "no MinGW, NSIS or $TRIPLE here: building in Docker"
     docker build -q -t pakon-win-build "$HERE" >/dev/null
     mkdir -p "$CACHE/cargo-registry"
     exec docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
-        -e PAKON_RYBBIT_URL -e PAKON_RYBBIT_SITE_ID -e PAKON_RYBBIT_DOMAIN \
+        -e PAKON_RYBBIT_URL -e PAKON_RYBBIT_SITE_ID -e PAKON_RYBBIT_DOMAIN -e PAKON_WEB_BUILT=1 \
         -v "$CACHE/cargo-registry:/usr/local/cargo/registry" \
         -v "$REPO:$REPO" -w "$REPO" pakon-win-build "$HERE/build.sh" "$VERSION"
 fi
@@ -100,6 +103,8 @@ cp "$LOADER" "$APP/"
 BAD="$(x86_64-w64-mingw32-objdump -p "$APP/Pakon.exe" | sed -n 's/^\s*DLL Name: //p' \
     | grep -v -i -E '^(kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|ws2_32|bcrypt|bcryptprimitives|ntdll|userenv|winusb|setupapi|cfgmgr32|comctl32|combase|rpcrt4|uxtheme|dwmapi|shlwapi|version|imm32|crypt32|secur32|ncrypt|iphlpapi|winmm|propsys|uiautomationcore|api-ms-win-[a-z0-9-]*|msvcrt|ucrtbase|webview2loader)\.dll$' || true)"
 [ -z "$BAD" ] || { echo "Pakon.exe needs DLLs Windows does not have:" $BAD >&2; exit 1; }
+
+"$REPO/packaging/build-web.sh"
 
 step "app files"
 # the install folder mirrors the repo layout the service reads (paths.rs
