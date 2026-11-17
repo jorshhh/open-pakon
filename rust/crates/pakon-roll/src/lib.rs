@@ -421,8 +421,10 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     let rgb = r.rgb;
     let (rows, cols, _) = rgb.dim();
     // On slide film dust removal smoothed the grain over most of the frame
-    // (2026-11-02), so slides get none.
-    let ice_plane = if film == FilmKind::Slide { None } else { r.ir.zip(r.flat) };
+    // (2026-11-02), so slides get none. Silver B&W gets none either: the
+    // silver image blocks infrared as dust does, so a B&W raw scanned with
+    // the IR channel (or processed as B&W afterwards) came out wrecked.
+    let ice_plane = if matches!(film, FilmKind::Slide | FilmKind::Bw) { None } else { r.ir.zip(r.flat) };
 
     emit(progress, "Measuring film base", 0.62);
     let base = balance::dmin(rgb.view());
