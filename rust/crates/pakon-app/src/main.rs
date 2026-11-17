@@ -259,13 +259,19 @@ fn start_service(root: PathBuf, proxy: EventLoopProxy<UserEvent>) -> Result<(u16
     app.set_focus(move || {
         let _ = focus.send_event(UserEvent::Focus);
     });
-    let picker = std::sync::Mutex::new(proxy.clone());
-    app.set_picker(move |kind, start| {
-        let (tx, rx) = mpsc::channel();
-        let sent = picker.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Pick(kind, start, tx));
-        // the window is gone (quitting): as cancelled
-        sent.ok().and_then(|()| rx.recv().ok()).flatten()
-    });
+    // No system dialog on Linux: rfd runs its GTK dialog on a GTK of its
+    // own on another thread while the window's GTK owns the main thread,
+    // and the app hung at "Open a raw". The page's own folder browser
+    // (/api/browse) stands in there, as in a plain browser.
+    if !cfg!(target_os = "linux") {
+        let picker = std::sync::Mutex::new(proxy.clone());
+        app.set_picker(move |kind, start| {
+            let (tx, rx) = mpsc::channel();
+            let sent = picker.lock().unwrap_or_else(|e| e.into_inner()).send_event(UserEvent::Pick(kind, start, tx));
+            // the window is gone (quitting): as cancelled
+            sent.ok().and_then(|()| rx.recv().ok()).flatten()
+        });
+    }
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
     let served = app.clone();
     std::thread::spawn(move || {
