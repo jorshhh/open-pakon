@@ -48,6 +48,11 @@ pub const REFINE_ITERS: u32 = 32;
 /// line to line at a fixed duty, wider than the 64-count window and the
 /// one-tick step, so the strict rule chased the noise for all 32 passes.
 pub const REFINE_TOL: f64 = 0.025;
+/// Highest peak the refine tolerance accepts. The A/D tops out at 65534, so
+/// a peak near it has columns clipped in every line; a bright table taken
+/// there is flat across those columns and leaves their fixed pattern in the
+/// scan as streaks. 2.5% over the target would reach 65567, past the clip.
+pub const NEAR_MAX: u32 = 65000;
 
 /// Line origin (start of an RGB block, `0 <= origin < 4 * line_px`): the
 /// offset maximising, over the mean of up to 64 lines, the contrast between
@@ -435,11 +440,15 @@ pub fn duty_next(ch: usize, duty: u16, peak: u32, period: u16) -> u16 {
 
 /// Settled: peak in the refine window or within [`REFINE_TOL`] of the
 /// target, or the refine step would move the duty by at most one tick (at
-/// small duties one tick is wider than the window). A clipped peak (65535)
-/// hides how far over it is, so it never counts as near.
+/// small duties one tick is wider than the window). A peak over
+/// [`NEAR_MAX`] is (partly) clipped and hides how far over it is, so it never
+/// settles.
 pub fn duty_settled(ch: usize, duty: u16, peak: u32, period: u16) -> bool {
+    if peak > NEAR_MAX {
+        return false;
+    }
     let target = if ch == IR { 39968.0 } else { 63968.0 };
-    let near = peak < 0xFFFF && (peak as f64 - target).abs() <= target * REFINE_TOL;
+    let near = (peak as f64 - target).abs() <= target * REFINE_TOL;
     if peak_ok(ch, peak) || near {
         return true;
     }
