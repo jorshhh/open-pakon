@@ -270,6 +270,14 @@ fn refine_tolerates_peak_noise() {
     assert!(lc::duty_settled(IR, 547, 39885, period));
     assert!(!lc::duty_settled(R, 462, 62200, period));
     assert!(!lc::duty_settled(R, 462, 65535, period), "clipped");
+    // The A/D clips at 65534 (pakon.log, F-135+ 62158, 2026-11-16/17: B&W
+    // B and a C-41 refresh's R/G/B settled there and streaked the scans).
+    for peak in [65534, 65138, 65001] {
+        assert!(!lc::duty_settled(B, 673, peak, period), "B {peak}");
+        assert!(!lc::duty_settled(R, 392, peak, period), "R {peak}");
+    }
+    assert!(!lc::duty_settled(B, 40, 65534, period), "one-tick rule must not settle a clip");
+    assert!(lc::duty_settled(R, 462, 64900, period));
     assert!(!lc::duty_settled(IR, 547, 38800, period));
 }
 
