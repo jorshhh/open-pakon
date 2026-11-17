@@ -26,6 +26,7 @@
 //! POST /api/telemetry/consent       the user's crash-report / usage-statistics choice
 //! POST /api/telemetry/page|error    a page opened / a page error
 
+mod calreport;
 pub mod eeprom;
 mod files;
 mod jobs;

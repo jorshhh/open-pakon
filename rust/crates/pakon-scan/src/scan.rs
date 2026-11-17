@@ -280,8 +280,8 @@ fn scan_body(link: &mut dyn Link, s: &crate::session::Session, eeprom_dir: &Path
     let (b, a) = (s.eeprom.base(eb), s.eeprom.adjust(eb));
     let speed = if s.mode.ir { setup::motor_speed(b.motor_speed_ir, a.ir, s.model()) } else { setup::motor_speed(b.motor_speed, a.normal, s.model()) };
     out(&format!(
-        "calibrated: offsets {}/{}/{}, currents {}/{}/{}/{}, scan duties {}/{}/{}/{}, motor speed {speed}",
-        res.off[0], res.off[1], res.off[2], res.cur[0], res.cur[1], res.cur[2], res.cur[3], scan_duty[0], scan_duty[1], scan_duty[2], scan_duty[3]
+        "calibrated: gains {}/{}/{}, offsets {}/{}/{}, currents {}/{}/{}/{}, scan duties {}/{}/{}/{}, motor speed {speed}",
+        res.gain[0], res.gain[1], res.gain[2], res.off[0], res.off[1], res.off[2], res.cur[0], res.cur[1], res.cur[2], res.cur[3], scan_duty[0], scan_duty[1], scan_duty[2], scan_duty[3]
     ));
     let mut img = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(image).map_err(|e| {
         out(&format!("cannot open image '{}'", image.display()));

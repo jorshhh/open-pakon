@@ -14,6 +14,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 
+use crate::calreport::CalReport;
 use crate::telemetry::Telemetry;
 
 pub type Tx = UnboundedSender<Value>;
@@ -49,6 +50,24 @@ struct Report {
     /// The last log lines: the scanner's own log is the best clue to a
     /// failure on someone else's unit.
     tail: VecDeque<String>,
+    /// The scan's light calibration, from every scanner line (shown or not).
+    cal: CalReport,
+}
+
+impl Report {
+    /// The scan's light calibration (`calibration`), however the stream
+    /// ended, once.
+    fn send_calibration(&mut self) {
+        if let Some(mut p) = self.cal.props() {
+            for k in ["film", "base", "model"] {
+                if let Some(v) = self.props.get(k) {
+                    p.insert(k.into(), v.clone());
+                }
+            }
+            self.telemetry.event("calibration", self.page, Value::Object(p));
+            self.cal = CalReport::default();
+        }
+    }
 }
 
 /// Sends a stream's events, reporting how it ended: `<name>_done` (usage)
@@ -61,7 +80,14 @@ pub struct Emitter {
 impl Emitter {
     pub fn reported(tx: Tx, telemetry: Arc<Telemetry>, name: &'static str, page: &'static str, props: Value) -> Emitter {
         let props = props.as_object().cloned().unwrap_or_default();
-        Emitter { tx, report: Some(Report { telemetry, name, page, props, t0: Instant::now(), tail: VecDeque::new() }) }
+        Emitter { tx, report: Some(Report { telemetry, name, page, props, t0: Instant::now(), tail: VecDeque::new(), cal: CalReport::default() }) }
+    }
+
+    /// A scanner log line, shown on the page or not.
+    pub fn observe(&mut self, line: &str) {
+        if let Some(r) = &mut self.report {
+            r.cal.line(line);
+        }
     }
 
     pub fn emit(&mut self, ev: Value) {
@@ -80,6 +106,7 @@ impl Emitter {
                     }
                 }
                 Some("done") => {
+                    r.send_calibration();
                     let mut props = r.props.clone();
                     props.insert("seconds".into(), json!(r.t0.elapsed().as_secs_f64().round() as u64));
                     if let Some(mb) = ev.get("mb") {
@@ -88,6 +115,7 @@ impl Emitter {
                     r.telemetry.event(&format!("{}_done", r.name), r.page, Value::Object(props));
                 }
                 Some("error") => {
+                    r.send_calibration();
                     let kind = format!("{}{}Failed", r.name[..1].to_uppercase(), &r.name[1..]);
                     let tail = r.tail.iter().map(String::as_str).collect::<Vec<_>>().join("\n");
                     r.telemetry.error(&kind, message, &tail, r.page);

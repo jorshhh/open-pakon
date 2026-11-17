@@ -23,7 +23,7 @@ const usage = ref(true);
       <summary class="cursor-pointer font-semibold text-ink">What's sent?</summary>
       <ul class="mt-1.5 ml-4 list-disc">
         <li>Crash reports: the error, and for a failed scan the scanner's last log lines.</li>
-        <li>Usage: pages opened, how long scans, processing and exports take, film type, scan resolution, frame count, whether dust removal was on.</li>
+        <li>Usage: pages opened, how long scans, processing and exports take, film type, scan resolution, frame count, whether dust removal was on, the scanner's light calibration.</li>
         <li>Never: photos, file or folder names, your scanner's serial number. Reports carry a random ID.</li>
       </ul>
     </details>
