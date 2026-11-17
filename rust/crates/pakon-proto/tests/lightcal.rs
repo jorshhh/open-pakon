@@ -281,6 +281,45 @@ fn refine_tolerates_peak_noise() {
     assert!(!lc::duty_settled(IR, 547, 38800, period));
 }
 
+/// The refine loop of `calib.rs` against a channel whose peak is `gain *
+/// duty`, clipped at 65534: passes until two in a row settle.
+fn refine_passes(ch: usize, duty: u16, gain: f64, period: u16) -> Option<u32> {
+    let (mut duty, mut converged) = (duty, 0);
+    for it in 1..=lc::REFINE_ITERS {
+        let peak = (gain * duty as f64).min(65534.0) as u32;
+        if lc::duty_settled(ch, duty, peak, period) {
+            converged += 1;
+            if converged == 2 {
+                return Some(it);
+            }
+        } else {
+            converged = 0;
+            duty = lc::duty_next(ch, duty, peak, period);
+        }
+    }
+    None
+}
+
+/// A clipped peak halves the duty, so even a far overshoot settles in a
+/// few passes (pakon.log, F-135+ 62158: a C-41 refresh 2.2x over; serial
+/// 138: B&W B 1.8x over took 26 passes at the old 2.4% a pass).
+#[test]
+fn refine_recovers_from_clipping() {
+    let period = 599;
+    assert_eq!(lc::duty_next(R, 392, 65534, period), 196);
+    assert_eq!(lc::duty_next(B, 546, 65533, period), 273);
+    assert_eq!(lc::duty_next(B, 1, 65534, period), 1);
+    // over the settle limit but a real reading: the proportional step
+    assert_eq!(lc::duty_next(G, 933, 65027, 2468), 918);
+    for over in [1.03, 1.8, 2.2, 4.0, 30.0] {
+        for (ch, duty, target) in [(R, 392u16, 63968.0), (B, 110, 63968.0), (IR, 587, 39968.0)] {
+            let gain = over * target / duty as f64;
+            let n = refine_passes(ch, duty, gain, period).unwrap_or_else(|| panic!("ch {ch} {over}x did not settle"));
+            assert!(n <= 9, "ch {ch} {over}x: {n} passes");
+        }
+    }
+}
+
 #[test]
 fn column_sums() {
     // Pixel p of line l: R = 100 + p, G = 200 + l, B = 300, IR = 50 + p.
