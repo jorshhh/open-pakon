@@ -748,7 +748,8 @@ roll DICE changed 0.00–0.01% of pixels where the native port changed
 
 **Slides get no dust removal**: on slide film both DICE and the native port
 smoothed the grain over most of the frame, and DICE's negative flag
-(dynamic `+0x14`) changed nothing.
+(dynamic `+0x14`) changed nothing. The investigation so far, and what is
+left to do, is in [SLIDE_ICE.md](SLIDE_ICE.md).
 
 ### Native port [C]
 
