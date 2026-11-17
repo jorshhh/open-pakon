@@ -611,7 +611,7 @@ each write followed by its busy poll), matching `resources/scan.pakscan`:
 02 05 SCN 02 a5 <speed>             motor speed
 04 03 SCN 00 a0                     motor forward
 02 06 SCN 03 82 00 <reg0 | 1>       acquire on
-02 06 LOW 03 91 <trigger> 01        scan-line trigger
+02 06 LOW 03 91 <trigger> 01        DX start
 ```
 
 The film is fed once the motor runs (the OEM shows the right front-panel LED
@@ -619,8 +619,15 @@ solid green). Motor speed = EEPROM `MotorSpeed(_Ir) × MotorAdjust(_Ir) /
 1000`, clamped (400–9500 F-135, 1000–32766 F-135+); see
 [EEPROM.md](EEPROM.md#what-the-values-are-used-for).
 
-**Never re-arm (ResetFifos / LOW `0x8A`) into a live scan stream**: it
-wedges the bus. On an empty read window, poll the host instead.
+**Never re-arm (ResetFifos / LOW `0x8A`) during the film pass**: on an
+F-135 it wedged the bus until a power cycle. On an empty read window, poll
+the host instead. During calibration (motor stopped) the OEM re-arms with
+acquire on before every measurement, 128 times per session, without harm
+[C, serial 16402 captures].
+
+Acquire, not `0x91`, starts the image data: it begins 3 to 6 ms after the
+acquire bit is set, and `0x91` sent with acquire off (at configure) starts
+nothing [C, captures]. LOW `0x91` is the DX start (`FN_bDrvDxStart`).
 
 **Strip mode** (several cut strips in one scan; TLX `ScanPictures` with
 `STRIP_MODE_FULL_ROLL` 0 or `MULTI_STRIPS_4/5/6_FRAMES` 4/5/6) [C,
@@ -669,9 +676,9 @@ empty ~5 s read windows after film; no film within ~2 min aborts.
 02 06 SCN 03 82 00 <reg0 & ~1>      acquire off (FN_iScanStrips, before this)
 02 04 LOW 01 80 00                  LEDs off
 02 04 10 01 84 02 ; 04 03 LOW 00 8a ResetFifos
-04 03 LOW 00 92                     end acquisition / close the DX window
+04 03 LOW 00 92                     DX stop / close the DX window
 (wait 20 ms)
-04 03 SCN 00 a2                     release the drive
+04 03 SCN 00 a2                     motor stop
 ```
 
 **Stopping the motor:** `a2` stops the motor only while the acquire bit is
@@ -778,7 +785,7 @@ Operational rules that follow from the protocol:
 
 - Clear the acquire bit before `a2`, and always send the teardown after a
   scan; after a truncated scan, power-cycle.
-- Never re-arm the FIFOs (LOW `0x8A`) into a live scan stream.
+- Never re-arm the FIFOs (LOW `0x8A`) during the film pass.
 - Keep the event service running while acquiring.
 - FPGA writes accept only banks `0x82` and `0x84`.
 - Keep motor speeds inside the board's range; never run F-135+ scripts

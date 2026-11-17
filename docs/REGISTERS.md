@@ -16,7 +16,7 @@ seen in captures or measured on hardware; **[INF]** inferred. Entries are
 |---|---|---|---|
 | host | `0x10` | `0x10` | the FX2 bridge: open, FIFO reset, event flag |
 | SCN ("scanner") | `0x24` | `0x44` | FPGA register banks `0x82`/`0x84` (CCD), film motor |
-| LOW ("lower") | `0x20` | `0x40` | LEDs, lamp temperatures and TEC, DX sensors, FIFO reset, `0x91` scan trigger |
+| LOW ("lower") | `0x20` | `0x40` | LEDs, lamp temperatures and TEC, DX sensors, FIFO reset, `0x91`/`0x92` DX start and stop |
 | bootloaders | `0x26` / `0x22` | `0x46` / `0x42` | **never address** (presence probe only) |
 
 The addresses come from the presence probes (see
@@ -139,7 +139,7 @@ only the integration times [C].
 | 8 | 2000 | 1500 px | 2250 | no | 1 |
 | 4 | 1000 | 1000 px | 1500 | yes | 0 |
 
-Integration (bank `0x82` reg 6) and scan-line trigger (LOW `0x91`):
+Integration (bank `0x82` reg 6) and trigger (the LOW `0x91` value):
 
 | Model | Base | IR | Integration | Trigger | Status |
 |---|---|---|---|---|---|
@@ -229,9 +229,9 @@ absolute limits is inferred from their values. Measured on serial 3054: lamp
 | Cmd | Access | Meaning |
 |---|---|---|
 | `0x89` | write 1 | per-resolution flag: 1 at Base 8 (narrows the line to the 1500 px output), else 0 |
-| `0x8A` | command | **ResetFifos**, preceded by host `02 04 10 01 84 02`. Never during a live scan stream |
-| `0x91` | write 3 | scan-line trigger: u16 LE value + mode byte `01`; also resets the DX position counter. Sent at configure, at scan start, and before every strip after the first in strip mode (`FN_bDrvDxStart`) |
-| `0x92` | command | end acquisition; closes the DX decode window (teardown) |
+| `0x8A` | command | **ResetFifos**, preceded by host `02 04 10 01 84 02`. Never during the film pass (the OEM sends it during calibration with acquire on) |
+| `0x91` | write 3 | DX start: u16 LE trigger value + mode byte `01`. It does not start the image stream: acquire does; also resets the DX position counter. Sent at configure, at scan start, and before every strip after the first in strip mode (`FN_bDrvDxStart`) |
+| `0x92` | command | DX stop (`FN_bDrvDxStop`); closes the DX decode window (teardown). Image data has already stopped, about 1 ms after acquire off |
 | `0x90` | read 30 | DX sensor block: position, entry count, entries (layout in [PROTOCOL.md](PROTOCOL.md#dx-sensor-block-low-0x90)); read after each LOW event |
 | `0x93` | read 4 | the four DX detector levels: bytes 0–1 entry sensor, 2–3 exit sensor. Serial 3054: empty 190 / 216 / 224 / 202, film < 170 |
 | `0x94` | write | DX hardware setup (OEM service procedure only): do not send |
@@ -245,7 +245,7 @@ absolute limits is inferred from their values. Measured on serial 3054: lamp
 | `0xA5` | write 2 | motor speed, u16 LE |
 | `0xA0` | command | start forward |
 | `0xA1` | command | start reverse |
-| `0xA2` | command | release the drive; stops the motor only with bank `0x82` reg 0 bit 0 clear |
+| `0xA2` | command | motor stop (`bDriveMotorStop`); stops the motor only with bank `0x82` reg 0 bit 0 clear |
 
 Motor speed = `MotorSpeed(_Ir) × MotorAdjust(_Ir) / 1000` from the EEPROM
 (adjust clamped 900–1100), clamped to 400–9500 (F-135) or 1000–32766
@@ -307,5 +307,9 @@ differ from `TLB.dll`, the engine's meaning applies:
 | LOW `0x89` | EnableScan | per-resolution flag (Base 8) |
 | SCN `0xA5` | SetMotorCalibration | motor speed |
 | SCN `0xA1` | StopFilmDrive | start reverse |
+| SCN `0xA2` | DisengageFilmDrive | motor stop |
+| SCN `0x00` | ResetMotor | presence probe (reply `07 02 <addr> 00`) |
+| LOW `0x91` | SetScanLineParams | DX start |
+| LOW `0x92` | EndAcquisition | DX stop |
 | bank `0x82` reg 6 | height | integration / line period |
 | bank `0x82` reg 9 | brightness | status LEDs |

@@ -229,7 +229,7 @@ impl SetupState {
 /// One resolution / IR mode. See [`scan_mode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ScanMode {
-    /// LOW 0x91 scan-line trigger value.
+    /// Trigger value sent with LOW 0x91 (DX start).
     pub trigger: u16,
     /// Bank 0x82 reg 0 bit 0x100.
     pub ir: bool,
@@ -349,7 +349,7 @@ pub fn init(seq: &mut Seq, low: u8, scn: u8, led_period: u16) -> SetupState {
     seq.write_fpga(scn, BANK_AFE, 0x0, 0x0078);
     seq.write_fpga(scn, BANK_AFE, 0x1, 0x0080);
 
-    seq.command(scn, 0xA2); // release the motor drive
+    seq.command(scn, 0xA2); // motor stop
     seq.write_fpga(scn, BANK_CCD, 0x9, 0x0014); // status LEDs
     seq.write_fpga(scn, BANK_CCD, 0x9, 0x0017);
     st
@@ -397,15 +397,15 @@ pub fn configure(seq: &mut Seq, st: &mut SetupState, mode: &ScanMode) -> Result<
 
 /// Teardown after a scan (OEM FN_bAfterScan): bank 0x82 reg 0 back to the
 /// configured value (acquire bit clear; clearing it is what lets 0xA2 stop
-/// the motor), LEDs off, ResetFifos, LOW 0x92 (end acquisition), 20 ms,
-/// SCN 0xA2 (release the drive). Same in all seven captures.
+/// the motor), LEDs off, ResetFifos, LOW 0x92 (DX stop), 20 ms,
+/// SCN 0xA2 (motor stop). Same in all seven captures.
 pub fn teardown(seq: &mut Seq, st: &SetupState) {
     seq.write_fpga(st.scn, BANK_CCD, 0x0, st.reg0 & !1);
     seq.write_u8(st.low, 0x80, 0x00); // LEDs off
     seq.reset_fifos(st.low);
-    seq.command(st.low, 0x92); // end acquisition
+    seq.command(st.low, 0x92); // DX stop
     seq.delay_next(20);
-    seq.command(st.scn, 0xA2); // release the drive
+    seq.command(st.scn, 0xA2); // motor stop
 }
 
 /// Front-panel status-LED word (bank 0x82 reg 9).
@@ -523,7 +523,7 @@ pub fn motor_speed(eeprom_speed: u16, adjust: u16, model: Model) -> u16 {
 /// Scan start after calibration (OEM FN_bBeforeScan): acquire off,
 /// ResetFifos, bank 0x82 reg 4 = the scan pixel start (EEPROM Offset), LOW
 /// 0x80 = 0x03 (0x01 with IR off) and 0x82 = the scan duties, SCN 0xA5 =
-/// motor speed, SCN 0xA0 (forward), acquire on, LOW 0x91 = trigger. Updates
+/// motor speed, SCN 0xA0 (forward), acquire on, LOW 0x91 (DX start) = trigger. Updates
 /// `st.reg4`. Refuses a speed outside the board range or a bad duty.
 pub fn scan_start(
     seq: &mut Seq,
@@ -565,7 +565,7 @@ pub fn motor_run(seq: &mut Seq, st: &SetupState, speed: u16) -> Result<(), Setup
     Ok(())
 }
 
-/// Release the drive: SCN 0xA2. Only stops the motor while acquire is off
+/// Motor stop: SCN 0xA2. Only stops the motor while acquire is off
 /// (use [`teardown`] after a scan).
 pub fn motor_stop(seq: &mut Seq, st: &SetupState) {
     seq.command(st.scn, 0xA2);
