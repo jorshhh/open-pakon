@@ -72,6 +72,7 @@ const boxes = computed(() => roll.crops.map((cp, i) => {
   const w = cp.w * pxPerRow();
   return { i, left: cp.c * pxPerRow() - w / 2, width: w };
 }));
+const active = computed(() => boxes.value[roll.cur] ?? null);
 const title = computed(() => roll.crops.length ? `Confirm frames — ${roll.cur + 1} / ${roll.crops.length}` : 'Place the frames');
 
 // keep the active box in view
@@ -238,9 +239,15 @@ async function exportFrames() {
       <div ref="inner" class="relative my-2 leading-0" :style="{ width: stripW + 'px' }" @click.self="stripClick">
         <img :src="'/api/preview?t=' + roll.previewStamp" alt="film strip" class="block max-w-none"
              :style="{ width: stripW + 'px', height: stripH + 'px' }" @click="stripClick">
+        <!-- everything but the selected box dimmed, to both ends of the strip
+             (a spread shadow stops ~10000 px away, short of a long roll) -->
+        <template v-if="active">
+          <div class="pointer-events-none absolute inset-y-0 left-0 bg-black/65" :style="{ width: Math.max(0, active.left) + 'px' }"></div>
+          <div class="pointer-events-none absolute inset-y-0 right-0 bg-black/65" :style="{ left: active.left + active.width + 'px' }"></div>
+        </template>
         <div v-for="b in boxes" :key="b.i" @click.stop="select(b.i)"
              :class="['absolute inset-y-0 box-border cursor-pointer',
-                      b.i === roll.cur ? 'border-3 border-danger shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]' : 'border-2 border-accent/80']"
+                      b.i === roll.cur ? 'z-10 border-3 border-danger' : 'border-2 border-accent/80']"
              :style="{ left: b.left + 'px', width: b.width + 'px' }">
           <span :class="['absolute top-0.5 left-1 border border-black px-1 font-mono text-[11px] leading-normal font-semibold',
                          b.i === roll.cur ? 'bg-danger text-white' : 'bg-accent text-black']">{{ b.i + 1 }}</span>
