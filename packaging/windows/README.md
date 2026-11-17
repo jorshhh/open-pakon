@@ -40,6 +40,31 @@ directly; otherwise in Docker, from the `Dockerfile` here.
 The installer is not signed, so Windows SmartScreen warns about it the first
 time ("More info", then "Run anyway").
 
+## Updates
+
+The app updates itself with [WinSparkle](https://winsparkle.org), the
+Windows port of the Mac app's Sparkle. `winsparkle.sh` downloads the pinned
+release (checked against its SHA-256) and `build.sh` puts its 64-bit
+`WinSparkle.dll` next to `Pakon.exe`; the app loads it at run time
+(`rust/crates/pakon-app/src/winsparkle.rs`).
+
+When a release is published, `.github/workflows/appcast.yml` signs
+`Pakon-Setup.exe` with the Mac feed's EdDSA key (secret
+`SPARKLE_ED_PRIVATE_KEY`, public half `packaging/macos/sparkle-public-key`)
+and attaches `appcast-windows.xml` (`appcast.sh`). The page's banner offers
+**Install** when the latest release carries that feed: WinSparkle downloads
+the installer, checks its signature, waits until no scan is running, starts
+`Pakon-Setup.exe /S /UPDATE` and quits the app. The installer
+(`installer.nsi`) waits for `Pakon.exe` to exit, installs silently and
+starts the new version. WinSparkle's own scheduled checks are off; the
+banner is the one prompt. A release without the feed gets the old banner,
+which opens the release page, and so does an install made before
+WinSparkle was added: it updates by hand once.
+
+To test without a release, build with `PAKON_SPARKLE_FEED` (another feed
+URL) and `PAKON_SPARKLE_PUBLIC_KEY` (its key): they go into the install's
+`release.env`, and the banner then offers Install for any newer release.
+
 ## The USB driver
 
 Pakon talks to the scanner through Microsoft's generic **WinUSB** driver; Windows has none for the scanner but Kodak's.

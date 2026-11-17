@@ -23,7 +23,7 @@ export interface Msg { text: string; kind?: 'ok' | 'err'; title?: string }
 export const msg = (text = '', kind?: Msg['kind'], title?: string): Msg => ({ text, kind, title });
 
 export interface Telemetry { available: boolean; asked: boolean; usage: boolean; crashes: boolean }
-export interface Update { latest: string; current: string; install?: boolean; url?: string }
+export interface Update { latest: string; current: string; install?: boolean; url?: string; os?: 'macos' | 'windows' | 'linux' }
 export interface Status {
   state: 'warm' | 'cold' | 'disconnected' | 'unknown' | string;
   state_error?: string;

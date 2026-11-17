@@ -1,8 +1,10 @@
-# The Mac app's update feed (Sparkle): when a release is published, sign its
-# Pakon-Universal.dmg, write appcast.xml with the release notes and attach
-# it to the release. The app reads releases/latest/download/appcast.xml, so
-# a draft never reaches it; the in-app banner installs in place only for a
-# release that carries the feed (pakon-web update.rs).
+# The update feeds: when a release is published, sign its
+# Pakon-Universal.dmg and Pakon-Setup.exe, write appcast.xml (Sparkle, the
+# Mac app) and appcast-windows.xml (WinSparkle, the Windows app) with the
+# release notes, and attach them to the release. The apps read
+# releases/latest/download/<feed>, so a draft never reaches them; the in-app
+# banner installs in place only for a release that carries the platform's
+# feed (pakon-web update.rs).
 #
 # Secret: SPARKLE_ED_PRIVATE_KEY, the private half of
 # packaging/macos/sparkle-public-key (generate_keys -x). Run it by hand to
@@ -42,8 +44,11 @@ jobs:
             echo "a prerelease: no feed"; exit 0
           fi
           mkdir -p "$RUNNER_TEMP/dl"
-          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p Pakon-Universal.dmg -D "$RUNNER_TEMP/dl"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p Pakon-Universal.dmg -p Pakon-Setup.exe -D "$RUNNER_TEMP/dl"
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body > "$RUNNER_TEMP/notes.md"
           packaging/macos/appcast.sh "${TAG#v}" "$RUNNER_TEMP/dl/Pakon-Universal.dmg" \
             "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP/appcast.xml"
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP/appcast.xml"
+          packaging/windows/appcast.sh "${TAG#v}" "$RUNNER_TEMP/dl/Pakon-Setup.exe" \
+            "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP/appcast-windows.xml"
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber \
+            "$RUNNER_TEMP/appcast.xml" "$RUNNER_TEMP/appcast-windows.xml"

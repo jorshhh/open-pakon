@@ -13,11 +13,14 @@ watch(() => app.status, () => { busyMsg.value = ''; });
 const text = computed(() => {
   if (busyMsg.value) return busyMsg.value;
   if (!u.value) return '';
-  // install: the Mac app updates itself (Sparkle) and restarts
-  return u.value.install
-    ? `You have ${u.value.current}. Pakon restarts to update.`
-    : `You have ${u.value.current}. Download the new version, quit Pakon, ` +
-      'and drag the new one into Applications to replace it.';
+  // install: the app updates itself (Sparkle, WinSparkle) and restarts
+  if (u.value.install) return `You have ${u.value.current}. Pakon restarts to update.`;
+  const how = u.value.os === 'windows'
+    ? 'Download the new installer, quit Pakon, and run it.'
+    : u.value.os === 'linux'
+    ? 'Download the new package, quit Pakon, and install it over this one.'
+    : 'Download the new version, quit Pakon, and drag the new one into Applications to replace it.';
+  return `You have ${u.value.current}. ${how}`;
 });
 
 async function get() {

@@ -7,10 +7,11 @@
 //! any failure (offline, rate limit) just means no banner.
 //! PAKON_UPDATE_CHECK=0 turns the check off.
 //!
-//! The Mac app installs it in place with Sparkle when the release carries
-//! an `appcast.xml` (made when the release is published:
-//! .github/workflows/appcast.yml); otherwise, and elsewhere, the banner
-//! opens the release page.
+//! The window app installs it in place when the release carries this
+//! platform's feed (made when the release is published:
+//! .github/workflows/appcast.yml): `appcast.xml` for Sparkle on macOS,
+//! `appcast-windows.xml` for WinSparkle on Windows. Otherwise, and on Linux,
+//! the banner opens the release page.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -22,6 +23,16 @@ use crate::paths::env;
 pub const REPO: &str = "jorshhh/open-pakon";
 pub const RELEASES: &str = "https://github.com/jorshhh/open-pakon/releases";
 const API: &str = "https://api.github.com/repos/jorshhh/open-pakon/releases/latest";
+/// This platform's update feed among a release's files.
+const FEED: &str = if cfg!(windows) { "appcast-windows.xml" } else { "appcast.xml" };
+/// What the page says about a manual update.
+const OS: &str = if cfg!(target_os = "macos") {
+    "macos"
+} else if cfg!(windows) {
+    "windows"
+} else {
+    "linux"
+};
 const EVERY: Duration = Duration::from_secs(6 * 3600);
 const TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -72,7 +83,7 @@ fn release(rel: &Value) -> Option<(String, String, bool)> {
         return None;
     }
     let url = if url.starts_with(&format!("{RELEASES}/")) { url.to_string() } else { format!("{RELEASES}/latest") };
-    let appcast = rel["assets"].as_array().is_some_and(|a| a.iter().any(|x| x["name"] == "appcast.xml"));
+    let appcast = rel["assets"].as_array().is_some_and(|a| a.iter().any(|x| x["name"] == FEED));
     Some((tag.trim_start_matches('v').to_string(), url, appcast))
 }
 
@@ -111,11 +122,12 @@ impl Update {
             let mut s = self.state();
             s.latest = Some(latest);
             s.url = Some(url);
-            s.appcast = appcast;
+            // a test build's own feed (PAKON_UPDATE_FEED) stands in for the release's
+            s.appcast = appcast || env("PAKON_UPDATE_FEED").is_some();
         }
     }
 
-    /// `{"current", "latest", "url", "appcast"}` when a newer release is out, else
+    /// `{"current", "latest", "url", "appcast", "os"}` when a newer release is out, else
     /// None. Starts a background check when the last one is old.
     pub fn status(self: &Arc<Self>) -> Option<Value> {
         let version = current().filter(|_| enabled())?;
@@ -125,7 +137,7 @@ impl Update {
         }
         let s = self.state();
         let (latest, url) = (s.latest.clone()?, s.url.clone());
-        newer(&latest, &version).then(|| json!({"current": version, "latest": latest, "url": url, "appcast": s.appcast}))
+        newer(&latest, &version).then(|| json!({"current": version, "latest": latest, "url": url, "appcast": s.appcast, "os": OS}))
     }
 }
 
@@ -150,8 +162,11 @@ mod tests {
     fn releases() {
         let ok = json!({"tag_name": "v0.4.1", "html_url": format!("{RELEASES}/tag/v0.4.1")});
         assert_eq!(release(&ok), Some(("0.4.1".into(), format!("{RELEASES}/tag/v0.4.1"), false)));
-        let cast = json!({"tag_name": "v0.4.1", "assets": [{"name": "Pakon.dmg"}, {"name": "appcast.xml"}]});
-        assert!(release(&cast).unwrap().2);
+        // each platform installs in place from its own feed only
+        let feed = |name: &str| json!({"tag_name": "v0.4.1", "assets": [{"name": "Pakon.dmg"}, {"name": name}]});
+        assert!(release(&feed(FEED)).unwrap().2);
+        let other = if cfg!(windows) { "appcast.xml" } else { "appcast-windows.xml" };
+        assert!(!release(&feed(other)).unwrap().2);
         let elsewhere = json!({"tag_name": "v0.4.1", "html_url": "https://example.com/x"});
         assert_eq!(release(&elsewhere).unwrap().1, format!("{RELEASES}/latest"));
         assert_eq!(release(&json!({"tag_name": "v0.4.1", "prerelease": true})), None);

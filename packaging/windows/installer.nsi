@@ -4,9 +4,15 @@
 ; entry in Settings > Apps. The scanner's USB driver is set up once by
 ; driver\pakon_driver.exe, which asks for administrator rights. Built by build.sh:
 ;   makensis -DVERSION=0.7.0 -DSTAGE=<staged app> -DOUTFILE=<setup.exe> installer.nsi
+;
+; In-place updates (WinSparkle, pakon-app winsparkle.rs) run it as
+;   Pakon-Setup.exe /S /UPDATE
+; silent, it waits for the running Pakon.exe to quit (WinSparkle asks it to
+; right after starting the installer), installs, and starts the new one.
 Unicode true
 SetCompressor /SOLID lzma
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
 
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Pakon"
 
@@ -31,6 +37,31 @@ VIAddVersionKey "LegalCopyright" "See LICENSE and NOTICE"
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
+
+Var Update
+
+; /UPDATE: wait (at most 2 minutes: the scanner's teardown) until the old
+; Pakon.exe can be replaced, i.e. it has quit
+Function .onInit
+  ${GetParameters} $0
+  ClearErrors
+  ${GetOptions} $0 "/UPDATE" $1
+  IfErrors init_done
+  StrCpy $Update 1
+  StrCpy $2 0
+  wait_quit:
+    IfFileExists "$INSTDIR\Pakon.exe" 0 init_done
+    ClearErrors
+    FileOpen $3 "$INSTDIR\Pakon.exe" a
+    IfErrors 0 quit_done
+    IntOp $2 $2 + 1
+    IntCmp $2 240 init_done
+    Sleep 500
+    Goto wait_quit
+  quit_done:
+    FileClose $3
+  init_done:
+FunctionEnd
 
 Section "Pakon"
   SetOutPath "$INSTDIR"
@@ -69,6 +100,14 @@ Section "Pakon"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoRepair" 1
+
+  ; an in-place update: back to the app (the Finish page's Run otherwise),
+  ; started by Explorer as from the Start menu. Exec would give it this
+  ; installer's environment, inherited from the old Pakon.exe: the old
+  ; release.env's PAKON_VERSION and the rest, which the app keeps over its
+  ; own release.env, so the new app would report the old version
+  StrCmp $Update 1 0 +2
+    Exec '"$WINDIR\explorer.exe" "$INSTDIR\Pakon.exe"'
 SectionEnd
 
 Section "Uninstall"
