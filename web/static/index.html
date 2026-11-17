@@ -93,8 +93,12 @@
       </div>
     </div>
     <div class="field-box">
-      <span class="field-label">Next order</span>
-      <div class="field-body"><span class="order-num" id="scan-order">—</span></div>
+      <span class="field-label">Order</span>
+      <div class="field-body folder-cell">
+        <span class="order-num folder-path" id="scan-order">—</span>
+        <button class="ghost icon" id="scan-order-btn" title="Set the order number"
+                aria-label="Set the order number"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
+      </div>
     </div>
     <div class="field-box">
       <label class="field-label" for="scan-film">Film type</label>
@@ -388,6 +392,23 @@
       <button id="browse-use">Use this folder</button>
     </div>
   </div>
+</div>
+
+<!-- Asks for one line of text (order number, new folder name); above the
+     folder picker, which can open it -->
+<div class="modal-backdrop modal-top hidden" id="ask-modal">
+  <form class="modal modal-small" id="ask-form" role="dialog">
+    <div class="modal-body">
+      <input type="text" class="ask-input" id="ask-input" maxlength="64"
+             autocomplete="off" spellcheck="false">
+    </div>
+    <div class="modal-foot">
+      <span class="spacer"></span>
+      <span class="msg err" id="ask-msg"></span>
+      <button type="button" class="ghost" id="ask-cancel">Cancel</button>
+      <button type="submit" id="ask-ok">Set</button>
+    </div>
+  </form>
 </div>
 
 <script type="module" src="js/main.js"></script>

@@ -4,6 +4,8 @@
 import { $, setMsg, postJSON } from './util.js';
 import { showSpace } from './spaces.js';
 import { showRaw, processRaw } from './process.js';
+import { showNextOrder } from './order.js';
+import { ask } from './ask.js';
 
 let workDir = null;      // work folder the order folders go into (host)
 let browsePath = null;   // dir currently shown in the modal
@@ -14,7 +16,7 @@ export function setNativePicker(on) { nativePicker = !!on; }
 
 export function showWorkDir(dir, nextOrder) {
   if (dir) { workDir = dir; $('scan-out').textContent = dir; $('scan-out').title = dir; }
-  if (nextOrder) $('scan-order').textContent = nextOrder;
+  showNextOrder(nextOrder);
 }
 
 // The ways in: the work folder (Scan), a raw (Process, Home).
@@ -121,7 +123,7 @@ $('browse-use').addEventListener('click', async () => {
 });
 
 $('browse-new').addEventListener('click', async () => {
-  const name = prompt('New folder name:');
+  const name = await ask({ label: 'New folder name', ok: 'Create' });
   if (!name) return;
   const resp = await postJSON('/api/mkdir', { path: browsePath, name });
   const d = await resp.json();
