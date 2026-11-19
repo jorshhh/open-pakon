@@ -193,13 +193,43 @@ fn scan_loop_stops_after_the_strip() {
     let mut roll = pakon_proto::dx::Roll::new();
     let mut lines = Vec::new();
     let st = f135_state();
-    let s = scan::scan_loop(&mut sim, &st, &mut img, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, None, &mut |l| lines.push(l.to_string()));
+    let s = scan::scan_loop(&mut sim, &st, &mut img, pakon_scan::calib::CHUNK / 5, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, None, &mut |l| lines.push(l.to_string()));
     assert!(s.film_seen);
     assert_eq!(s.reads, 5 + 3 + 10 + 24, "stops on the 24th open-gate chunk after film");
     assert_eq!(img.len() as u64, s.bytes);
     assert_eq!(sim.images.len(), 16);
     assert!(lines.iter().any(|l| l.contains("film detected")));
     assert!(lines.iter().any(|l| l.contains("end-of-roll")));
+}
+
+/// As the scanners send it: open gate from the motor start until the film
+/// arrives. Only the last 200 rows of it are written, for a roll or the
+/// first strip.
+#[test]
+fn open_gate_before_the_film_is_not_written() {
+    use pakon_scan::scan::{self, StripMode, WHITE_FRAC_CODE_PCT, WHITE_THRESH_CODE};
+    use std::sync::{atomic::AtomicBool, Arc};
+    let chunk = pakon_scan::calib::CHUNK;
+    let row = chunk / 5; // 5 rows per chunk: 200 rows = 40 chunks
+    for strips in [None, Some(StripMode { pitch: 3206, trigger: 1 })] {
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut sim = Sim { stop_when_empty: Some(stop.clone()), ..Default::default() };
+        sim.images.extend((0..300).map(|_| image_chunk(60000))); // open gate
+        sim.images.extend((0..10).map(|_| image_chunk(2300))); // dense leader
+        sim.images.extend((0..10).map(|_| image_chunk(15000))); // film
+        sim.images.extend((0..30).map(|_| image_chunk(60000)));
+        let mut img = Vec::new();
+        let st = f135_state();
+        let s = scan::scan_loop(&mut sim, &st, &mut img, row, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut pakon_proto::dx::Roll::new(), strips, &mut |_| {});
+        assert!(s.film_seen);
+        assert_eq!(s.bytes, (300 + 20 + if strips.is_some() { 30 } else { 24 }) as u64 * chunk as u64);
+        assert_eq!(s.written, (40 + 20 + 24) as u64 * chunk as u64, "the gate's last 200 rows, the leader, the film, the tail");
+        assert_eq!(img.len() as u64, s.written);
+        assert!(img[..40 * chunk].chunks(2).all(|b| u16::from_le_bytes([b[0], b[1]]) == 60000));
+        if strips.is_some() {
+            assert_eq!((s.strips[0].start, s.strips[0].film), (0, 250), "film after the 200-row lead and the leader");
+        }
+    }
 }
 
 #[test]
@@ -209,7 +239,7 @@ fn scan_loop_honours_stop_and_no_film() {
     let stop = std::sync::atomic::AtomicBool::new(true);
     let mut roll = pakon_proto::dx::Roll::new();
     let st = f135_state();
-    let s = scan::scan_loop(&mut sim, &st, &mut Vec::new(), T, 0, (40000, 60), &stop, &mut roll, None, &mut |_| {});
+    let s = scan::scan_loop(&mut sim, &st, &mut Vec::new(), pakon_scan::calib::CHUNK / 5, T, 0, (40000, 60), &stop, &mut roll, None, &mut |_| {});
     assert_eq!((s.reads, s.film_seen), (0, false));
     assert!(sim.sent.is_empty());
 }
@@ -248,12 +278,12 @@ fn strip_mode_keeps_scanning_between_strips() {
     push(&mut sim, 60, 60000); // the operator feeds the next strip
     push(&mut sim, 10, 15000); // strip 2
     push(&mut sim, 30, 60000);
-    let m = StripMode { row_bytes: row, pitch: 3206, trigger: 0x1234 };
+    let m = StripMode { pitch: 3206, trigger: 0x1234 };
     let mut img = Vec::new();
     let mut roll = pakon_proto::dx::Roll::new();
     let mut lines = Vec::new();
     let st = f135_state();
-    let s = scan::scan_loop(&mut sim, &st, &mut img, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, Some(m), &mut |l| lines.push(l.to_string()));
+    let s = scan::scan_loop(&mut sim, &st, &mut img, pakon_scan::calib::CHUNK / 5, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, Some(m), &mut |l| lines.push(l.to_string()));
     assert!(s.film_seen);
     assert_eq!(s.reads, 148, "every chunk read: the strip end does not stop it");
     // written: up to strip 1's end (5+3+10+24), the lead (200 rows = 40
@@ -284,9 +314,9 @@ fn strip_mode_warns_on_a_long_strip_and_keeps_a_cut_one() {
     let mut sim = Sim { stop_when_empty: Some(stop.clone()), ..Default::default() };
     sim.images.extend((0..40).map(|_| image_chunk(15000))); // 200 rows, no end
     // a pitch of 20 rows: 6 frames = 125 rows at most
-    let m = StripMode { row_bytes: row, pitch: 20, trigger: 1 };
+    let m = StripMode { pitch: 20, trigger: 1 };
     let mut lines = Vec::new();
-    let s = scan::scan_loop(&mut sim, &f135_state(), &mut Vec::new(), T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut pakon_proto::dx::Roll::new(), Some(m), &mut |l| lines.push(l.to_string()));
+    let s = scan::scan_loop(&mut sim, &f135_state(), &mut Vec::new(), row, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut pakon_proto::dx::Roll::new(), Some(m), &mut |l| lines.push(l.to_string()));
     assert_eq!(lines.iter().filter(|l| l.contains("longer than 6 frames")).count(), 1);
     assert_eq!(s.strips.len(), 1, "Stop mid-strip keeps it");
     assert_eq!((s.strips[0].film, s.strips[0].end), (0, 200));

@@ -12,6 +12,7 @@ use std::time::Duration;
 use pakon_proto::dx;
 use pakon_proto::eeprom::{Base, Eeprom};
 use pakon_proto::lightcal::{self as lc, Film};
+use pakon_proto::LEAD_ROWS;
 use pakon_proto::setup::{self, Seq, SetupState, HOST_FLAG_EVENT, HOST_FLAG_OVERFLOW, PANEL_FEED, PANEL_IDLE, PANEL_NEXT_STRIP};
 
 use crate::calib::{self, CHUNK, IMG_TIMEOUT};
@@ -90,8 +91,6 @@ pub const MAX_STRIPS: usize = 15;
 /// Strip mode: no new strip this long after the last one => the roll is
 /// done. The OEM's NoFilmTimeOut default is not known.
 pub const STRIP_WAIT: Duration = Duration::from_secs(300);
-/// Strip mode: open-gate rows kept in front of each strip after the first.
-pub const STRIP_LEAD_ROWS: usize = 200;
 /// Picture pitch in scan lines at Base 16 / 8 / 4 (TLB.dll framing
 /// geometry, as `pakon_image::framing`).
 pub fn pitch_rows(base: u32) -> usize {
@@ -110,8 +109,6 @@ pub const MAX_STRIP_FRAMES: usize = 6;
 /// not chosen.
 #[derive(Debug, Clone, Copy)]
 pub struct StripMode {
-    /// Bytes per scan line in the raw.
-    pub row_bytes: usize,
     /// Picture pitch in scan lines.
     pub pitch: usize,
     /// The LOW 0x91 trigger, resent before each strip after the first.
@@ -153,8 +150,10 @@ pub struct LoopStats {
     pub strips: Vec<StripRec>,
 }
 
-/// The open gate between strips, kept to its last `cap` bytes; dropped
-/// only in whole rows, so the raw's row alignment holds.
+/// The open gate before the film or between strips, kept to its last `cap`
+/// bytes; dropped only in whole rows, so the raw's row alignment holds.
+/// Trimmed once it reaches twice `cap`, so the hot loop does not move the
+/// whole buffer for every chunk.
 struct Lead {
     buf: Vec<u8>,
     cap: usize,
@@ -162,19 +161,38 @@ struct Lead {
 }
 
 impl Lead {
+    fn new(cap: usize, row: usize) -> Self {
+        Lead { buf: Vec::with_capacity(2 * cap + CHUNK), cap, row }
+    }
     fn push(&mut self, chunk: &[u8]) {
         self.buf.extend_from_slice(chunk);
-        if self.buf.len() > self.cap {
-            let excess = self.buf.len() - self.cap;
-            let drop = excess - excess % self.row;
-            self.buf.drain(..drop);
+        if self.buf.len() > 2 * self.cap {
+            self.trim();
         }
+    }
+    fn trim(&mut self) {
+        let excess = self.buf.len().saturating_sub(self.cap);
+        self.buf.drain(..excess - excess % self.row);
+    }
+    /// Write what is kept into the raw.
+    fn flush(&mut self, img: &mut dyn Write, s: &mut LoopStats) {
+        self.trim();
+        if img.write_all(&self.buf).is_err() {
+            s.errors += 1;
+        }
+        s.written += self.buf.len() as u64;
+        self.buf.clear();
     }
 }
 
 /// The driven image phase: read 0x86 and serve events after every read
 /// (no re-arm); stop on `TRAIL_WHITE` open-gate chunks after film, empty
 /// windows after film, the byte cap, or `stop`.
+///
+/// The open gate before the film is not written but its last
+/// [`LEAD_ROWS`] rows (`row_bytes` per scan line): writing starts
+/// with the first chunk that is not open gate. A dim or dense leader is
+/// written as it comes.
 ///
 /// In strip mode (`strips`) the end of a strip does not stop it: the strip
 /// is recorded, LOW 0x91 is resent and the film LED blinks green until the
@@ -185,6 +203,7 @@ pub fn scan_loop(
     link: &mut dyn Link,
     st: &SetupState,
     img: &mut dyn Write,
+    row_bytes: usize,
     timeout: Duration,
     max_bytes: u64,
     white: (u16, usize),
@@ -205,8 +224,11 @@ pub fn scan_loop(
     let mut film_row = 0usize;
     let mut code_mark = 0usize;
     let mut warned_long = false;
-    let row = strips.map_or(1, |m| m.row_bytes.max(1));
-    let mut lead = Lead { buf: Vec::new(), cap: STRIP_LEAD_ROWS * row, row };
+    let row = row_bytes.max(1);
+    // open gate held back in `lead` (only its tail is written): before the
+    // film, and between strips while `waiting`
+    let mut holding = true;
+    let mut lead = Lead::new(LEAD_ROWS * row, row);
     let rows_written = |s: &LoopStats| s.written as usize / row;
     out(&format!(
         "  [sm] driven image phase: read 0x86 + event service (no re-arm); stop on {TRAIL_WHITE} trailing open-gate chunks, {MAX_EMPTY} empty windows after film, {} MB cap, or Ctrl-C / SIGTERM",
@@ -236,19 +258,22 @@ pub fn scan_loop(
             idle = 0;
             let white_chunk = chunk_is_white(chunk, white.0, white.1);
             let film_chunk = !white_chunk && chunk_has_film(chunk);
-            // a new strip: its lead goes into the raw first
-            if waiting.is_some() && film_chunk {
-                waiting = None;
-                strip_start = rows_written(&s);
-                if img.write_all(&lead.buf).is_err() {
-                    s.errors += 1;
+            // the film (anything but open gate) or the next strip (film):
+            // the held lead goes into the raw first
+            let arrived = if waiting.is_some() { film_chunk } else { !white_chunk };
+            if holding && arrived {
+                holding = false;
+                let next_strip = waiting.take().is_some();
+                if next_strip {
+                    strip_start = rows_written(&s);
                 }
-                s.written += lead.buf.len() as u64;
-                lead.buf.clear();
-                panel(link, st, PANEL_FEED, timeout, out);
+                lead.flush(img, &mut s);
+                if next_strip {
+                    panel(link, st, PANEL_FEED, timeout, out);
+                }
             }
             let pre = rows_written(&s);
-            if waiting.is_some() {
+            if holding {
                 lead.push(chunk);
             } else {
                 if img.write_all(chunk).is_err() {
@@ -298,6 +323,7 @@ pub fn scan_loop(
                         panel(link, st, PANEL_NEXT_STRIP, timeout, out);
                         out(&format!("  [sm] feed strip {}", n + 1));
                         waiting = Some(std::time::Instant::now());
+                        holding = true;
                     }
                 }
             } else if film_chunk {
@@ -364,6 +390,10 @@ pub fn scan_loop(
             out(&format!("  [sm] stream ended (no data for {idle} windows) -> end of roll"));
             break;
         }
+    }
+    // no film came: the open gate's tail, so the raw is not empty
+    if !s.film_seen {
+        lead.flush(img, &mut s);
     }
     // a strip cut short by Stop, the cap or the stream: keep what came
     if strips.is_some() && in_strip {
@@ -486,8 +516,8 @@ fn scan_body(link: &mut dyn Link, s: &crate::session::Session, eeprom_dir: &Path
     out("  [sm] motor start (a0) sent -- feed the film now");
     let mut roll = dx::Roll::new();
     let row_samples = lc::blocks(res.ir) * (res.line_px - res.px0);
-    let strips = opt.strips.then_some(StripMode { row_bytes: row_samples * 2, pitch: pitch_rows(opt.base), trigger: s.mode.trigger });
-    let stats = scan_loop(link, &st, &mut img, opt.timeout, opt.max_bytes, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), stop, &mut roll, strips, out);
+    let strips = opt.strips.then_some(StripMode { pitch: pitch_rows(opt.base), trigger: s.mode.trigger });
+    let stats = scan_loop(link, &st, &mut img, row_samples * 2, opt.timeout, opt.max_bytes, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), stop, &mut roll, strips, out);
     let _ = img.flush();
     if strips.is_some() {
         let p = with_suffix(image, ".strips.json");

@@ -322,6 +322,14 @@ pub struct Meta {
     /// The strips were put in film order from their DX codes.
     #[serde(default)]
     pub dx_order: bool,
+    /// The row where the first picture found starts (None: none found).
+    /// Frames hides the unexposed film before it.
+    #[serde(default)]
+    pub first_frame: Option<usize>,
+    /// Leader dropped: from the ribbon older builds made of this raw, for
+    /// the boxes saved on it.
+    #[serde(skip)]
+    pub moved: Option<strips::RowMap>,
     /// The per-picture adjustments and sharpening render: the OEM colour
     /// path or the slide path. The fallback (no EEPROM archive or rpd.pf)
     /// has none, only the turn and flips.
@@ -435,14 +443,15 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     let mut prog = |s: &str, p: f64| emit(progress, s, p);
     let r = ribbon::build(raw, &opt, &mut prog)?;
     let plan = strips::plan_for_raw(raw, r.rgb.len_of(Axis(0)), r.info.layout.row_samples);
-    // Strips fed out of film order: the cached ribbon is written in film
-    // order, row ranges streamed into the .npy, and used from there.
-    let reorder = plan.as_ref().filter(|p| p.reordered);
+    // Strips fed out of film order or with leader dropped: the cached
+    // ribbon is written from the plan's row ranges, streamed into the .npy,
+    // and used from there.
+    let reorder = plan.as_ref().filter(|p| p.repacked());
     let ribbon_npy;
     let owned;
     let rgb: ArrayView3<u16> = match reorder {
         Some(p) => {
-            emit(progress, "Putting the strips in film order", 0.58);
+            emit(progress, if p.reordered { "Putting the strips in film order" } else { "Trimming the strips" }, 0.58);
             strips::write_rows3(&env.ribbon_path(), r.rgb.view(), &p.ranges)?;
             drop(r.rgb);
             ribbon_npy = Npy::open(&env.ribbon_path())?;
@@ -467,6 +476,7 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     emit(progress, "Detecting frames", 0.68);
     let box_w: HashMap<String, usize> = Format::ALL.iter().map(|f| (f.name().to_string(), framing::geometry(cols, *f).1)).collect();
     let (starts, mut frame_w, mut pitch) = strips::frame_strips(rgb.view(), &strip_list, film == FilmKind::Slide, fmt);
+    let first_frame = starts.iter().min().copied();
     let mut centres: Vec<i64> = starts.iter().map(|&s| (s + frame_w / 2) as i64).collect();
     if centres.is_empty() {
         centres = vec![(rows / 2) as i64];
@@ -565,7 +575,9 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
         ice: ice_plane.is_some(),
         sba_dpi,
         scene_dmin,
-        dx_order: reorder.is_some(),
+        dx_order: plan.as_ref().is_some_and(|p| p.reordered),
+        first_frame,
+        moved: plan.and_then(|p| p.moved),
         strips: strip_list,
         adjustable: film == FilmKind::Slide || oem.is_some(),
     })

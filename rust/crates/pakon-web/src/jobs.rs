@@ -89,14 +89,27 @@ fn save_format(raw: &Path, fmt: &str) {
 // Written at export, read back when the same raw is processed again, so the
 // operator's boxes come back.
 
-fn load_crops(raw: &Path, rows: usize) -> Value {
-    let saved: Option<Value> = std::fs::read_to_string(beside(raw, ".crops.json")).ok().and_then(|t| serde_json::from_str(&t).ok());
-    // another decode of the raw (layout override, new ribbon code) can
-    // change the ribbon length; the positions would no longer line up
-    match saved {
-        Some(s) if s["rows"].as_u64() == Some(rows as u64) && s["centres"].as_array().is_some_and(|c| !c.is_empty()) => s,
-        _ => Value::Null,
+fn load_crops(raw: &Path, rows: usize, moved: Option<&pakon_roll::strips::RowMap>) -> Value {
+    saved_crops(raw, rows, moved).unwrap_or(Value::Null)
+}
+
+fn saved_crops(raw: &Path, rows: usize, moved: Option<&pakon_roll::strips::RowMap>) -> Option<Value> {
+    let mut s: Value = serde_json::from_str(&std::fs::read_to_string(beside(raw, ".crops.json")).ok()?).ok()?;
+    if s["centres"].as_array().is_none_or(|c| c.is_empty()) {
+        return None;
     }
+    // another decode of the raw (layout override, new ribbon code) can
+    // change the ribbon length; the positions would no longer line up,
+    // unless the change is a strip leader dropped (moved)
+    if s["rows"].as_u64() == Some(rows as u64) {
+        return Some(s);
+    }
+    let m = moved.filter(|m| s["rows"].as_u64() == Some(m.old_rows as u64))?;
+    for c in s["centres"].as_array_mut()? {
+        *c = json!(m.map(c.as_i64().unwrap_or(0).max(0) as usize));
+    }
+    s["rows"] = json!(rows);
+    Some(s)
 }
 
 /// The boxes and, per box, Adjust's edits (`{}` for none) beside the raw.
@@ -220,8 +233,8 @@ pub async fn api_process(State(app): State<Arc<App>>, body: Bytes) -> Response {
         move |app, meta| {
             // hand the browser everything it needs to place crops (no ribbon path)
             let all = serde_json::to_value(&meta).unwrap_or_default();
-            let mut event = json!({"type": "done", "saved": load_crops(&raw, meta.rows)});
-            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order", "adjustable"] {
+            let mut event = json!({"type": "done", "saved": load_crops(&raw, meta.rows, meta.moved.as_ref())});
+            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order", "adjustable", "first_frame"] {
                 event[key] = all[key].clone();
             }
             app.roll().prescan = Some(meta);
@@ -590,12 +603,18 @@ mod tests {
         save_format(&raw, "pano");
         assert_eq!(raw_format(&raw), "pano");
         assert_eq!(frame_format("half"), Format::Half);
-        assert_eq!(load_crops(&raw, 100), Value::Null);
+        assert_eq!(load_crops(&raw, 100, None), Value::Null);
         save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({})]);
-        assert_eq!(load_crops(&raw, 100), json!({"rows": 100, "centres": [10, 60], "widths": [40, 40]}));
-        assert_eq!(load_crops(&raw, 101), Value::Null, "another ribbon length");
+        assert_eq!(load_crops(&raw, 100, None), json!({"rows": 100, "centres": [10, 60], "widths": [40, 40]}));
+        assert_eq!(load_crops(&raw, 101, None), Value::Null, "another ribbon length");
         save_crops(&raw, 100, &[], &[], &[]);
-        assert_eq!(load_crops(&raw, 100), Value::Null, "no boxes");
+        assert_eq!(load_crops(&raw, 100, None), Value::Null, "no boxes");
+        // saved before the strip leader was dropped: moved with the pictures
+        use pakon_roll::strips::{plan, Fed};
+        let moved = plan(&[Fed { rows: 0..300, film: Some(250), dx: vec![] }, Fed { rows: 300..400, film: None, dx: vec![] }], 400).unwrap().moved;
+        save_crops(&raw, 400, &[260, 350], &[40, 40], &[json!({}), json!({})]);
+        assert_eq!(load_crops(&raw, 350, moved.as_ref()), json!({"rows": 350, "centres": [210, 300], "widths": [40, 40]}));
+        assert_eq!(load_crops(&raw, 350, None), Value::Null, "not moved: another ribbon");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -627,9 +646,9 @@ mod tests {
         let d = temp("edits");
         let raw = d.join("scan.raw");
         save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({"red": 25})]);
-        assert_eq!(load_crops(&raw, 100)["edits"], json!([{}, {"red": 25}]));
+        assert_eq!(load_crops(&raw, 100, None)["edits"], json!([{}, {"red": 25}]));
         save_crops(&raw, 100, &[10], &[40], &[json!({})]);
-        assert!(load_crops(&raw, 100).get("edits").is_none(), "no edits, no key");
+        assert!(load_crops(&raw, 100, None).get("edits").is_none(), "no edits, no key");
         let _ = std::fs::remove_dir_all(&d);
     }
 

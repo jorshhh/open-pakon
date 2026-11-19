@@ -13,5 +13,10 @@ pub mod lightcal;
 pub mod script;
 pub mod setup;
 
+/// Open-gate rows a raw keeps in front of the film (of the roll, or of each
+/// cut strip): the scan writes no more of the gate than this, and older
+/// raws are trimmed to it when processed.
+pub const LEAD_ROWS: usize = 200;
+
 pub use frame::{Address, Frame, FrameError, PacketType, Status};
 pub use setup::{Model, ScanMode, Seq, SetupError, SetupState};
