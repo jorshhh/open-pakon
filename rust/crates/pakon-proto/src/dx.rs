@@ -124,6 +124,44 @@ pub fn frame_label(frame_raw: u8) -> String {
     }
 }
 
+/// A frame_raw value as a position along the film: the leader labels X and
+/// 00 come before frame 0, an "A" half frame after its frame.
+pub fn frame_key(frame_raw: u8) -> i32 {
+    let frame = ((frame_raw & 0x7F) >> 1) as i32;
+    let f = match frame {
+        62 => -2,
+        63 => -1,
+        f => f,
+    };
+    f * 2 + (frame_raw & 1) as i32
+}
+
+/// Strip mode: the order to show strips in, from the DX frame numbers read
+/// on each (`codes[i]` = strip i's frame_raw values, in feed order). Strips
+/// are sorted by the median of their codes, which a stray misread does not
+/// move; a strip with no code keeps its place after the strip fed before
+/// it. Returns feed indices in film order, and whether DX changed anything.
+pub fn strip_order(codes: &[Vec<u8>]) -> (Vec<usize>, bool) {
+    let median = |c: &Vec<u8>| -> Option<i32> {
+        let mut k: Vec<i32> = c.iter().map(|&r| frame_key(r)).collect();
+        k.sort_unstable();
+        (!k.is_empty()).then(|| k[(k.len() - 1) / 2])
+    };
+    // A strip without codes takes the key of the strip fed before it (or
+    // the lowest), so it stays behind that one.
+    let mut keys: Vec<(i32, usize)> = Vec::with_capacity(codes.len());
+    let mut last = i32::MIN;
+    for (i, c) in codes.iter().enumerate() {
+        let k = median(c).unwrap_or(last);
+        last = k;
+        keys.push((k, i));
+    }
+    keys.sort();
+    let order: Vec<usize> = keys.into_iter().map(|(_, i)| i).collect();
+    let moved = order.iter().enumerate().any(|(n, &i)| n != i);
+    (order, moved)
+}
+
 impl fmt::Display for Block {
     /// One line describing a block, for logs.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -159,7 +197,9 @@ pub struct FilmVotes {
     pub votes: u32,
 }
 
-pub const ROLL_MAX: usize = 160;
+/// Codes kept per scan: a 36-exposure roll reads ~80; strip mode can run
+/// to 15 strips of 6 frames.
+pub const ROLL_MAX: usize = 512;
 pub const ROLL_FILMS: usize = 8;
 
 /// Codes collected over a scan.

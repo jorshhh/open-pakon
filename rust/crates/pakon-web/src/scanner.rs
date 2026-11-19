@@ -65,6 +65,25 @@ const SCAN_LOG_KEYS: &[&str] = &[
     "lamp:",
 ];
 const FEED_KEY: &str = "feed the film now";
+/// A strip-mode line of the scan loop as a `strip` event: `state` is
+/// scanning (film in), done, feed (waiting for the next) or long (longer
+/// than the OEM's longest strip: two strips with no gap?).
+fn strip_event(line: &str) -> Option<Value> {
+    let rest = line.split("[sm] ").nth(1)?;
+    let num = |s: &str| s.split(|c: char| !c.is_ascii_digit()).find(|t| !t.is_empty())?.parse::<u64>().ok();
+    let (state, n) = if let Some(r) = rest.strip_prefix("film detected · strip ") {
+        ("scanning", num(r)?)
+    } else if let Some(r) = rest.strip_prefix("feed strip ") {
+        ("feed", num(r)?)
+    } else if let Some(r) = rest.strip_prefix("warning: strip ") {
+        ("long", num(r)?)
+    } else {
+        let r = rest.strip_prefix("strip ")?;
+        (r.contains(" done") || r.contains("ended early")).then_some(())?;
+        ("done", num(r)?)
+    };
+    Some(json!({"type": "strip", "strip": n, "state": state}))
+}
 const EJECT_LOG_KEYS: &[&str] = &["motor", "eject:", "advance", "failed", "FAILED"];
 
 /// The scanner's lamp lines in the words the Scan page shows.
@@ -204,7 +223,10 @@ where
                 // shown on the page or not.
                 eprintln!("[scanner] {line}");
                 em.observe(line);
-                if line.contains(FEED_KEY) {
+                if let Some(ev) = strip_event(line) {
+                    em.emit(ev);
+                    em.log(plain(line));
+                } else if line.contains(FEED_KEY) {
                     em.emit(json!({"type": "feed", "message": "Motor running — feed the film now"}));
                 } else if keys.is_none_or(|ks| ks.iter().any(|k| line.contains(k))) && !line.contains("0x81: timeout") {
                     em.log(plain(line));
@@ -328,7 +350,7 @@ fn done_event(app: &App, out: &Path, film: &str) -> Value {
     })
 }
 
-async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32, order: Option<String>) {
+async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32, strips: bool, order: Option<String>) {
     let Some(_busy) = Busy::take(&app, &mut em) else { return };
     eeprom_sync_events(&app, &mut em).await;
     // In the log, and so in a failed scan's report: whether a foreign start
@@ -345,7 +367,10 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32, or
         model = detect_model().await;
     }
     if let (Some(m), Some(dir)) = (model, &eeprom_dir) {
-        return scan_code_stream(&app, &mut em, m, dir.clone(), film, base, order.as_deref()).await;
+        return scan_code_stream(&app, &mut em, m, dir.clone(), film, base, strips, order.as_deref()).await;
+    }
+    if strips {
+        return em.error("Strips need the scan built in code (an EEPROM archive for this scanner)");
     }
     if base != 16 {
         return em.error(format!("Base {base} needs the scan built in code (an EEPROM archive for this scanner); the replayed scan is Base 16 only"));
@@ -409,7 +434,8 @@ async fn scan_stream(app: Arc<App>, mut em: Emitter, film: String, base: u32, or
 /// F-135 / F-135+ scan with nothing replayed: setup, light calibration (open gate,
 /// keep the film out; reused for an hour like the OEM software), motor
 /// start, then the operator feeds the film.
-async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, model: Model, eeprom_dir: PathBuf, film: String, base: u32, order: Option<&str>) {
+#[allow(clippy::too_many_arguments)]
+async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, model: Model, eeprom_dir: PathBuf, film: String, base: u32, strips: bool, order: Option<&str>) {
     let out = match prepare_out(app, order) {
         Ok(o) => o,
         Err(e) => return em.error(e),
@@ -433,7 +459,7 @@ async fn scan_code_stream(app: &Arc<App>, em: &mut Emitter, model: Model, eeprom
             }
         };
         // B&W silver film scans without the IR channel, as pakon_replay does
-        let opt = scan::ScanOptions { base, ir: kind != Film::Bw, film: kind, recalibrate: false, max_bytes: 4096 << 20, timeout: TIMEOUT };
+        let opt = scan::ScanOptions { base, ir: kind != Film::Bw, film: kind, recalibrate: false, max_bytes: 4096 << 20, strips, timeout: TIMEOUT };
         match scan::scan_code(&mut dev, eeprom, &eeprom_dir, &image, &opt, &stop, print) {
             Ok(_) => true,
             Err(e) => {
@@ -463,14 +489,17 @@ pub async fn api_scan(State(app): State<Arc<App>>, body: Bytes) -> Response {
     let Some(base) = base.filter(|b| SCAN_BASES.contains(b)) else {
         return error(StatusCode::BAD_REQUEST, format!("unknown resolution: Base {}", f.get("base").cloned().unwrap_or_default()));
     };
+    let Some(strips) = f.get("strips").map_or(Some(false), Value::as_bool) else {
+        return error(StatusCode::BAD_REQUEST, "strips must be true or false");
+    };
     // The order number stays out of the telemetry report.
     let order = match crate::orders::custom_order(f.get("order").and_then(Value::as_str).unwrap_or("")) {
         Ok(o) => o,
         Err(e) => return error(StatusCode::BAD_REQUEST, e),
     };
     let (tx, resp) = sse::channel();
-    let em = Emitter::reported(tx, app.telemetry.clone(), "scan", "scan", json!({"film": film, "base": base}));
-    tokio::spawn(scan_stream(app, em, film, base as u32, order));
+    let em = Emitter::reported(tx, app.telemetry.clone(), "scan", "scan", json!({"film": film, "base": base, "strips": strips}));
+    tokio::spawn(scan_stream(app, em, film, base as u32, strips, order));
     resp
 }
 
@@ -570,5 +599,22 @@ mod tests {
         assert_eq!(mb(0), 0.0);
         assert_eq!(mb(1_048_576), 1.0);
         assert_eq!(mb(1_600_000_000), 1525.9);
+    }
+}
+
+#[cfg(test)]
+mod strip_tests {
+    use super::strip_event;
+
+    #[test]
+    fn strip_lines_become_events() {
+        let st = |l: &str| strip_event(l).map(|v| (v["strip"].as_u64().unwrap(), v["state"].as_str().unwrap().to_string()));
+        assert_eq!(st("  [sm] film detected · strip 2 at 1234 bytes"), Some((2, "scanning".into())));
+        assert_eq!(st("  [sm] strip 2 done: rows 210-580, 3 DX codes"), Some((2, "done".into())));
+        assert_eq!(st("  [sm] feed strip 3"), Some((3, "feed".into())));
+        assert_eq!(st("  [sm] warning: strip 3 is longer than 6 frames (two strips with no gap?)"), Some((3, "long".into())));
+        assert_eq!(st("  [sm] strip 4 ended early: rows 1-2"), Some((4, "done".into())));
+        assert_eq!(st("  [sm] strip mode: up to 15 strips; ends on Stop or 300 s with no new strip"), None);
+        assert_eq!(st("  [sm] film detected at 1234 bytes"), None);
     }
 }

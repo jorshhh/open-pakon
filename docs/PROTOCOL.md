@@ -650,6 +650,19 @@ nothing [C, captures]. LOW `0x91` is the DX start (`FN_bDrvDxStart`).
 - Engine state (scanner object `+0x70`): 1 film in, 3 strip ended, 2
   waiting for the next strip; it drives the film LED.
 
+This implementation (`scan::scan_loop` with a `StripMode`) follows it:
+one session, the strip ends on the same open-gate test as a roll, then
+LOW `0x91` is resent (`setup::dx_start`) and the right LED blinks green
+(`0x0095`, the feed word plus the right-green blink bit) until the next
+strip's film shows; then it is solid green again. The session ends on
+Stop, 15 strips, or 5 minutes with no new strip (the OEM's
+`NoFilmTimeOut` default is not known). There is no frames-per-strip
+setting: each strip's length is measured. A strip longer than the OEM's
+largest (6 × pitch + pitch/4 lines) is logged as a warning, most likely two
+strips fed with no gap, and kept. The open gate between strips is not written to the raw, except the
+last 200 rows before each strip, dropped in whole rows. DX codes are
+split between strips at the `0x91` resend.
+
 ## End of film
 
 The scanner sends no end-of-roll signal [C]. The OEM decides on the host:

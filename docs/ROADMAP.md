@@ -34,6 +34,7 @@ rerun with the Rust code; the Rust code builds the same command streams
 | EEPROM read and archive | In code, OEM read-only requests, automatic in the app | Rust, app (macOS) |
 | Setup, lamp wait, light calibration, flat field | In code | Rust (macOS) |
 | Scan, Base 16, IR on, colour negative | In code, stops on its own at end of roll, DX read | Rust, CLI and app (macOS): 4-frame and 36-frame rolls |
+| Strip mode (cut strips into one roll) | In code, OEM `0x91` resend per strip, strips put in film order from DX | Not run on hardware yet |
 | Scan, Base 8 and Base 4 | In code | C driver (macOS); no Rust run recorded |
 | Scan with IR off (silver B&W default) | In code, all three bases | C driver; no Rust run recorded |
 | Film types: colour negative, silver B&W, B&W C-41, slide (E-6) | Per-film LED duties at scan; decode per film | C driver, a strip of each; no Rust run recorded except colour negative |
@@ -54,6 +55,7 @@ Base 16 scan.
 | Setup | Built in code; matches the Plus captures byte for byte (Base 16, 8, 4, 4 + IR) | Rust (macOS), serial 138 |
 | Light calibration, flat field | In code, with the Plus LED ceilings and LED period | Rust (macOS), serial 138, all six modes |
 | Scan, Base 16 / 8 / 4, IR on and off, colour negative | In code, stops on its own at end of strip, DX read | Rust, CLI (macOS), serial 138: all six modes on a 4-frame strip; app: Base 16 + IR |
+| Strip mode (cut strips into one roll) | In code, as on the F-135 | Rust, app (macOS), serial 138: 3 × 4-frame colour-negative strips at Base 16 + IR, fed in reverse and put back in film order from DX; 3 × 6-frame silver B&W strips at Base 16 (no DX code on the film, feed order kept). Over-length warning not run |
 | Scan, replayed (`resources/f135plus/`) | Capture replay, kept as a fallback without an EEPROM archive | C driver on 16402 (Base 16, 8); Rust on 138 (Base 16) |
 | Silver B&W | IR off, per-film LED duties, as on the F-135 | Rust, CLI (macOS), serial 138, Base 16: 5-frame strip |
 | B&W C-41, slide | Per-film LED duties, IR on, as on the F-135 | Should work, not run: the same scan path as colour negative with lower film-base densities (smaller duties); no Rust run on either model yet |

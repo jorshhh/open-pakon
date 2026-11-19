@@ -18,6 +18,8 @@ struct Sim {
     status: HashMap<(u8, u8), VecDeque<u8>>,
     replies: HashMap<(u8, u8), VecDeque<Vec<u8>>>,
     images: VecDeque<Vec<u8>>,
+    /// Set once the images run out (the operator pressing Stop).
+    stop_when_empty: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Sim {
@@ -54,7 +56,12 @@ impl Link for Sim {
         Ok(r.len())
     }
     fn recv_image(&mut self, buf: &mut [u8], _: Duration) -> Result<usize, ScanError> {
-        let c = self.images.pop_front().ok_or(ScanError::Timeout)?;
+        let Some(c) = self.images.pop_front() else {
+            if let Some(s) = &self.stop_when_empty {
+                s.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            return Err(ScanError::Timeout);
+        };
         buf[..c.len()].copy_from_slice(&c);
         Ok(c.len())
     }
@@ -186,7 +193,7 @@ fn scan_loop_stops_after_the_strip() {
     let mut roll = pakon_proto::dx::Roll::new();
     let mut lines = Vec::new();
     let st = f135_state();
-    let s = scan::scan_loop(&mut sim, &st, &mut img, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, &mut |l| lines.push(l.to_string()));
+    let s = scan::scan_loop(&mut sim, &st, &mut img, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, None, &mut |l| lines.push(l.to_string()));
     assert!(s.film_seen);
     assert_eq!(s.reads, 5 + 3 + 10 + 24, "stops on the 24th open-gate chunk after film");
     assert_eq!(img.len() as u64, s.bytes);
@@ -202,7 +209,7 @@ fn scan_loop_honours_stop_and_no_film() {
     let stop = std::sync::atomic::AtomicBool::new(true);
     let mut roll = pakon_proto::dx::Roll::new();
     let st = f135_state();
-    let s = scan::scan_loop(&mut sim, &st, &mut Vec::new(), T, 0, (40000, 60), &stop, &mut roll, &mut |_| {});
+    let s = scan::scan_loop(&mut sim, &st, &mut Vec::new(), T, 0, (40000, 60), &stop, &mut roll, None, &mut |_| {});
     assert_eq!((s.reads, s.film_seen), (0, false));
     assert!(sim.sent.is_empty());
 }
@@ -223,4 +230,64 @@ fn teardown_runs_on_drop() {
     let mut sim = Sim::default();
     Teardown::new(&mut sim, st, T).finish().unwrap();
     assert_eq!(sim.sent, want, "finish sends it once");
+}
+
+#[test]
+fn strip_mode_keeps_scanning_between_strips() {
+    use pakon_scan::scan::{self, StripMode, WHITE_FRAC_CODE_PCT, WHITE_THRESH_CODE};
+    use std::sync::{atomic::AtomicBool, Arc};
+    const CHUNKS_ROW: usize = 5; // 5 rows per image chunk
+    let row = pakon_scan::calib::CHUNK / CHUNKS_ROW;
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut sim = Sim { stop_when_empty: Some(stop.clone()), ..Default::default() };
+    let push = |sim: &mut Sim, n: usize, level: u16| sim.images.extend((0..n).map(|_| image_chunk(level)));
+    push(&mut sim, 5, 2400); // dim leader
+    push(&mut sim, 3, 60000); // open gate
+    push(&mut sim, 10, 15000); // strip 1
+    push(&mut sim, 30, 60000); // its tail, then waiting
+    push(&mut sim, 60, 60000); // the operator feeds the next strip
+    push(&mut sim, 10, 15000); // strip 2
+    push(&mut sim, 30, 60000);
+    let m = StripMode { row_bytes: row, pitch: 3206, trigger: 0x1234 };
+    let mut img = Vec::new();
+    let mut roll = pakon_proto::dx::Roll::new();
+    let mut lines = Vec::new();
+    let st = f135_state();
+    let s = scan::scan_loop(&mut sim, &st, &mut img, T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut roll, Some(m), &mut |l| lines.push(l.to_string()));
+    assert!(s.film_seen);
+    assert_eq!(s.reads, 148, "every chunk read: the strip end does not stop it");
+    // written: up to strip 1's end (5+3+10+24), the lead (200 rows = 40
+    // chunks of the 66 between), strip 2 and its 24 tail chunks
+    let chunks = |n: usize| (n * pakon_scan::calib::CHUNK) as u64;
+    assert_eq!(s.written, chunks(42 + 40 + 10 + 24));
+    assert_eq!(img.len() as u64, s.written);
+    assert_eq!(s.strips.len(), 2);
+    assert_eq!((s.strips[0].start, s.strips[0].film, s.strips[0].end), (0, 8 * CHUNKS_ROW, 42 * CHUNKS_ROW));
+    assert_eq!((s.strips[1].start, s.strips[1].film, s.strips[1].end), (42 * CHUNKS_ROW, 82 * CHUNKS_ROW, 116 * CHUNKS_ROW));
+    // LOW 0x91 resent after each strip, then the LED blinks green
+    let mut dx = Seq::new();
+    setup::dx_start(&mut dx, &st, 0x1234);
+    let dx_frame = dx.frames()[0].to_bytes();
+    assert_eq!(sim.sent.iter().filter(|f| **f == dx_frame).count(), 2);
+    assert!(lines.iter().any(|l| l.contains("strip 1 done")) && lines.iter().any(|l| l.contains("feed strip 2")));
+    assert!(lines.iter().any(|l| l.contains("film detected · strip 2")));
+    let json = scan::strips_json(row / 2, &s.strips);
+    assert!(json.contains("\"row_samples\": 2048") && json.contains("\"start\": 210"));
+}
+
+#[test]
+fn strip_mode_warns_on_a_long_strip_and_keeps_a_cut_one() {
+    use pakon_scan::scan::{self, StripMode, WHITE_FRAC_CODE_PCT, WHITE_THRESH_CODE};
+    use std::sync::{atomic::AtomicBool, Arc};
+    let row = pakon_scan::calib::CHUNK / 5;
+    let stop = Arc::new(AtomicBool::new(false));
+    let mut sim = Sim { stop_when_empty: Some(stop.clone()), ..Default::default() };
+    sim.images.extend((0..40).map(|_| image_chunk(15000))); // 200 rows, no end
+    // a pitch of 20 rows: 6 frames = 125 rows at most
+    let m = StripMode { row_bytes: row, pitch: 20, trigger: 1 };
+    let mut lines = Vec::new();
+    let s = scan::scan_loop(&mut sim, &f135_state(), &mut Vec::new(), T, 0, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), &stop, &mut pakon_proto::dx::Roll::new(), Some(m), &mut |l| lines.push(l.to_string()));
+    assert_eq!(lines.iter().filter(|l| l.contains("longer than 6 frames")).count(), 1);
+    assert_eq!(s.strips.len(), 1, "Stop mid-strip keeps it");
+    assert_eq!((s.strips[0].film, s.strips[0].end), (0, 200));
 }

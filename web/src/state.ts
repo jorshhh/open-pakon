@@ -53,7 +53,11 @@ export interface RollMeta {
   film?: Film;
   ice?: boolean;
   saved?: { centres: number[]; widths?: number[] } | null;
+  strips?: Strip[];      // strip mode: the strips in film order
+  dx_order?: boolean;    // put in that order from their DX codes
 }
+// One cut strip on the ribbon: full rows [start, end), fed = its place in the feed.
+export interface Strip { start: number; end: number; fed: number }
 export interface Crop { c: number; w: number }   // centre row, width (full res)
 
 export const app = reactive({

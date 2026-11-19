@@ -207,7 +207,7 @@ pub async fn api_process(State(app): State<Arc<App>>, body: Bytes) -> Response {
             // hand the browser everything it needs to place crops (no ribbon path)
             let all = serde_json::to_value(&meta).unwrap_or_default();
             let mut event = json!({"type": "done", "saved": load_crops(&raw, meta.rows)});
-            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice"] {
+            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order"] {
                 event[key] = all[key].clone();
             }
             app.roll().prescan = Some(meta);
@@ -222,7 +222,7 @@ pub async fn api_process(State(app): State<Arc<App>>, body: Bytes) -> Response {
 pub async fn api_autoframe(State(app): State<Arc<App>>, body: Bytes) -> Response {
     let f = fields(&body);
     let format = f.get("format").and_then(Value::as_str).unwrap_or("full").to_string();
-    let (ribbon, film, raw) = {
+    let (ribbon, film, raw, strips) = {
         let roll = app.roll();
         let Some(meta) = &roll.prescan else {
             return error(StatusCode::BAD_REQUEST, "Process a roll first");
@@ -233,12 +233,12 @@ pub async fn api_autoframe(State(app): State<Arc<App>>, body: Bytes) -> Response
         if roll.processing {
             return error(StatusCode::CONFLICT, "Already processing");
         }
-        (PathBuf::from(&meta.ribbon), meta.film, roll.scan_path.clone())
+        (PathBuf::from(&meta.ribbon), meta.film, roll.scan_path.clone(), meta.strips.clone())
     };
     let (me, fmt) = (app.clone(), frame_format(&format));
     let found = tokio::task::spawn_blocking(move || {
         let _one = me.jobs.lock().unwrap_or_else(|e| e.into_inner());
-        pakon_roll::autoframe(&ribbon, film, fmt)
+        pakon_roll::autoframe(&ribbon, film, fmt, &strips)
     })
     .await;
     let found = match found {
