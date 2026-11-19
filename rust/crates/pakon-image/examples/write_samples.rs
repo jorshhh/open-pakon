@@ -15,6 +15,6 @@ fn main() {
     let r = output::to_u8(&Picture16::Rgb(a.view()));
     output::write_jpeg(&dir.join("s.jpg"), r.view(), 92, Some(&f)).unwrap();
     let paths: Vec<PathBuf> = (0..8).map(|i| { let p = dir.join(format!("f{i}.jpg")); output::write_jpeg(&p, r.view(), 92, None).unwrap(); p }).collect();
-    let items: Vec<(usize, &std::path::Path)> = paths.iter().enumerate().map(|(i, p)| (i + 1, p.as_path())).collect();
+    let items: Vec<(usize, &std::path::Path, i32)> = paths.iter().enumerate().map(|(i, p)| (i + 1, p.as_path(), 0)).collect();
     output::write_contact_sheet(&dir.join("sheet.jpg"), &items).unwrap();
 }

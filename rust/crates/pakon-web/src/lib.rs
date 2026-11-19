@@ -83,6 +83,8 @@ pub struct Roll {
     pub frames: Vec<pakon_roll::FrameFiles>,
     /// `prescan`'s metadata (ribbon path, film base, pitch, centres...).
     pub prescan: Option<pakon_roll::Meta>,
+    /// Adjust's small renders of the boxes (none until Adjust opens them).
+    pub previews: Option<Arc<pakon_roll::Previewer>>,
     pub processing: bool,
 }
 
@@ -264,6 +266,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/process", post(jobs::api_process))
         .route("/api/autoframe", post(jobs::api_autoframe))
         .route("/api/preview", get(jobs::api_preview))
+        .route("/api/adjust/open", post(jobs::api_adjust_open))
+        .route("/api/adjust/{n}", get(jobs::api_adjust_preview))
         .route("/api/export_frames", post(jobs::api_export_frames))
         .route("/api/frames", get(jobs::api_frames))
         .route("/api/frames/{n}/thumb", get(jobs::api_thumb))

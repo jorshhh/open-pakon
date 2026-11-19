@@ -8,14 +8,15 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::body::Bytes;
-use axum::extract::{Path as UrlPath, State};
+use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::header::CONTENT_TYPE;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use pakon_image::colour::Adjust;
 use pakon_image::film::Film;
 use pakon_image::framing::Format;
-use pakon_roll::{ExportRequest, FilmKind, FrameFiles, Progress};
+use pakon_roll::{ExportRequest, FilmKind, FrameFiles, Orient, Progress};
 use serde_json::{json, Value};
 
 use crate::files::reveal_label;
@@ -98,8 +99,13 @@ fn load_crops(raw: &Path, rows: usize) -> Value {
     }
 }
 
-fn save_crops(raw: &Path, rows: usize, centres: &[i64], widths: &[usize]) {
-    let text = serde_json::to_string_pretty(&json!({"rows": rows, "centres": centres, "widths": widths})).unwrap_or_default();
+/// The boxes and, per box, Adjust's edits (`{}` for none) beside the raw.
+fn save_crops(raw: &Path, rows: usize, centres: &[i64], widths: &[usize], edits: &[Value]) {
+    let mut v = json!({"rows": rows, "centres": centres, "widths": widths});
+    if edits.iter().any(|e| e.as_object().is_some_and(|o| !o.is_empty())) {
+        v["edits"] = json!(edits);
+    }
+    let text = serde_json::to_string_pretty(&v).unwrap_or_default();
     if let Err(e) = std::fs::write(beside(raw, ".crops.json"), text) {
         println!("crop positions not saved: {e}");
     }
@@ -158,6 +164,7 @@ pub async fn api_open(State(app): State<Arc<App>>, body: Bytes) -> Response {
     roll.scan_path = Some(raw.clone());
     roll.frames.clear();
     roll.prescan = None;
+    roll.previews = None;
     drop(roll);
     Json(json!({
         "path": raw.to_string_lossy(),
@@ -184,6 +191,7 @@ pub async fn api_process(State(app): State<Arc<App>>, body: Bytes) -> Response {
         };
         roll.frames.clear();
         roll.prescan = None;
+        roll.previews = None;
         roll.processing = true;
         raw
     };
@@ -269,16 +277,130 @@ pub async fn api_preview(State(app): State<Arc<App>>) -> Response {
     jpeg(&app.env().preview_path()).unwrap_or_else(|| error(StatusCode::NOT_FOUND, "no preview"))
 }
 
-/// Stage 2: export the operator-confirmed crops at full resolution.
+/// One box's edits from the page: colour, brightness, contrast and
+/// saturation in TLX units (`adjust_from_json`) and the turn and flips. Numbers may come as
+/// strings (a preview's query).
+pub(crate) fn frame_edit(v: &Value) -> (Option<Adjust>, Orient) {
+    let flag = |k: &str| match v.get(k) {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::String(s)) => s == "1" || s == "true",
+        Some(Value::Number(n)) => n.as_i64() == Some(1),
+        _ => false,
+    };
+    let rotate = match v.get("rotate") {
+        Some(Value::Number(n)) => n.as_i64().unwrap_or(0),
+        Some(Value::String(s)) => s.trim().parse().unwrap_or(0),
+        _ => 0,
+    };
+    let orient = Orient { rotate: (rotate.div_euclid(90).rem_euclid(4) * 90) as i32, flip_h: flag("flip_h"), flip_v: flag("flip_v") };
+    (pakon_roll::adjust_from_json(v), orient)
+}
+
+/// The roll's sharpening (`off`, `low`, `medium`, `high`) in TLX units.
+fn sharpen_amount(name: Option<&str>) -> i32 {
+    pakon_roll::SHARPEN_LEVELS.iter().find(|l| Some(l.0) == name).map_or(0, |l| l.1)
+}
+
+/// A frame's adjustments with the roll's sharpening.
+fn with_sharpen(adj: Option<Adjust>, amount: i32) -> Option<Adjust> {
+    if amount == 0 {
+        return adj;
+    }
+    Adjust { sharpness: amount, ..adj.unwrap_or_default() }.clean()
+}
+
+/// The boxes of a request body: centres and widths (full rows).
+fn boxes(f: &serde_json::Map<String, Value>) -> Option<(Vec<i64>, Option<Vec<usize>>)> {
+    let centres = f.get("centres").and_then(Value::as_array)?;
+    let centres: Vec<i64> = centres.iter().filter_map(|c| c.as_i64().or_else(|| c.as_f64().map(|v| v as i64))).collect();
+    let widths = f.get("widths").and_then(Value::as_array).map(|w| w.iter().filter_map(|v| v.as_u64().map(|v| v as usize)).collect());
+    Some((centres, widths))
+}
+
+/// The export (or preview) of `centres` on the processed roll.
+fn export_request(app: &App, meta: &pakon_roll::Meta, raw: Option<&Path>, centres: Vec<i64>, widths: Option<Vec<usize>>, ice: bool) -> ExportRequest {
+    let f32s = |v: [f64; 3]| v.map(|x| x as f32);
+    ExportRequest {
+        ribbon: PathBuf::from(&meta.ribbon),
+        base: f32s(meta.base),
+        centres,
+        widths,
+        rotate: 90,
+        frame_w: meta.frame_w,
+        rpd_balance: meta.rpd_balance.map(|b| b.map(f32s)),
+        roll_centres: Some(meta.centres.clone()),
+        film: meta.film,
+        flare: meta.flare.map(f32s),
+        dx_film: raw.and_then(|r| pakon_roll::dx_for_raw(&app.paths.root, r)),
+        ice,
+        sba_dpi: meta.sba_dpi.clone(),
+        scene_dmin: meta.scene_dmin,
+        adjustments: None,
+        orient: None,
+    }
+}
+
+/// Adjust: render the boxes small (and work out the roll's scene balance)
+/// so each frame's preview comes back at once.
+pub async fn api_adjust_open(State(app): State<Arc<App>>, body: Bytes) -> Response {
+    let f = fields(&body);
+    let Some((centres, widths)) = boxes(&f) else { return missing("centres") };
+    let (meta, raw) = {
+        let mut roll = app.roll();
+        let Some(meta) = roll.prescan.clone() else {
+            return refuse("Run a scan/process first");
+        };
+        if roll.processing {
+            return refuse("Already processing");
+        }
+        roll.previews = None;
+        roll.processing = true;
+        (meta, roll.scan_path.clone())
+    };
+    let req = export_request(&app, &meta, raw.as_deref(), centres, widths, false);
+    let env = app.env();
+    run_job(
+        app,
+        "adjust",
+        "adjust",
+        move |progress| pakon_roll::previewer(&env, &req, Some(progress)),
+        move |app, p| {
+            let n = p.len();
+            app.roll().previews = Some(Arc::new(p));
+            (json!({"type": "done", "frames": n}), json!({"frames": n, "film": meta.film}))
+        },
+    )
+}
+
+/// Frame `n` (1-based) of the open previews with the edits in the query
+/// (`frame_edit`'s keys) and the roll's `sharpen`, its long side at `px`
+/// or under, as a JPEG.
+pub async fn api_adjust_preview(State(app): State<Arc<App>>, UrlPath(n): UrlPath<usize>, Query(q): Query<std::collections::HashMap<String, String>>) -> Response {
+    let Some(p) = app.roll().previews.clone() else { return error(StatusCode::NOT_FOUND, "Open Adjust first") };
+    if n == 0 || n > p.len() {
+        return error(StatusCode::NOT_FOUND, "not found");
+    }
+    let (adj, orient) = frame_edit(&json!(q));
+    let adj = with_sharpen(adj, sharpen_amount(q.get("sharpen").map(String::as_str)));
+    // the long side wanted, within reason
+    let px = q.get("px").and_then(|v| v.parse::<usize>().ok()).unwrap_or(pakon_roll::PREVIEW_PX).clamp(200, 4000);
+    match tokio::task::spawn_blocking(move || p.jpeg(n - 1, adj.as_ref(), orient, px)).await {
+        Ok(Ok(bytes)) => ([(CONTENT_TYPE, "image/jpeg")], bytes).into_response(),
+        Ok(Err(e)) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+        Err(_) => error(StatusCode::INTERNAL_SERVER_ERROR, "internal error, see the app's log"),
+    }
+}
+
+/// Stage 2: export the operator-confirmed crops at full resolution, each
+/// with its edits from Adjust (`edits`, one object per box) and the roll's
+/// `sharpen`.
 pub async fn api_export_frames(State(app): State<Arc<App>>, body: Bytes) -> Response {
     let f = fields(&body);
-    let Some(centres) = f.get("centres").and_then(Value::as_array) else { return missing("centres") };
-    let centres: Vec<i64> = centres.iter().filter_map(|c| c.as_i64().or_else(|| c.as_f64().map(|v| v as i64))).collect();
-    let widths: Option<Vec<usize>> = f.get("widths").and_then(Value::as_array).map(|w| w.iter().filter_map(|v| v.as_u64().map(|v| v as usize)).collect());
+    let Some((centres, widths)) = boxes(&f) else { return missing("centres") };
     let ice = f.get("ice").and_then(Value::as_bool).unwrap_or(false);
-    // Sharpening at export, the OEM's unsharp mask at 1 / 2 / 3 TLX clicks.
-    let sharpen = f.get("sharpen").and_then(Value::as_str).unwrap_or("off");
-    let amount = pakon_roll::SHARPEN_LEVELS.iter().find(|l| l.0 == sharpen).map_or(0, |l| l.1);
+    let sharpen = sharpen_amount(f.get("sharpen").and_then(Value::as_str));
+    let edits: Vec<Value> = f.get("edits").and_then(Value::as_array).cloned().unwrap_or_default();
+    let edits: Vec<Value> = (0..centres.len()).map(|i| edits.get(i).cloned().unwrap_or_else(|| json!({}))).collect();
 
     let (meta, raw) = {
         let mut roll = app.roll();
@@ -293,25 +415,13 @@ pub async fn api_export_frames(State(app): State<Arc<App>>, body: Bytes) -> Resp
         (meta, roll.scan_path.clone())
     };
     let ice = ice && meta.ice;
-    let f32s = |v: [f64; 3]| v.map(|x| x as f32);
-    let adjust = pakon_roll::adjust_from_json(&json!({"sharpness": amount}));
-    let req = ExportRequest {
-        ribbon: PathBuf::from(&meta.ribbon),
-        base: f32s(meta.base),
-        centres: centres.clone(),
-        widths: widths.clone(),
-        rotate: 90,
-        frame_w: meta.frame_w,
-        rpd_balance: meta.rpd_balance.map(|b| b.map(f32s)),
-        roll_centres: Some(meta.centres.clone()),
-        film: meta.film,
-        flare: meta.flare.map(f32s),
-        dx_film: raw.as_ref().and_then(|r| pakon_roll::dx_for_raw(&app.paths.root, r)),
-        ice,
-        sba_dpi: meta.sba_dpi.clone(),
-        scene_dmin: meta.scene_dmin,
-        adjustments: (amount != 0).then(|| vec![adjust; centres.len()]),
-    };
+    let mut req = export_request(&app, &meta, raw.as_deref(), centres.clone(), widths.clone(), ice);
+    let (adjustments, orient): (Vec<Option<Adjust>>, Vec<Orient>) = edits.iter().map(frame_edit).unzip();
+    let edited = adjustments.iter().filter(|a| a.is_some()).count();
+    let adjustments: Vec<Option<Adjust>> = adjustments.into_iter().map(|a| with_sharpen(a, sharpen)).collect();
+    let turned = orient.iter().filter(|o| **o != Orient::default()).count();
+    req.adjustments = adjustments.iter().any(Option::is_some).then_some(adjustments);
+    req.orient = (turned > 0).then_some(orient);
     let env = app.env();
     run_job(
         app,
@@ -323,9 +433,9 @@ pub async fn api_export_frames(State(app): State<Arc<App>>, body: Bytes) -> Resp
             app.roll().frames = frames;
             if let Some(raw) = &raw {
                 let widths = widths.unwrap_or_else(|| vec![meta.frame_w; centres.len()]);
-                save_crops(raw, meta.rows, &centres, &widths);
+                save_crops(raw, meta.rows, &centres, &widths, &edits);
             }
-            (json!({"type": "done", "count": n}), json!({"frames": n, "film": meta.film, "ice": ice}))
+            (json!({"type": "done", "count": n}), json!({"frames": n, "film": meta.film, "ice": ice, "sharpen": sharpen, "adjusted": edited, "turned": turned}))
         },
     )
 }
@@ -465,11 +575,45 @@ mod tests {
         assert_eq!(raw_format(&raw), "pano");
         assert_eq!(frame_format("half"), Format::Half);
         assert_eq!(load_crops(&raw, 100), Value::Null);
-        save_crops(&raw, 100, &[10, 60], &[40, 40]);
+        save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({})]);
         assert_eq!(load_crops(&raw, 100), json!({"rows": 100, "centres": [10, 60], "widths": [40, 40]}));
         assert_eq!(load_crops(&raw, 101), Value::Null, "another ribbon length");
-        save_crops(&raw, 100, &[], &[]);
+        save_crops(&raw, 100, &[], &[], &[]);
         assert_eq!(load_crops(&raw, 100), Value::Null, "no boxes");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn edits_from_the_page() {
+        let (adj, orient) = frame_edit(&json!({"red": 50, "brightness": "-25", "rotate": 270, "flip_h": true}));
+        let adj = adj.unwrap();
+        assert_eq!((adj.red, adj.brightness, adj.green), (50, -25, 0));
+        assert_eq!(orient, Orient { rotate: 270, flip_h: true, flip_v: false });
+        // a preview's query: everything a string
+        let (adj, orient) = frame_edit(&json!({"rotate": "-90", "flip_v": "1", "saturation": "9"}));
+        assert_eq!(adj.unwrap().saturation, 5);
+        assert_eq!(orient, Orient { rotate: 270, flip_h: false, flip_v: true });
+        assert_eq!(frame_edit(&json!({})), (None, Orient::default()));
+    }
+
+    #[test]
+    fn the_roll_sharpening_goes_on_every_frame() {
+        assert_eq!(sharpen_amount(Some("medium")), 133);
+        assert_eq!(sharpen_amount(Some("loud")), 0);
+        assert_eq!(with_sharpen(None, 0), None);
+        assert_eq!(with_sharpen(None, 67).unwrap().sharpness, 67);
+        let a = with_sharpen(frame_edit(&json!({"red": 25})).0, 200).unwrap();
+        assert_eq!((a.red, a.sharpness), (25, 200));
+    }
+
+    #[test]
+    fn edits_saved_with_the_boxes() {
+        let d = temp("edits");
+        let raw = d.join("scan.raw");
+        save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({"red": 25})]);
+        assert_eq!(load_crops(&raw, 100)["edits"], json!([{}, {"red": 25}]));
+        save_crops(&raw, 100, &[10], &[40], &[json!({})]);
+        assert!(load_crops(&raw, 100).get("edits").is_none(), "no edits, no key");
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -486,7 +630,7 @@ mod tests {
                     std::fs::write(&p, format!("{i}{ext}")).unwrap();
                     p
                 };
-                FrameFiles { index: i, raw_tiff: file("_raw.tif"), tiff: file(".tif"), jpg: file(".jpg"), thumb: file("_t.jpg") }
+                FrameFiles { index: i, raw_tiff: file("_raw.tif"), tiff: file(".tif"), jpg: file(".jpg"), thumb: file("_t.jpg"), sheet_turn: 0 }
             })
             .collect();
         let out = d.join("order");

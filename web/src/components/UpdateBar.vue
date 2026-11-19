@@ -2,7 +2,7 @@
 // A newer release is out (pakon-web update.rs). Shown until Later; it
 // comes back at the next launch.
 import { computed, ref, watch } from 'vue';
-import { app } from '../state';
+import { app } from '../state/app';
 import Btn from '../ui/Btn.vue';
 
 const u = computed(() => app.status?.update ?? null);
@@ -35,8 +35,8 @@ async function get() {
   <div v-if="u && !app.updateLater" role="status"
        class="-mt-4 mb-6 flex flex-wrap items-center gap-3.5 border-2 border-ink bg-accent px-4 py-3 shadow-hard">
     <svg class="size-6.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 15v5h16v-5"/></svg>
-    <div class="min-w-0 flex-[1_1_260px] text-[0.9rem] leading-snug">
-      <strong class="block font-display text-[1.05rem] uppercase">Pakon {{ u.latest }} is out</strong>
+    <div class="min-w-0 flex-[1_1_260px] text-body leading-snug">
+      <strong class="block font-display text-heading uppercase">Pakon {{ u.latest }} is out</strong>
       <span>{{ text }}</span>
     </div>
     <Btn variant="dark" @click="get">{{ u.install ? 'Install' : 'Download' }}</Btn>

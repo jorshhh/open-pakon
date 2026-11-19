@@ -2,7 +2,8 @@
 // Export: the exported frames, and saving them into the work folder.
 import { computed, ref, watch } from 'vue';
 import { postJSON, postSSE } from '../api';
-import { exported, msg, setBusy } from '../state';
+import { msg, setBusy } from '../state/app';
+import { exported } from '../state/exported';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
 import EmptyCard from '../ui/EmptyCard.vue';
@@ -52,14 +53,14 @@ async function save(fmt: string) {
 </script>
 
 <template>
-  <EmptyCard v-if="!n" title="Nothing exported yet">Export from <b>Frames</b>.</EmptyCard>
+  <EmptyCard v-if="!n" title="Nothing exported yet">Export from <b>Adjust</b>.</EmptyCard>
   <template v-else>
     <Card :title="`Save ${n} frame${n === 1 ? '' : 's'}`" ruled>
-      <div class="mb-3.5 font-mono text-[0.88rem] font-semibold" :title="exported.folder">{{ exported.folder || 'the work folder' }}</div>
+      <div class="mb-3.5 font-mono text-body font-semibold" :title="exported.folder">{{ exported.folder || 'the work folder' }}</div>
       <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
         <Btn v-for="f in formats" :key="f.fmt" variant="ghost" :disabled="saving"
              class="bg-surface-2! px-4! py-3.5! text-left normal-case enabled:hover:bg-accent!" @click="save(f.fmt)">
-          <span class="font-display text-base font-bold uppercase">{{ f.name }}</span>
+          <span class="font-display text-heading font-bold uppercase">{{ f.name }}</span>
         </Btn>
       </div>
       <ProgressBar :show="prog.show" :value="prog.value" :label="prog.label" />
@@ -74,8 +75,8 @@ async function save(fmt: string) {
       <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4">
         <div v-for="f in exported.frames" :key="f.index" class="overflow-hidden border-2 border-ink bg-surface shadow-hard-sm">
           <img :src="`/api/frames/${f.index}/thumb?t=${exported.stamp}`" :alt="`Frame ${f.index}`" loading="lazy"
-               class="block h-32.5 w-full border-b-2 border-ink bg-ink object-cover">
-          <div class="bg-paper px-2.5 py-2 font-mono text-[0.75rem] font-semibold">Frame {{ f.index }}</div>
+               class="block h-32.5 w-full border-b-2 border-ink bg-ink object-contain">
+          <div class="bg-paper px-2.5 py-2 font-mono text-small font-semibold">Frame {{ f.index }}</div>
         </div>
       </div>
     </Card>

@@ -2,7 +2,7 @@
 // A cold scanner: load the firmware (RAM only; a power cycle needs it again).
 import { ref } from 'vue';
 import { postSSE } from '../api';
-import { msg } from '../state';
+import { msg } from '../state/app';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
 import LogBox from '../ui/LogBox.vue';

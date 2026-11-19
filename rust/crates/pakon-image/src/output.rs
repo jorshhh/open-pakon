@@ -285,17 +285,45 @@ fn draw_text(canvas: &mut image::RgbImage, x: i32, y: i32, text: &str, fg: [u8; 
     }
 }
 
-/// Tile the rendered frame JPEGs (index, path) into one labelled sheet
-/// (`make_contact_sheet`): 6 columns of 480 px cells at the first frame's
-/// aspect, Lanczos-resized, "Frame NN" under each.
-pub fn contact_sheet(frames: &[(usize, &Path)]) -> Result<Option<image::RgbImage>, String> {
-    let (cols, cell_w, pad, label_h) = (6u32, 480u32, 10u32, 26u32);
+/// The size of a `w`×`h` picture fitted inside a `bw`×`bh` box, its shape
+/// kept.
+fn fit_in(w: u32, h: u32, bw: u32, bh: u32) -> (u32, u32) {
+    let s = (bw as f64 / w.max(1) as f64).min(bh as f64 / h.max(1) as f64);
+    (((w as f64 * s).round() as u32).clamp(1, bw), ((h as f64 * s).round() as u32).clamp(1, bh))
+}
+
+/// The contact sheet's cell: the long side `long`, the shape the roll's
+/// frames have most (the median aspect), so a turned frame, a half frame
+/// or a panorama among them keeps its own shape inside it.
+fn cell_size(sizes: &[(u32, u32)], long: u32) -> (u32, u32) {
+    let mut aspects: Vec<f64> = sizes.iter().map(|&(w, h)| w as f64 / h.max(1) as f64).collect();
+    aspects.sort_by(f64::total_cmp);
+    let a = aspects.get(aspects.len() / 2).copied().unwrap_or(1.5);
+    if a >= 1.0 { (long, (long as f64 / a).round() as u32) } else { ((long as f64 * a).round() as u32, long) }
+}
+
+/// Tile the rendered frame JPEGs (index, path, degrees clockwise to turn
+/// it) into one labelled sheet (`make_contact_sheet`): 6 columns of cells
+/// 480 px on their long side, each frame turned, Lanczos-resized to fit its
+/// cell with its own shape and centred, "Frame NN" under each.
+pub fn contact_sheet(frames: &[(usize, &Path, i32)]) -> Result<Option<image::RgbImage>, String> {
+    let (cols, long, pad, label_h) = (6u32, 480u32, 10u32, 26u32);
     let (bg, fg) = ([22u8, 22, 22], [226u8, 226, 226]);
-    let items: Vec<&(usize, &Path)> = frames.iter().filter(|(_, p)| p.is_file()).collect();
-    let Some(first) = items.first() else { return Ok(None) };
-    let open = |p: &Path| image::open(p).map(|i| i.to_rgb8()).map_err(|e| format!("{}: {e}", p.display()));
-    let im0 = open(first.1)?;
-    let cell_h = (cell_w as f64 * (im0.height() as f64 / im0.width() as f64)) as u32;
+    let items: Vec<&(usize, &Path, i32)> = frames.iter().filter(|(_, p, _)| p.is_file()).collect();
+    if items.is_empty() {
+        return Ok(None);
+    }
+    let quarter = |turn: i32| turn.rem_euclid(180) == 90;
+    // each frame's size once turned
+    let sizes: Vec<(u32, u32)> = items
+        .iter()
+        .map(|(_, p, turn)| {
+            let (w, h) = image::image_dimensions(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            Ok(if quarter(*turn) { (h, w) } else { (w, h) })
+        })
+        .collect::<Result<_, String>>()?;
+    let (cell_w, cell_h) = cell_size(&sizes, long);
+    let cols = cols.min(items.len() as u32);
     let rows = (items.len() as u32).div_ceil(cols);
     let (sw, sh) = (cols * cell_w + (cols + 1) * pad, rows * (cell_h + label_h) + (rows + 1) * pad);
     let mut sheet = image::RgbImage::from_pixel(sw, sh, image::Rgb(bg));
@@ -304,24 +332,34 @@ pub fn contact_sheet(frames: &[(usize, &Path)]) -> Result<Option<image::RgbImage
     use rayon::prelude::*;
     let thumbs: Vec<image::RgbImage> = items
         .par_iter()
-        .enumerate()
-        .map(|(k, (_, path))| {
-            let im = if k == 0 { im0.clone() } else { open(path)? };
-            Ok(image::imageops::resize(&im, cell_w, cell_h, image::imageops::FilterType::Lanczos3))
+        .map(|(_, path, turn)| {
+            let im = image::open(path).map(|i| i.to_rgb8()).map_err(|e| format!("{}: {e}", path.display()))?;
+            // shrink first, turn the small one
+            let (tw, th) = if quarter(*turn) { (im.height(), im.width()) } else { (im.width(), im.height()) };
+            let (w, h) = fit_in(tw, th, cell_w, cell_h);
+            let (rw, rh) = if quarter(*turn) { (h, w) } else { (w, h) };
+            let small = image::imageops::resize(&im, rw, rh, image::imageops::FilterType::Lanczos3);
+            Ok(match turn.rem_euclid(360) {
+                90 => image::imageops::rotate90(&small),
+                180 => image::imageops::rotate180(&small),
+                270 => image::imageops::rotate270(&small),
+                _ => small,
+            })
         })
         .collect::<Result<_, String>>()?;
-    for (k, ((index, _), thumb)) in items.iter().zip(&thumbs).enumerate() {
+    for (k, ((index, _, _), thumb)) in items.iter().zip(&thumbs).enumerate() {
         let (r, c) = (k as u32 / cols, k as u32 % cols);
         let x = pad + c * (cell_w + pad);
         let y = pad + r * (cell_h + label_h + pad);
-        image::imageops::replace(&mut sheet, thumb, x as i64, y as i64);
+        let (dx, dy) = ((cell_w - thumb.width()) / 2, (cell_h - thumb.height()) / 2);
+        image::imageops::replace(&mut sheet, thumb, (x + dx) as i64, (y + dy) as i64);
         draw_text(&mut sheet, x as i32 + 2, (y + cell_h + 4) as i32, &format!("Frame {index:02}"), fg, font.as_ref());
     }
     Ok(Some(sheet))
 }
 
 /// `contact_sheet` saved as a quality-90 JPEG; false when there are no frames.
-pub fn write_contact_sheet(path: &Path, frames: &[(usize, &Path)]) -> Result<bool, String> {
+pub fn write_contact_sheet(path: &Path, frames: &[(usize, &Path, i32)]) -> Result<bool, String> {
     let Some(sheet) = contact_sheet(frames)? else { return Ok(false) };
     let (w, h) = sheet.dimensions();
     let a = Array3::from_shape_vec((h as usize, w as usize, 3), sheet.into_raw()).map_err(|e| e.to_string())?;
@@ -332,6 +370,18 @@ pub fn write_contact_sheet(path: &Path, frames: &[(usize, &Path)]) -> Result<boo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sheet_cells_keep_each_frame_shape() {
+        // a roll of 3:2 frames with one turned and one panorama
+        let sizes = [(3000, 2000), (3000, 2000), (2000, 3000), (5530, 2000), (3000, 2000)];
+        let (cw, ch) = cell_size(&sizes, 480);
+        assert_eq!((cw, ch), (480, 320));
+        assert_eq!(fit_in(2000, 3000, cw, ch), (213, 320), "the turned frame stands up");
+        assert_eq!(fit_in(5530, 2000, cw, ch), (480, 174), "the panorama stays wide");
+        // a half-frame roll: portrait cells
+        assert_eq!(cell_size(&[(1500, 2000), (1500, 2000)], 480), (360, 480));
+    }
     use ndarray::Array2;
 
     #[test]

@@ -1,5 +1,5 @@
 /* Tailwind, the house tokens, and the few things utilities don't express
-   well: native controls, the film grain, the "i" tips, the strip's
+   well: native controls, the "i" tips, the strip's
    scrollbar and sprocket holes. Everything else is utilities in the
    components. */
 @import "tailwindcss";
@@ -20,6 +20,13 @@
   --font-mono: 'IBM Plex Mono', monospace;
   --font-display: 'Space Grotesk', sans-serif;
 
+  /* the type scale: every text on the page is one of these */
+  --text-title: 1.125rem;      /* card and page titles */
+  --text-heading: 0.9375rem;   /* dialog and panel headings, big readouts */
+  --text-body: 0.8125rem;      /* text, controls, buttons */
+  --text-small: 0.75rem;       /* labels, hints, status lines */
+  --text-tiny: 0.6875rem;      /* frame numbers, badges */
+
   --shadow-hard: 4px 4px 0 0 var(--color-ink);
   --shadow-hard-sm: 2px 2px 0 0 var(--color-ink);
   --shadow-modal: 8px 8px 0 0 var(--color-danger);
@@ -32,16 +39,10 @@
   /* the scrollbar comes and goes between spaces; keep its room so the
      bar along the bottom does not shift sideways */
   html { scrollbar-gutter: stable; }
-  body { @apply min-h-screen bg-paper px-6 pt-10 pb-28 font-sans text-ink; }
-  /* film grain */
-  body::before {
-    content: ""; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
-    opacity: 0.4; mix-blend-mode: multiply;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  }
+  body { @apply min-h-screen bg-paper px-6 pt-4 pb-28 font-sans text-body text-ink; }
 
   select, input[type="text"] {
-    @apply border-2 border-ink bg-surface px-2 py-1.5 font-mono text-[0.88rem] text-ink;
+    @apply border-2 border-ink bg-surface px-2 py-1.5 font-mono text-body text-ink;
   }
   select { @apply cursor-pointer pr-1.5; }
   select:disabled { @apply cursor-not-allowed opacity-60; }

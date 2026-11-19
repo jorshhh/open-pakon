@@ -33,8 +33,8 @@ window.addEventListener('keydown', e => {
   <Modal v-if="asking.open" as="form" small top :aria-label="asking.label" @close="finishAsk(null)" @submit.prevent="submit">
     <div class="px-5 py-4.5">
       <input ref="input" v-model="asking.value" type="text" maxlength="64" autocomplete="off" spellcheck="false"
-             :aria-label="asking.label" class="w-full font-display! text-lg! font-bold" @input="error = ''">
-      <p v-if="error" class="mt-2 font-mono text-[0.8rem] font-semibold text-danger">{{ error }}</p>
+             :aria-label="asking.label" class="w-full font-display! text-heading! font-bold" @input="error = ''">
+      <p v-if="error" class="mt-2 font-mono text-small font-semibold text-danger">{{ error }}</p>
     </div>
     <template #foot>
       <span class="flex-1"></span>

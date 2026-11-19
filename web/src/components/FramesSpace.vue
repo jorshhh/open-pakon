@@ -1,35 +1,24 @@
 <script setup lang="ts">
-// Frames: place the crop boxes on the film strip (minilab style), then
-// export them at full resolution.
+// Frames: place the crop boxes on the film strip (minilab style); Adjust
+// takes them from there.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { postJSON, postSSE, store } from '../api';
-import { app, loadFrames, resetExport, roll, setBusy, showSpace } from '../state';
+import { postJSON } from '../api';
+import { app, showSpace } from '../state/app';
+import { roll } from '../state/roll';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
-import InfoTip from '../ui/InfoTip.vue';
+import KeyHints from '../ui/KeyHints.vue';
 import ProgressBar from '../ui/ProgressBar.vue';
 
 const meta = computed(() => roll.meta);
+const KEYS = [
+  { keys: ['Click'], what: 'place' },
+  { keys: ['←', '→'], what: 'nudge' },
+  { keys: ['↑', '↓'], what: 'previous / next' },
+  { keys: ['Enter'], what: 'add' },
+  { keys: ['Delete'], what: 'remove' },
+];
 const shown = computed(() => app.space === 'frames' && !!meta.value);
-
-// ── Export options: dust removal and sharpening ──────────────────────────
-// Dust removal needs the scan's infrared channel, and older raws may lack
-// the calibration's IR table. Silver B&W gets none (silver blocks IR as dust
-// does) and slides none (it softens their grain): the prescan leaves
-// meta.ice off for both.
-// The choices are remembered in this browser.
-const iceOk = computed(() => !!meta.value?.ice);
-const iceTip = computed(() => iceOk.value
-  ? 'Digital ICE: rebuilds dust and scratches from the infrared channel. Slower export.'
-  : meta.value?.film === 'bw'
-  ? 'Off for silver B&W: the silver blocks infrared just as dust does.'
-  : meta.value?.film === 'slide'
-  ? 'Off for slides: it softens slide grain.'
-  : 'This scan has no infrared channel to find dust with.');
-const ice = ref(store.get('pakon-ice') === '1');
-const sharpen = ref(store.get('pakon-sharpen') || 'off');
-watch(ice, v => store.set('pakon-ice', v ? '1' : '0'));
-watch(sharpen, v => store.set('pakon-sharpen', v));
 
 // ── The strip ────────────────────────────────────────────────────────────
 const format = ref('full');
@@ -152,15 +141,15 @@ async function autoFrame() {
   wrap.value?.focus({ preventScroll: true });
 }
 
-// keyboard: ←/→ nudge (Shift = coarse), ↑/↓ previous/next, Enter adds a
+// keyboard: ←/→ nudge, ↑/↓ previous/next, Enter adds a
 // box, Delete/Backspace removes the current one
 function onKey(e: KeyboardEvent) {
   if (!shown.value || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
   if (t?.closest?.('select, input, textarea, [role="dialog"]')) return;   // a form control has the keys
-  const k = e.key, big = e.shiftKey ? 6 : 1;
-  if (k === 'ArrowLeft') nudge(-step() * big);
-  else if (k === 'ArrowRight') nudge(step() * big);
+  const k = e.key;
+  if (k === 'ArrowLeft') nudge(-step());
+  else if (k === 'ArrowRight') nudge(step());
   else if (k === 'ArrowUp') go(-1);
   else if (k === 'ArrowDown') go(1);
   else if (k === 'Enter') addFrame();
@@ -171,49 +160,25 @@ function onKey(e: KeyboardEvent) {
 onMounted(() => { window.addEventListener('keydown', onKey); window.addEventListener('resize', onResize); });
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize); });
 
-// ── Export the boxes at full resolution ──────────────────────────────────
-const exporting = ref(false);
-const exp = ref({ show: false, value: 0, label: '' });
-async function exportFrames() {
-  exporting.value = true;
-  setBusy('frames', true);
-  exp.value = { show: true, value: 0, label: '' };
-  resetExport();
-  await postSSE('/api/export_frames', {
-    centres: roll.crops.map(c => Math.round(c.c)),
-    widths: roll.crops.map(c => Math.round(c.w)),
-    ice: ice.value && iceOk.value,
-    sharpen: sharpen.value,
-  }, ev => {
-    if (ev.type === 'progress') exp.value = { show: true, value: ev.pct, label: ev.step };
-    else if (ev.type === 'done') {
-      exp.value = { show: true, value: 1, label: 'Done' };
-      loadFrames().then(() => { exp.value.show = false; showSpace('export'); });
-    } else if (ev.type === 'error') exp.value = { ...exp.value, label: ev.message ?? '' };
-  });
-  exporting.value = false;
-  setBusy('frames', false);
-}
 </script>
 
 <template>
   <!-- nothing to place yet: no roll, or still processing -->
   <Card v-if="!meta" class="px-6 py-12 text-center">
-    <h2 class="font-display text-xl font-bold uppercase">{{ roll.wait.title }}</h2>
-    <p class="mt-1.5 text-[0.92rem] text-muted">{{ roll.wait.msg }}</p>
+    <h2 class="font-display text-title font-bold uppercase">{{ roll.wait.title }}</h2>
+    <p class="mt-1.5 text-body text-muted">{{ roll.wait.msg }}</p>
     <div class="mx-auto max-w-[420px]"><ProgressBar :show="roll.wait.pct != null" :value="roll.wait.pct" /></div>
   </Card>
 
   <Card v-else ruled>
     <template #title>{{ title }}</template>
     <template #info>
-      <span v-if="strips.length > 1" class="border-2 border-ink px-2 py-0.5 font-mono text-[0.72rem] font-bold uppercase">{{ strips.length }} strips</span>
-      <span v-if="meta?.dx_order" class="border-2 border-ink bg-accent px-2 py-0.5 font-mono text-[0.72rem] font-bold uppercase">DX order</span>
-      <InfoTip label="Keys" place="below" tip="Click the strip to place a box. ← → nudge · ↑ ↓ previous / next · Enter add · Delete remove." />
+      <span v-if="strips.length > 1" class="border-2 border-ink px-2 py-0.5 font-mono text-small font-bold uppercase">{{ strips.length }} strips</span>
+      <span v-if="meta?.dx_order" class="border-2 border-ink bg-accent px-2 py-0.5 font-mono text-small font-bold uppercase">DX order</span>
     </template>
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-3">
-        <label class="flex items-center gap-2 font-mono text-[0.85rem] font-semibold">Format
+        <label class="flex items-center gap-2 font-mono text-body font-semibold">Format
           <select v-model="format" aria-label="Picture format" @change="formatChanged">
             <option value="full">Full frame</option>
             <option value="half">Half frame</option>
@@ -225,21 +190,10 @@ async function exportFrames() {
         <Btn variant="ghost" title="Add a box (Enter)" @click="addFrame">+ Add</Btn>
         <Btn variant="ghost" title="Remove the selected box (Delete)" @click="delFrame">− Remove</Btn>
       </div>
-      <div class="flex flex-wrap items-center gap-3 text-[0.85rem]">
-        <label :class="['inline-flex items-center gap-1.5 whitespace-nowrap', iceOk ? 'cursor-pointer' : 'cursor-not-allowed opacity-45']">
-          <input v-model="ice" type="checkbox" :disabled="!iceOk"> Remove dust</label>
-        <InfoTip :tip="iceTip" label="About dust removal" place="left" />
-        <label class="inline-flex items-center gap-1.5 whitespace-nowrap">Sharpen
-          <select v-model="sharpen" aria-label="Sharpening">
-            <option value="off">Off</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select></label>
-        <Btn :disabled="!roll.crops.length || exporting" @click="exportFrames">Export {{ roll.crops.length }} frames</Btn>
-      </div>
+      <Btn :disabled="!roll.crops.length" @click="showSpace('adjust')">Adjust {{ roll.crops.length }} frames</Btn>
     </div>
-    <div v-if="roll.framesError" class="mt-2.5 font-mono text-[0.83rem] font-semibold text-danger">{{ roll.framesError }}</div>
+    <KeyHints class="mt-2.5" :hints="KEYS" />
+    <div v-if="roll.framesError" class="mt-2.5 font-mono text-body font-semibold text-danger">{{ roll.framesError }}</div>
 
     <div ref="wrap" tabindex="-1" class="strip relative mt-3.5 overflow-x-auto overflow-y-hidden border-2 border-ink bg-ink py-2.5 outline-none">
       <div ref="inner" class="relative my-2 leading-0" :style="{ width: stripW + 'px' }" @click.self="stripClick">
@@ -255,18 +209,17 @@ async function exportFrames() {
              :class="['absolute inset-y-0 box-border cursor-pointer',
                       b.i === roll.cur ? 'z-10 border-3 border-danger' : 'border-2 border-accent/80']"
              :style="{ left: b.left + 'px', width: b.width + 'px' }">
-          <span :class="['absolute top-0.5 left-1 border border-black px-1 font-mono text-[11px] leading-normal font-semibold',
+          <span :class="['absolute top-0.5 left-1 border border-black px-1 font-mono text-tiny leading-normal font-semibold',
                          b.i === roll.cur ? 'bg-danger text-white' : 'bg-accent text-black']">{{ b.i + 1 }}</span>
         </div>
         <!-- strip mode: a line where each cut strip starts, its feed number below -->
         <template v-if="stripMarks.length > 1">
           <div v-for="m in stripMarks" :key="'s' + m.i" class="pointer-events-none absolute inset-y-0 z-20" :style="{ left: m.left + 'px' }">
             <div v-if="m.i > 0" class="absolute inset-y-0 -left-0.5 w-1 bg-surface"></div>
-            <span class="absolute bottom-0.5 left-1.5 border border-black bg-surface px-1 font-mono text-[11px] leading-normal font-bold whitespace-nowrap text-ink">Strip {{ m.fed }}</span>
+            <span class="absolute bottom-0.5 left-1.5 border border-black bg-surface px-1 font-mono text-tiny leading-normal font-bold whitespace-nowrap text-ink">Strip {{ m.fed }}</span>
           </div>
         </template>
       </div>
     </div>
-    <div class="mt-2.5"><ProgressBar :show="exp.show" :value="exp.value" :label="exp.label" class="mt-0!" /></div>
   </Card>
 </template>

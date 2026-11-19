@@ -1,7 +1,7 @@
 // Crash reports / usage statistics (pakon-web telemetry.rs): the consent
 // is asked once, Settings changes it.
 import { postJSON, report } from './api';
-import { app, type Telemetry } from './state';
+import { app, type Telemetry } from './state/app';
 
 export async function saveConsent(usage: boolean, crashes: boolean): Promise<Telemetry> {
   const d: Telemetry = await postJSON('/api/telemetry/consent', { usage, crashes }).then(r => r.json());

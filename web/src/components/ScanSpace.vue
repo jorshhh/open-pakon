@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { app } from '../state';
+import { app } from '../state/app';
 import { scannerState } from '../status';
 import EmptyCard from '../ui/EmptyCard.vue';
 import FirmwareCard from './FirmwareCard.vue';
