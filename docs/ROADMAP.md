@@ -115,10 +115,6 @@ film-sensor eject (#16), from the CLI and the app. Left:
   and a scan made with the OEM TLX software to compare against.
 - Slides get no scene balance: the OEM runs Ansel in a positive mode, not
   modelled. Slide colour still needs a check against a lightbox.
-- Per-picture adjustments (issue #55): the Adjust page has colour,
-  density, contrast, saturation, turn and flip per frame, sharpening and
-  dust removal for the roll, with live previews. The B&W tones (warm, cold, sepia) are implemented
-  but not on the page yet, nor is red-eye.
 - DX frame numbers are decoded but not used: placing codes on frames is
   unresolved.
 
