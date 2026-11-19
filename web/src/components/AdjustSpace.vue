@@ -259,7 +259,8 @@ function onKey(e: KeyboardEvent) {
 // Dust removal needs the scan's infrared channel, and older raws may lack
 // the calibration's IR table. Silver B&W gets none (silver blocks IR as dust
 // does) and slides none (it softens their grain): the prescan leaves
-// meta.ice off for both. Remembered in this browser.
+// meta.ice off for both. On by default wherever it can run; turning it
+// off is remembered in this browser.
 const iceOk = computed(() => !!meta.value?.ice);
 const iceTip = computed(() => iceOk.value
   ? 'Digital ICE: rebuilds dust and scratches from the infrared channel. Slower export.'
@@ -268,7 +269,7 @@ const iceTip = computed(() => iceOk.value
   : meta.value?.film === 'slide'
   ? 'Off for slides: it softens slide grain.'
   : 'This scan has no infrared channel to find dust with.');
-const ice = ref(store.get('pakon-ice') === '1');
+const ice = ref(store.get('pakon-ice') !== '0');
 watch(ice, v => store.set('pakon-ice', v ? '1' : '0'));
 // Sharpening for the whole roll: the OEM's unsharp mask at 1 / 2 / 3 TLX
 // clicks; shown on the previews too.
@@ -369,7 +370,8 @@ const toolCls = 'grid size-[clamp(1.75rem,5vh,2.5rem)] shrink-0 cursor-pointer p
           </label>
           <span class="flex items-center gap-1.5">
             <label :class="['inline-flex items-center gap-1.5 whitespace-nowrap font-mono font-semibold', iceOk ? 'cursor-pointer' : 'cursor-not-allowed opacity-45']">
-              <input v-model="ice" type="checkbox" :disabled="!iceOk"> Remove dust</label>
+              <input type="checkbox" :checked="ice && iceOk" :disabled="!iceOk"
+                     @change="ice = ($event.target as HTMLInputElement).checked"> Remove dust</label>
             <InfoTip :tip="iceTip" label="About dust removal" place="left" />
           </span>
         </div>
