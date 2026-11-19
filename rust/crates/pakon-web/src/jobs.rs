@@ -234,7 +234,7 @@ pub async fn api_process(State(app): State<Arc<App>>, body: Bytes) -> Response {
             // hand the browser everything it needs to place crops (no ribbon path)
             let all = serde_json::to_value(&meta).unwrap_or_default();
             let mut event = json!({"type": "done", "saved": load_crops(&raw, meta.rows, meta.moved.as_ref())});
-            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order", "adjustable"] {
+            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order", "adjustable", "first_frame"] {
                 event[key] = all[key].clone();
             }
             app.roll().prescan = Some(meta);

@@ -57,6 +57,16 @@ const stripH = computed(() => (meta.value ? Math.round(meta.value.preview_h * zo
 // panoramic 5530).
 const boxSize = () => meta.value?.box_w?.[format.value] || meta.value?.frame_w || 0;
 
+// The film before the first picture found (unexposed leader) is not shown:
+// the strip starts a quarter pitch ahead of it, or at the leftmost box if
+// one sits further left. The rows themselves are untouched.
+const leadStart = computed(() => {
+  const m = meta.value;
+  return m?.first_frame != null ? Math.max(0, m.first_frame - Math.round(m.pitch / 4)) : 0;
+});
+const viewStart = computed(() => Math.max(0, Math.min(leadStart.value, ...roll.crops.map(cp => cp.c - cp.w / 2))));
+const hiddenPx = computed(() => Math.round(viewStart.value * pxPerRow()));
+
 const boxes = computed(() => roll.crops.map((cp, i) => {
   const w = cp.w * pxPerRow();
   return { i, left: cp.c * pxPerRow() - w / 2, width: w };
@@ -72,7 +82,7 @@ const title = computed(() => roll.crops.length ? `Confirm frames — ${roll.cur 
 function keepInView() {
   const w = wrap.value, cp = roll.crops[roll.cur];
   if (!w || !cp) return;
-  const x = cp.c * pxPerRow();
+  const x = cp.c * pxPerRow() - hiddenPx.value;
   if (x < w.scrollLeft + 80 || x > w.scrollLeft + w.clientWidth - 80) w.scrollLeft = x - w.clientWidth / 2;
 }
 watch(() => [roll.cur, roll.crops.length], () => nextTick(keepInView));
@@ -92,7 +102,7 @@ function addFrame() {
   const m = meta.value;
   if (!m) return;
   const w = boxSize(), last = roll.crops[roll.crops.length - 1];
-  const c = last ? Math.min(m.rows, last.c + Math.round((last.w + w) / 2)) : Math.round(w / 2);
+  const c = last ? Math.min(m.rows, last.c + Math.round((last.w + w) / 2)) : leadStart.value + Math.round(w / 2);
   roll.crops.push({ c, w });
   roll.cur = roll.crops.length - 1;
 }
@@ -196,7 +206,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); window.rem
     <div v-if="roll.framesError" class="mt-2.5 font-mono text-body font-semibold text-danger">{{ roll.framesError }}</div>
 
     <div ref="wrap" tabindex="-1" class="strip relative mt-3.5 overflow-x-auto overflow-y-hidden border-2 border-ink bg-ink py-2.5 outline-none">
-      <div ref="inner" class="relative my-2 leading-0" :style="{ width: stripW + 'px' }" @click.self="stripClick">
+      <div ref="inner" class="relative my-2 leading-0" :style="{ width: stripW + 'px', marginLeft: -hiddenPx + 'px' }" @click.self="stripClick">
         <img :src="'/api/preview?t=' + roll.previewStamp" alt="film strip" class="block max-w-none"
              :style="{ width: stripW + 'px', height: stripH + 'px' }" @click="stripClick">
         <!-- everything but the selected box dimmed, to both ends of the strip

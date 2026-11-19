@@ -322,6 +322,10 @@ pub struct Meta {
     /// The strips were put in film order from their DX codes.
     #[serde(default)]
     pub dx_order: bool,
+    /// The row where the first picture found starts (None: none found).
+    /// Frames hides the unexposed film before it.
+    #[serde(default)]
+    pub first_frame: Option<usize>,
     /// Leader dropped: from the ribbon older builds made of this raw, for
     /// the boxes saved on it.
     #[serde(skip)]
@@ -472,6 +476,7 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     emit(progress, "Detecting frames", 0.68);
     let box_w: HashMap<String, usize> = Format::ALL.iter().map(|f| (f.name().to_string(), framing::geometry(cols, *f).1)).collect();
     let (starts, mut frame_w, mut pitch) = strips::frame_strips(rgb.view(), &strip_list, film == FilmKind::Slide, fmt);
+    let first_frame = starts.iter().min().copied();
     let mut centres: Vec<i64> = starts.iter().map(|&s| (s + frame_w / 2) as i64).collect();
     if centres.is_empty() {
         centres = vec![(rows / 2) as i64];
@@ -571,6 +576,7 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
         sba_dpi,
         scene_dmin,
         dx_order: plan.as_ref().is_some_and(|p| p.reordered),
+        first_frame,
         moved: plan.and_then(|p| p.moved),
         strips: strip_list,
         adjustable: film == FilmKind::Slide || oem.is_some(),
