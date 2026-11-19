@@ -2,7 +2,8 @@
 // The open raw, and processing it (the prescan: a long preview + detected
 // frame centres), which opens the roll in Frames.
 import { computed } from 'vue';
-import { FILMS, pick, processRaw, roll, splitPath } from '../state';
+import { splitPath } from '../state/app';
+import { FILMS, pick, processRaw, roll } from '../state/roll';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
 import InfoTip from '../ui/InfoTip.vue';
@@ -26,11 +27,11 @@ function filmChanged() { if (roll.path) processRaw(); }
     </template>
     <div :class="['flex flex-wrap items-center gap-3.5 border-2 border-ink px-3.5 py-3', roll.path ? 'bg-surface-2' : 'border-dashed']" :title="roll.path">
       <div class="min-w-0 flex-[1_1_220px] font-mono">
-        <div :class="['truncate text-[0.92rem]', roll.path ? 'font-semibold' : 'text-muted']">{{ name }}</div>
-        <div v-if="dir" class="mt-0.5 truncate text-[0.75rem] text-muted">{{ dir }}</div>
-        <div v-if="dx" class="mt-0.5 truncate text-[0.75rem] text-muted">{{ dx }}</div>
+        <div :class="['truncate text-body', roll.path ? 'font-semibold' : 'text-muted']">{{ name }}</div>
+        <div v-if="dir" class="mt-0.5 truncate text-small text-muted">{{ dir }}</div>
+        <div v-if="dx" class="mt-0.5 truncate text-small text-muted">{{ dx }}</div>
       </div>
-      <label class="flex items-center gap-2 font-mono text-[0.85rem] font-semibold">Film
+      <label class="flex items-center gap-2 font-mono text-body font-semibold">Film
         <select v-model="roll.film" aria-label="Film type of the raw" :disabled="roll.processing" @change="filmChanged">
           <option v-for="f in FILMS" :key="f.id" :value="f.id">{{ f.name }}</option>
         </select>

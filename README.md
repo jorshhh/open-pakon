@@ -102,9 +102,13 @@ It's an independent project, not made or supported by Kodak.
    (full frame, half frame or panoramic) and press **Auto-frame** to put a box
    on every frame, or click to place a box yourself and press **Enter** to add
    the next one. Use the arrow keys to nudge.
-6. **Save.** To sharpen the frames, pick **Low**, **Medium** or **High**
-   next to **Sharpen** (the stronger settings also sharpen the film grain).
-   Press **Export**, then choose what to save: JPEGs, TIFFs, raw
+6. **Adjust.** Press **Adjust** to see every frame. Click one (Shift-click
+   a run, **Select all** for the roll) and use the controls on the right for
+   colour, density, contrast and saturation, or turn and flip it. The
+   previews change as you click. Above the frames, **Sharpen** (Low,
+   Medium, High; the stronger settings also sharpen the film grain) and
+   **Remove dust** apply to the whole roll.
+7. **Save.** Press **Export**, then choose what to save: JPEGs, TIFFs, raw
    negatives or a contact sheet. Everything lands in your work folder
    (a `pakon` folder in your home folder unless you pick another), one
    folder per roll.

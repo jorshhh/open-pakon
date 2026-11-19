@@ -1,6 +1,6 @@
 // What the status poll says about the scanner, for the badge and Home.
 import { computed } from 'vue';
-import { app } from './state';
+import { app } from './state/app';
 
 const labels: Record<string, string> = {
   warm: 'Ready',

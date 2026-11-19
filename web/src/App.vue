@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { app } from './state';
+import { app } from './state/app';
 import { badgeText, scannerState } from './status';
+import AdjustSpace from './components/AdjustSpace.vue';
 import AskDialog from './components/AskDialog.vue';
 import BrowseModal from './components/BrowseModal.vue';
 import ConsentPop from './components/ConsentPop.vue';
@@ -21,16 +22,17 @@ const spaces = [
   { id: 'scan', is: ScanSpace },
   { id: 'process', is: ProcessSpace },
   { id: 'frames', is: FramesSpace },
+  { id: 'adjust', is: AdjustSpace },
   { id: 'export', is: ExportSpace },
   { id: 'settings', is: SettingsSpace },
 ] as const;
 </script>
 
 <template>
-  <header class="mb-10 flex items-center gap-5 border-b-4 border-ink pb-2.5">
-    <h1 class="font-display text-[2rem] font-bold tracking-tight uppercase">Pakon</h1>
+  <header class="mb-4 flex items-center gap-4 border-b-2 border-ink pb-2">
+    <h1 class="font-display text-title leading-none font-bold tracking-tight uppercase">Pakon</h1>
     <div :title="app.status?.state_error || ''"
-         :class="['flex items-center gap-1.5 border-2 border-ink bg-surface px-2.5 py-1 font-mono text-[0.85rem] font-semibold uppercase shadow-hard-sm',
+         :class="['flex items-center gap-1.5 border-2 border-ink bg-surface px-2 py-0.5 font-mono text-small font-semibold uppercase shadow-hard-sm',
                   scannerState === 'warm' || scannerState === 'cold' ? 'text-ink' : 'text-muted']">
       <Dot :state="scannerState" /><span>{{ badgeText }}</span>
     </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Settings: the reports, troubleshooting, about.
 import { computed, ref } from 'vue';
-import { app, msg } from '../state';
+import { app, msg } from '../state/app';
 import { saveConsent } from '../telemetry';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
@@ -40,7 +40,7 @@ const reports = [
   { key: 'crashes' as const, name: 'Crash reports', tip: 'When something fails: the error, and for a failed scan the scanner\'s last log lines.' },
   { key: 'usage' as const, name: 'Usage statistics', tip: 'Pages opened, and how long scans, processing and exports take, with the film type and frame count, and the scanner\'s light calibration.' },
 ];
-const note = 'mb-2 max-w-[72ch] text-[0.8rem] leading-snug text-muted';
+const note = 'mb-2 max-w-[72ch] text-small leading-snug text-muted';
 </script>
 
 <template>
@@ -54,7 +54,7 @@ const note = 'mb-2 max-w-[72ch] text-[0.8rem] leading-snug text-muted';
         <label :class="['flex flex-1 items-center gap-3 border-2 border-ink bg-surface-2 px-3.5 py-3', on ? 'cursor-pointer' : 'cursor-not-allowed opacity-50']">
           <input type="checkbox" :disabled="!on" :checked="on && !!t?.[r.key]"
                  @change="setReport(r.key, ($event.target as HTMLInputElement).checked)">
-          <strong class="font-mono text-[0.8rem] uppercase">{{ r.name }}</strong>
+          <strong class="font-mono text-small uppercase">{{ r.name }}</strong>
         </label>
         <InfoTip :label="'About ' + r.name.toLowerCase()" :tip="r.tip" />
       </div>
@@ -66,7 +66,7 @@ const note = 'mb-2 max-w-[72ch] text-[0.8rem] leading-snug text-muted';
   </Card>
 
   <Card title="Troubleshooting">
-    <dl class="mb-4.5 grid max-w-[760px] grid-cols-1 items-baseline gap-x-4.5 gap-y-0.5 sm:grid-cols-[max-content_1fr] sm:gap-y-2.5 [&_dd]:text-[0.88rem] [&_dd]:leading-snug max-sm:[&_dd]:mb-2.5 [&_dt]:font-mono [&_dt]:text-[0.8rem] [&_dt]:font-semibold [&_dt]:uppercase">
+    <dl class="mb-4.5 grid max-w-[760px] grid-cols-1 items-baseline gap-x-4.5 gap-y-0.5 sm:grid-cols-[max-content_1fr] sm:gap-y-2.5 [&_dd]:text-body [&_dd]:leading-snug max-sm:[&_dd]:mb-2.5 [&_dt]:font-mono [&_dt]:text-small [&_dt]:font-semibold [&_dt]:uppercase">
       <dt>Calibration fails</dt>
       <dd>Switch the scanner off and on, then open Pakon before TLX or PakonScan.
         <InfoTip class="ml-1.5" label="Why"

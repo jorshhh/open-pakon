@@ -257,7 +257,9 @@ missing required field answers 422.
 | `/api/process` | POST, stream | Prescan: builds and caches the ribbon, renders the preview strip |
 | `/api/autoframe` | POST, stream | Places a crop on every picture with the OEM framing (`full`, `half`, `pano`) |
 | `/api/preview` | GET | The preview strip (JPEG) |
-| `/api/export_frames` | POST, stream | Exports the confirmed crops at full resolution |
+| `/api/adjust/open` | POST, stream | Adjust: renders the boxes small and works out the roll's scene balance, for the previews |
+| `/api/adjust/{n}` | GET | Frame `n`'s preview (JPEG), its long side at `px` or under, with the edits in the query: `red`, `green`, `blue`, `brightness`, `contrast`, `saturation` (TLX units), `rotate` (degrees clockwise), `flip_h`, `flip_v`, and the roll's `sharpen` (`off`, `low`, `medium`, `high`) |
+| `/api/export_frames` | POST, stream | Exports the confirmed crops at full resolution, each with its edits (`edits`, one object per box, the preview's keys) and the roll's `sharpen` and `ice` |
 | `/api/frames` | GET | The exported frames |
 | `/api/frames/{n}/thumb` | GET | One frame's thumbnail |
 | `/api/save` | POST, stream | Saves a format (raw negative TIFF, TIFF, JPEG, contact sheet) into the order folder |
@@ -330,7 +332,7 @@ Inside the data folder:
 Beside each raw: `.flat.json` (calibration tables, row layout, scan duties),
 `.dx.json` (film product code), `.strips.json` (strip mode: the strips'
 rows and DX codes), `.film` (film type), `.format` (framing format),
-`.crops.json` (confirmed crops, written at export).
+`.crops.json` (confirmed crops and their Adjust edits, written at export).
 
 A strip-mode raw is framed strip by strip, so the open gate between strips
 is never boxed. When the DX codes say the strips were fed out of film order

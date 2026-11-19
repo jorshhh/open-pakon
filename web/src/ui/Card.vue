@@ -9,7 +9,7 @@ defineProps<{ title?: string; ruled?: boolean }>();
     <div v-if="title || $slots.title"
          :class="ruled ? 'mb-5 flex items-center justify-between gap-3 border-b-2 border-ink pb-2.5' : 'mb-4 flex items-center gap-2.5'">
       <div class="flex items-center gap-2.5">
-        <h2 class="font-display text-xl font-bold uppercase"><slot name="title">{{ title }}</slot></h2>
+        <h2 class="font-display text-title font-bold uppercase"><slot name="title">{{ title }}</slot></h2>
         <slot name="info" />
       </div>
       <slot name="tools" />

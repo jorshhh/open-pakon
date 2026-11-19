@@ -16,7 +16,7 @@ const look = {
 <template>
   <button
     :class="[
-      'cursor-pointer border-2 border-ink font-mono text-[0.88rem] font-semibold uppercase shadow-hard-sm transition-all duration-150',
+      'cursor-pointer border-2 border-ink font-mono text-body font-semibold uppercase shadow-hard-sm transition-all duration-150',
       'enabled:hover:-translate-0.5 enabled:hover:shadow-hard enabled:active:translate-0.5 enabled:active:shadow-none',
       'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none',
       icon ? 'grid size-9 shrink-0 place-items-center p-0 [&_svg]:size-4.5' : 'px-4 py-2',

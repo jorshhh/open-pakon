@@ -5,7 +5,8 @@
 import { computed, ref, watch } from 'vue';
 import { postSSE, store } from '../api';
 import { ask } from '../ask';
-import { app, FILMS, msg, order, pick, processRaw, remembered, setBusy, showRaw, showSpace, type Film } from '../state';
+import { app, msg, order, remembered, setBusy, showSpace } from '../state/app';
+import { FILMS, pick, processRaw, showRaw, type Film } from '../state/roll';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
 import InfoTip from '../ui/InfoTip.vue';
@@ -178,8 +179,8 @@ const folder = '<path d="M3 6h7l2 2h9v11H3z"/>';
 
 // the two tables: the order (two across) and the settings (three across);
 // one across when narrow, never a row with empty cells
-const label = 'bg-ink px-3 py-2 font-mono text-[0.72rem] font-semibold tracking-[0.04em] text-surface uppercase';
-const body = 'flex min-h-14.5 min-w-0 items-center gap-2.5 px-3 py-2.5 font-mono text-[0.88rem]';
+const label = 'bg-ink px-3 py-2 font-mono text-small font-semibold tracking-[0.04em] text-surface uppercase';
+const body = 'flex min-h-14.5 min-w-0 items-center gap-2.5 px-3 py-2.5 font-mono text-body';
 const cells = 'grid grid-cols-1 gap-0.5 border-2 border-ink bg-ink [&>div]:flex [&>div]:min-w-0 [&>div]:flex-col [&>div]:bg-surface-2';
 const grid2 = cells + ' min-[561px]:grid-cols-2';
 const grid3 = cells + ' min-[761px]:grid-cols-3';
@@ -192,7 +193,7 @@ const grid3 = cells + ' min-[761px]:grid-cols-3';
       <div>
         <span :class="label">Order</span>
         <div :class="body">
-          <span class="min-w-0 flex-1 truncate font-display text-2xl font-bold"
+          <span class="min-w-0 flex-1 truncate font-display text-title font-bold"
                 :title="order.custom ? 'Set for the next scan' : 'The next number'">{{ orderName || '—' }}</span>
           <Btn variant="ghost" icon title="Set the order number" aria-label="Set the order number" :disabled="scanning" @click="editOrder">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" aria-hidden="true" v-html="pencil"></svg>
@@ -239,7 +240,7 @@ const grid3 = cells + ' min-[761px]:grid-cols-3';
         </div>
       </div>
     </div>
-    <div v-else class="mt-3.5 border-2 border-ink bg-surface-2 px-3 py-2 font-mono text-[0.85rem] font-semibold text-muted">{{ summary }}</div>
+    <div v-else class="mt-3.5 border-2 border-ink bg-surface-2 px-3 py-2 font-mono text-body font-semibold text-muted">{{ summary }}</div>
     <div class="mt-4 flex flex-wrap items-center gap-2.5">
       <Btn class="px-7! py-2.5!" :disabled="scanning || ejecting" @click="scan">Scan</Btn>
       <!-- while the scan runs, Stop takes Advance film's place -->
@@ -253,7 +254,7 @@ const grid3 = cells + ' min-[761px]:grid-cols-3';
     </div>
     <!-- a warm scanner Pakon did not start -->
     <div v-if="st?.foreign_firmware === true"
-         class="mt-3.5 flex items-center gap-2.5 border-2 border-warn bg-[#fdf0e6] px-3 py-2.5 font-mono text-[0.85rem] font-bold text-[#9a3b07]">
+         class="mt-3.5 flex items-center gap-2.5 border-2 border-warn bg-[#fdf0e6] px-3 py-2.5 font-mono text-body font-bold text-[#9a3b07]">
       <span class="flex-1">Started by other software. Switch the scanner off and on before scanning.</span>
       <InfoTip label="Why" place="left"
                tip="Pakon didn't load this scanner's firmware, so it may still hold another program's settings (TLX, PakonScan), which can make calibration fail. Switching it off clears them." />
@@ -262,15 +263,15 @@ const grid3 = cells + ' min-[761px]:grid-cols-3';
     <!-- strip mode: what to do next, and each strip so far -->
     <div v-if="scanning && runStrips && (nextStrip || strips.length)"
          class="mt-3.5 flex flex-wrap items-center gap-3 border-2 border-ok px-3.5 py-3">
-      <span class="flex-1 font-mono text-lg font-bold text-ok">{{ nextStrip ? `Feed strip ${nextStrip}` : `Scanning strip ${strips.length}` }}</span>
+      <span class="flex-1 font-mono text-heading font-bold text-ok">{{ nextStrip ? `Feed strip ${nextStrip}` : `Scanning strip ${strips.length}` }}</span>
       <ol class="flex flex-wrap gap-1.5" aria-label="Strips">
         <li v-for="(s, i) in strips" :key="i"
             :title="s === 'long' ? 'Longer than 6 frames: two strips with no gap?' : undefined"
-            :class="['border-2 px-2 py-0.5 font-mono text-[0.78rem] font-bold',
+            :class="['border-2 px-2 py-0.5 font-mono text-small font-bold',
                      s === 'long' ? 'border-warn bg-[#fdf0e6] text-[#9a3b07]' : s === 'done' ? 'border-ink bg-ink text-surface' : 'border-ink border-dashed bg-surface']">
           {{ i + 1 }}{{ s === 'done' ? ' ✓' : s === 'long' ? ' !' : '' }}
         </li>
-        <li v-if="nextStrip > strips.length" class="border-2 border-dashed border-ink bg-surface px-2 py-0.5 font-mono text-[0.78rem] font-bold">{{ nextStrip }}</li>
+        <li v-if="nextStrip > strips.length" class="border-2 border-dashed border-ink bg-surface px-2 py-0.5 font-mono text-small font-bold">{{ nextStrip }}</li>
       </ol>
       <InfoTip :tip="stripTip" label="About strips" place="left" />
     </div>

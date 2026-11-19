@@ -115,11 +115,6 @@ film-sensor eject (#16), from the CLI and the app. Left:
   and a scan made with the OEM TLX software to compare against.
 - Slides get no scene balance: the OEM runs Ansel in a positive mode, not
   modelled. Slide colour still needs a check against a lightbox.
-- Per-picture adjustments (issue #55): the TLX arithmetic is implemented
-  (contrast, R/G/B and brightness offsets, unsharp mask, saturation, B&W
-  tone; [IMAGING.md](IMAGING.md)); the app exposes only Sharpen. Per-frame
-  sliders need a preview with one frame's scene balance (the roll stage runs
-  once, then each frame).
 - DX frame numbers are decoded but not used: placing codes on frames is
   unresolved.
 

@@ -668,10 +668,20 @@ arithmetic on their 12-bit ROMM values, after the `ColRevLut1` link and
 before `romm.pf` (`render_slide_adjusted`), where the OEM runs
 `PIColorAdjustPlanar` for film type 2.
 
-**Sharpening.** The app exposes one control for the whole export
-(`pakon-roll` `SHARPEN_LEVELS`): off / low / medium / high = 0 / 67 / 133 /
-200, i.e. 1 / 2 / 3 TLX clicks (amount 0.67 / 1.33 / 2.0). At Base 16 the
-3×3 mask mostly lifts the grain; high is strong.
+**On the Adjust page.** Each control moves in TLX clicks: 25 for the colour
+pairs (C·R, M·G, Y·B are the red, green and blue offsets), density
+(TLX brightness with the sign turned, + = darker as on a minilab) and
+contrast, one step of saturation. Sharpening is one menu for the whole
+roll above the frames (`pakon-roll` `SHARPEN_LEVELS`): off / low / medium /
+high = 0 / 67 / 133 / 200, i.e. 1 / 2 / 3 TLX clicks (amount 0.67 / 1.33 /
+2.0), added to every frame's adjustments at export. At Base 16 the 3×3
+mask mostly lifts the grain; high is strong.
+The previews (`pakon-roll` `Previewer`) render each frame from its crop
+shrunk by block averaging, to 1000 px kept in memory, or to the size the
+page asks for (shrunk from the ribbon, up to the full crop), with the same scene balance
+and adjustments as the export but no dust removal. The 3×3 sharpening
+mask reaches f times further across a picture shrunk f times, so a preview
+divides the amount by f: close to the full frame, not the same.
 
 ## Fallback path without a NegMatrix [C]
 
@@ -776,7 +786,8 @@ grain replaced by grain. The cause of the line-start dark tail is unknown.
 
 1. Crop the cached ribbon at the box (full sensor width).
 2. Dust removal on the raw crop (OEM DICE, else native; not for slides).
-3. Rotate by the requested multiple of 90° (the app sends 90°).
+3. Rotate by the requested multiple of 90° (the app sends 90°), then by
+   the frame's own turn and flips from Adjust.
 4. Render: slide path, OEM path (with SBA shifts or the roll balance, and
    the adjustments), or the fallback.
 5. Write:
@@ -823,8 +834,11 @@ The bytes differ from libjpeg's; the decoded pixels round-trip.
   rendered with the roll balance (or the roll's mean SBA shift), rotated so
   the roll runs horizontally, JPEG quality 85.
 - **Contact sheet** (`output::contact_sheet`): the frame JPEGs tiled 6
-  across in 480 px cells at the first frame's aspect, Lanczos-3 resized, on
-  a dark background with a "Frame NN" label under each; JPEG quality 90.
+  across in cells 480 px on their long side, shaped like most of the roll's
+  frames (the median aspect); each frame is Lanczos-3 resized to fit its
+  cell with its own shape and centred (a turned frame stands up, a
+  panorama stays wide), on a dark background with a "Frame NN" label under
+  each; JPEG quality 90.
 - **Film metadata** (`film.rs`): the DX product and generation read during
   the scan (`<raw>.dx.json`) are looked up in
   `oem/ansel/common/common-ProdCodeTable.dpi` (DX product/generation → ISO,

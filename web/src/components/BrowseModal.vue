@@ -4,7 +4,8 @@
 import { ref, watch } from 'vue';
 import { getJSON, postJSON } from '../api';
 import { ask } from '../ask';
-import { app, browse, openRaw, useWorkDir } from '../state';
+import { app, browse, useWorkDir } from '../state/app';
+import { openRaw } from '../state/roll';
 import Btn from '../ui/Btn.vue';
 import Modal from '../ui/Modal.vue';
 
@@ -49,14 +50,14 @@ async function newFolder() {
   go(d.path);   // into the new folder
 }
 
-const item = 'flex cursor-pointer items-center gap-2.5 border-b border-ink px-5 py-2 font-mono text-[0.86rem] hover:bg-surface hover:font-semibold';
+const item = 'flex cursor-pointer items-center gap-2.5 border-b border-ink px-5 py-2 font-mono text-body hover:bg-surface hover:font-semibold';
 </script>
 
 <template>
   <Modal v-if="browse.open" :title="browse.raws ? 'Open a .raw' : 'Choose work folder'" @close="close">
     <!-- right-to-left so a long path is cut at its start; the LRM marks keep
          the leading "/" in place -->
-    <div class="truncate border-b-2 border-ink bg-surface-2 px-5 py-2.5 text-left font-mono text-[0.8rem] font-semibold [direction:rtl]"
+    <div class="truncate border-b-2 border-ink bg-surface-2 px-5 py-2.5 text-left font-mono text-small font-semibold [direction:rtl]"
          :title="list?.path">{{ list ? '‎' + list.path + '‎' : '' }}</div>
     <div class="h-[min(360px,50vh)] overflow-y-auto bg-paper">
       <template v-if="list">
@@ -68,14 +69,14 @@ const item = 'flex cursor-pointer items-center gap-2.5 border-b border-ink px-5 
           <span class="shrink-0 font-bold text-danger">◆</span>{{ name }}
         </div>
         <div v-if="!list.parent && !list.dirs.length && !(list.files ?? []).length"
-             class="px-5 py-4 font-mono text-[0.82rem] text-muted">(no subfolders)</div>
+             class="px-5 py-4 font-mono text-body text-muted">(no subfolders)</div>
       </template>
     </div>
     <template #foot>
       <!-- Windows' list of drives is not a folder to pick or make one in -->
       <Btn v-if="!browse.raws" variant="ghost" :disabled="!!list?.virtual" @click="newFolder">New folder…</Btn>
       <span class="flex-1"></span>
-      <span class="font-mono text-[0.83rem] font-semibold text-danger">{{ error }}</span>
+      <span class="font-mono text-body font-semibold text-danger">{{ error }}</span>
       <Btn variant="ghost" @click="close">Cancel</Btn>
       <Btn v-if="!browse.raws" :disabled="!!list?.virtual" @click="useThis">Use this folder</Btn>
     </template>
