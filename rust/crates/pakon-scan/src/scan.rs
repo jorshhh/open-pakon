@@ -90,7 +90,8 @@ pub const MAX_STRIPS: usize = 15;
 /// Strip mode: no new strip this long after the last one => the roll is
 /// done. The OEM's NoFilmTimeOut default is not known.
 pub const STRIP_WAIT: Duration = Duration::from_secs(300);
-/// Strip mode: open-gate rows kept in front of each strip after the first.
+/// Open-gate rows kept in front of the film (the roll, or each strip); the
+/// rest of the open gate before it is not written.
 pub const STRIP_LEAD_ROWS: usize = 200;
 /// Picture pitch in scan lines at Base 16 / 8 / 4 (TLB.dll framing
 /// geometry, as `pakon_image::framing`).
@@ -110,8 +111,6 @@ pub const MAX_STRIP_FRAMES: usize = 6;
 /// not chosen.
 #[derive(Debug, Clone, Copy)]
 pub struct StripMode {
-    /// Bytes per scan line in the raw.
-    pub row_bytes: usize,
     /// Picture pitch in scan lines.
     pub pitch: usize,
     /// The LOW 0x91 trigger, resent before each strip after the first.
@@ -153,7 +152,8 @@ pub struct LoopStats {
     pub strips: Vec<StripRec>,
 }
 
-/// The open gate between strips, kept to its last `cap` bytes; dropped
+/// The open gate before the film or between strips, kept to its last `cap`
+/// bytes; dropped
 /// only in whole rows, so the raw's row alignment holds.
 struct Lead {
     buf: Vec<u8>,
@@ -176,6 +176,11 @@ impl Lead {
 /// (no re-arm); stop on `TRAIL_WHITE` open-gate chunks after film, empty
 /// windows after film, the byte cap, or `stop`.
 ///
+/// The open gate before the film is not written but its last
+/// [`STRIP_LEAD_ROWS`] rows (`row_bytes` per scan line): writing starts
+/// with the first chunk that is not open gate. A dim or dense leader is
+/// written as it comes.
+///
 /// In strip mode (`strips`) the end of a strip does not stop it: the strip
 /// is recorded, LOW 0x91 is resent and the film LED blinks green until the
 /// next strip comes; the open gate in between is not written. It stops on
@@ -185,6 +190,7 @@ pub fn scan_loop(
     link: &mut dyn Link,
     st: &SetupState,
     img: &mut dyn Write,
+    row_bytes: usize,
     timeout: Duration,
     max_bytes: u64,
     white: (u16, usize),
@@ -205,7 +211,9 @@ pub fn scan_loop(
     let mut film_row = 0usize;
     let mut code_mark = 0usize;
     let mut warned_long = false;
-    let row = strips.map_or(1, |m| m.row_bytes.max(1));
+    let row = row_bytes.max(1);
+    // before the film: open gate held back (only its tail is written)
+    let mut holding = true;
     let mut lead = Lead { buf: Vec::new(), cap: STRIP_LEAD_ROWS * row, row };
     let rows_written = |s: &LoopStats| s.written as usize / row;
     out(&format!(
@@ -247,8 +255,16 @@ pub fn scan_loop(
                 lead.buf.clear();
                 panel(link, st, PANEL_FEED, timeout, out);
             }
+            if holding && !white_chunk {
+                holding = false;
+                if img.write_all(&lead.buf).is_err() {
+                    s.errors += 1;
+                }
+                s.written += lead.buf.len() as u64;
+                lead.buf.clear();
+            }
             let pre = rows_written(&s);
-            if waiting.is_some() {
+            if waiting.is_some() || holding {
                 lead.push(chunk);
             } else {
                 if img.write_all(chunk).is_err() {
@@ -364,6 +380,13 @@ pub fn scan_loop(
             out(&format!("  [sm] stream ended (no data for {idle} windows) -> end of roll"));
             break;
         }
+    }
+    // no film came: the open gate's tail, so the raw is not empty
+    if holding && !lead.buf.is_empty() {
+        if img.write_all(&lead.buf).is_err() {
+            s.errors += 1;
+        }
+        s.written += lead.buf.len() as u64;
     }
     // a strip cut short by Stop, the cap or the stream: keep what came
     if strips.is_some() && in_strip {
@@ -486,8 +509,8 @@ fn scan_body(link: &mut dyn Link, s: &crate::session::Session, eeprom_dir: &Path
     out("  [sm] motor start (a0) sent -- feed the film now");
     let mut roll = dx::Roll::new();
     let row_samples = lc::blocks(res.ir) * (res.line_px - res.px0);
-    let strips = opt.strips.then_some(StripMode { row_bytes: row_samples * 2, pitch: pitch_rows(opt.base), trigger: s.mode.trigger });
-    let stats = scan_loop(link, &st, &mut img, opt.timeout, opt.max_bytes, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), stop, &mut roll, strips, out);
+    let strips = opt.strips.then_some(StripMode { pitch: pitch_rows(opt.base), trigger: s.mode.trigger });
+    let stats = scan_loop(link, &st, &mut img, row_samples * 2, opt.timeout, opt.max_bytes, (WHITE_THRESH_CODE, WHITE_FRAC_CODE_PCT), stop, &mut roll, strips, out);
     let _ = img.flush();
     if strips.is_some() {
         let p = with_suffix(image, ".strips.json");
