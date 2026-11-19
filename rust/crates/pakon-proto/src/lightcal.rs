@@ -32,6 +32,8 @@ pub const GAIN_MAX: i32 = 0x3E;
 pub const OFFSET_START: i32 = 10;
 pub const DARK_TARGET: f64 = 300.0;
 pub const DARK_TOL: f64 = 32.0;
+/// The OEM's dark-offset gain, -3/224, applied to twice the error.
+pub const DARK_GAIN: f64 = -0.013392857142857142;
 /// Dark-offset passes. 16, not 8: a unit whose black level starts clipped
 /// at 0 climbs for several passes before the proportional step can work
 /// (Windows and Linux reports, 0.7.0-0.8.0: 0/0/0 for seven passes).
@@ -374,9 +376,11 @@ pub fn dark_ok(black_mean: f64) -> bool {
     (black_mean - DARK_TARGET).abs() <= DARK_TOL
 }
 
-/// Next A/D offset from a black-pixel mean: `off + round((mean - 300) *
-/// -0.0133929)`; when that rounds to no change while still outside the
-/// window, one code toward the target. Clamped to ±255.
+/// Next A/D offset from a black-pixel mean: `off + trunc((mean - 300) *
+/// -3/112)`, as `TLB.dll` `bCalibrateFindDarkOffset` does it (`- 300.0`,
+/// `fadd st0,st0`, `* -0.0133929`, `_ftol`). Truncation leaves no step for a
+/// mean 33-37 counts off target, outside the window; then one code toward
+/// the target. Clamped to ±255.
 pub fn offset_next(offset: i32, black_mean: f64) -> i32 {
     offset_step(offset, black_mean)
 }
@@ -384,7 +388,7 @@ pub fn offset_next(offset: i32, black_mean: f64) -> i32 {
 /// Next A/D offset for one channel across the dark passes. A clipped-low
 /// read (mean 0) steps up by [`CLIP_STEP`], doubling for each clipped read
 /// in a row (`run`), because the proportional step from a clipped mean is
-/// only +4 whatever the real level is. Once the level is above zero the
+/// only +8 whatever the real level is. Once the level is above zero the
 /// proportional [`offset_next`] takes over. Clamped to ±255.
 pub fn dark_next(offset: i32, black_mean: f64, run: &mut u32) -> i32 {
     if black_mean <= DARK_CLIPPED {
@@ -397,7 +401,8 @@ pub fn dark_next(offset: i32, black_mean: f64, run: &mut u32) -> i32 {
 }
 
 fn offset_step(offset: i32, black_mean: f64) -> i32 {
-    let mut next = offset + ((black_mean - DARK_TARGET) * -0.0133929).round() as i32;
+    // `as i32` truncates toward zero, like the OEM's `_ftol`.
+    let mut next = offset + ((black_mean - DARK_TARGET) * 2.0 * DARK_GAIN) as i32;
     if next == offset && !dark_ok(black_mean) {
         next += if black_mean > DARK_TARGET { -1 } else { 1 };
     }
