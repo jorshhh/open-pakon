@@ -362,7 +362,8 @@ streams lines continuously. Measured on serial 3054 [C]:
 2. Lamp off (LOW `0x80` = 0).
 3. Dark offsets: A/D gain code 13 (g ≈ 1.2), offsets starting at 10/10/10;
    up to 8 iterations of 32 lines; target black-pixel mean 300 ± 32; step
-   `off += round((mean − 300) × −0.0133929)`.
+   `off += trunc((mean − 300) × 2 × −0.0133929)`, i.e. `−3/112` per count,
+   truncated toward zero (`_ftol`).
 4. Fixed-pattern dark: 128 lines averaged per column; 128 summed for the
    black and active means.
 5. LED current search (full calibration only): current from 1, +1 per

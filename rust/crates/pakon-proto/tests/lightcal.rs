@@ -160,8 +160,14 @@ fn ir_on_short_black_ir_block() {
 #[test]
 fn dark_offset() {
     assert_eq!(lc::offset_next(-38, 300.0), -38);
-    assert_eq!(lc::offset_next(10, 3884.0), -38);
-    assert_eq!(lc::offset_next(-250, 0.0), -246);
+    // OEM step: trunc(-(mean - 300) * 3/112).
+    assert_eq!(lc::offset_next(10, 3884.0), -86);
+    assert_eq!(lc::offset_next(-250, 0.0), -242);
+    // F-135+ serial 16402 Base 4 OEM capture: -51 clipped at 0 -> -43.
+    assert_eq!(lc::offset_next(-51, 0.0), -43);
+    assert_eq!(lc::offset_next(-38, 337.0), -39, "truncates to 0, nudged");
+    assert_eq!(lc::offset_next(-38, 338.0), -39);
+    assert_eq!(lc::offset_next(-38, 375.0), -40);
     assert_eq!(lc::offset_next(-250, 60000.0), -255);
     assert!(lc::dark_ok(332.0) && lc::dark_ok(268.0) && !lc::dark_ok(333.0));
     assert_eq!(lc::offset_next(-38, 334.0), -39, "2026-10-09 stall");
@@ -169,10 +175,11 @@ fn dark_offset() {
     assert_eq!(lc::offset_next(-38, 320.0), -38);
 }
 
-/// A channel's black mean against its A/D offset: about 74.7 counts per
-/// code (offset_next(10, 3884) = -38), clipped at 0, zero at offset `z`.
+/// A channel's black mean against its A/D offset: about 54 counts per code
+/// (measured on F-135 serial 3054; the OEM step assumes 37.3, so it
+/// overshoots by ~1.45x), clipped at 0, zero at offset `z`.
 fn black(off: i32, z: f64) -> f64 {
-    ((off as f64 - z) * 74.7).clamp(0.0, 65535.0)
+    ((off as f64 - z) * 54.0).clamp(0.0, 65535.0)
 }
 
 /// The dark-offset loop as calib.rs runs it, from offset 10; the passes
@@ -198,19 +205,25 @@ fn dark_run(z: [f64; 3], clip_aware: bool, iters: u32) -> Option<u32> {
 
 #[test]
 fn dark_offset_from_clipped() {
-    // Windows / Linux reports (0.7.0-0.8.0): 0/0/0 from offset 10 to 34,
-    // then green 121 and blue 176 at 38, red still 0.
-    let reported = [45.0, 36.4, 35.6];
-    assert_eq!(black(34, 36.4), 0.0);
-    assert!((black(38, 36.4) - 121.0).abs() < 5.0 && (black(38, 35.6) - 176.0).abs() < 5.0);
-    assert_eq!(dark_run(reported, false, 8), None, "the old loop runs out, as reported");
+    // Windows / Linux reports (0.7.0-0.8.0, half-gain step): 0/0/0 from
+    // offset 10 to 34, then green 121 and blue 176 at 38, red still 0.
+    let reported = [40.0, 35.76, 34.74];
+    assert_eq!(black(34, 34.74), 0.0);
+    assert!((black(38, 35.76) - 121.0).abs() < 5.0 && (black(38, 34.74) - 176.0).abs() < 5.0);
+    // With the OEM's full step the plain loop climbs +8 per clipped pass
+    // and fits in the OEM's 8; the doubling overshoots here and costs at
+    // most one pass.
+    let plain = dark_run(reported, false, 8).expect("plain OEM step converges");
     let n = dark_run(reported, true, lc::DARK_ITERS).expect("converges");
-    assert!(n <= 8, "{n} passes");
-    // Far darker still: zero near offset 120.
-    assert!(dark_run([120.0, 110.0, 118.0], true, lc::DARK_ITERS).is_some());
+    assert!(n <= plain + 1, "{n} passes vs {plain}");
+    // Far darker still (zero near offset 120): +8 a pass runs out, the
+    // doubling does not.
+    let far = [120.0, 110.0, 118.0];
+    assert_eq!(dark_run(far, false, lc::DARK_ITERS), None);
+    assert!(dark_run(far, true, lc::DARK_ITERS).expect("converges") <= 8);
     // Units that start bright converge as they did (F-135+ serial 138:
     // 967/1183/1125 at offset 10, settled at -3/-8/-7).
-    let bright = [-2.9, -5.8, -5.1];
+    let bright = [-8.6, -13.6, -12.6];
     assert_eq!(dark_run(bright, true, lc::DARK_ITERS), dark_run(bright, false, lc::DARK_ITERS));
     assert!(dark_run(bright, true, lc::DARK_ITERS).is_some());
     // The run of clipped reads doubles the step, then resets.
