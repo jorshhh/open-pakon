@@ -85,11 +85,12 @@
   .strip::-webkit-scrollbar-track { background: #3a3836; border-top: 2px solid var(--color-ink); }
   .strip::-webkit-scrollbar-thumb { background: #d9d4ca; border: 2px solid var(--color-ink); }
   .strip::-webkit-scrollbar-thumb:hover { background: var(--color-surface); }
-  .strip::before, .strip::after {
-    content: ""; position: absolute; left: 0; right: 0; height: 8px;
-    background-image: radial-gradient(circle at 6px 4px, transparent 3px, var(--color-paper) 3.5px);
+  /* holes along both edges, painted over the whole scrolled width (local) */
+  .strip {
+    --holes: radial-gradient(circle at 6px 4px, transparent 3px, var(--color-paper) 3.5px);
+    background-image: var(--holes), var(--holes);
     background-size: 12px 8px; background-repeat: repeat-x;
+    background-position: 0 2px, 0 calc(100% - 2px);
+    background-attachment: local;
   }
-  .strip::before { top: 2px; }
-  .strip::after { bottom: 2px; }
 }

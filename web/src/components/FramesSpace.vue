@@ -41,6 +41,7 @@ async function fitStrip() {
   const over = document.documentElement.scrollHeight - window.innerHeight;
   if (over > 0) zoom.value = Math.max(MIN, MAX - over) / m.preview_h;
   await nextTick();
+  if (wrap.value) wrap.value.scrollLeft = 0;
   keepInView();
   wrap.value?.focus({ preventScroll: true });
 }
@@ -82,8 +83,9 @@ const title = computed(() => roll.crops.length ? `Confirm frames — ${roll.cur 
 function keepInView() {
   const w = wrap.value, cp = roll.crops[roll.cur];
   if (!w || !cp) return;
-  const x = cp.c * pxPerRow() - hiddenPx.value;
-  if (x < w.scrollLeft + 80 || x > w.scrollLeft + w.clientWidth - 80) w.scrollLeft = x - w.clientWidth / 2;
+  // the whole box, not only its centre (a box wider than the view: centred)
+  const x = cp.c * pxPerRow() - hiddenPx.value, half = (cp.w * pxPerRow()) / 2;
+  if (x - half < w.scrollLeft || x + half > w.scrollLeft + w.clientWidth) w.scrollLeft = x - w.clientWidth / 2;
 }
 watch(() => [roll.cur, roll.crops.length], () => nextTick(keepInView));
 
