@@ -90,29 +90,26 @@ fn save_format(raw: &Path, fmt: &str) {
 // operator's boxes come back.
 
 fn load_crops(raw: &Path, rows: usize, moved: Option<&pakon_roll::strips::RowMap>) -> Value {
-    let saved: Option<Value> = std::fs::read_to_string(beside(raw, ".crops.json")).ok().and_then(|t| serde_json::from_str(&t).ok());
+    saved_crops(raw, rows, moved).unwrap_or(Value::Null)
+}
+
+fn saved_crops(raw: &Path, rows: usize, moved: Option<&pakon_roll::strips::RowMap>) -> Option<Value> {
+    let mut s: Value = serde_json::from_str(&std::fs::read_to_string(beside(raw, ".crops.json")).ok()?).ok()?;
+    if s["centres"].as_array().is_none_or(|c| c.is_empty()) {
+        return None;
+    }
     // another decode of the raw (layout override, new ribbon code) can
     // change the ribbon length; the positions would no longer line up,
     // unless the change is a strip leader dropped (moved)
-    match saved {
-        Some(s) if !s["centres"].as_array().is_some_and(|c| !c.is_empty()) => Value::Null,
-        Some(s) if s["rows"].as_u64() == Some(rows as u64) => s,
-        Some(mut s) => match moved.filter(|m| s["rows"].as_u64() == Some(m.old_rows as u64)) {
-            Some(m) => {
-                let centres: Vec<Value> = s["centres"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|c| json!(m.map(c.as_i64().unwrap_or(0).max(0) as usize)))
-                    .collect();
-                s["centres"] = json!(centres);
-                s["rows"] = json!(rows);
-                s
-            }
-            None => Value::Null,
-        },
-        None => Value::Null,
+    if s["rows"].as_u64() == Some(rows as u64) {
+        return Some(s);
     }
+    let m = moved.filter(|m| s["rows"].as_u64() == Some(m.old_rows as u64))?;
+    for c in s["centres"].as_array_mut()? {
+        *c = json!(m.map(c.as_i64().unwrap_or(0).max(0) as usize));
+    }
+    s["rows"] = json!(rows);
+    Some(s)
 }
 
 /// The boxes and, per box, Adjust's edits (`{}` for none) beside the raw.

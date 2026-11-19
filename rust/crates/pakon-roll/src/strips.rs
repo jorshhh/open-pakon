@@ -9,7 +9,7 @@ use std::path::Path;
 
 use ndarray::{s, ArrayView2, ArrayView3, Axis};
 use pakon_image::framing::{self, Format};
-use pakon_proto::dx;
+use pakon_proto::{dx, LEAD_ROWS};
 use serde::{Deserialize, Serialize};
 
 /// One strip on the ribbon the app works on: rows `[start, end)` and its
@@ -32,10 +32,6 @@ struct FileStrip {
     dx: Vec<u8>,
 }
 
-/// Open gate kept ahead of each strip's film, as the scan keeps between
-/// strips (pakon-scan's `STRIP_LEAD_ROWS`).
-pub const LEAD_ROWS: usize = 200;
-
 /// One strip as the scan recorded it: raw rows, first film row, DX codes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Fed {
@@ -44,12 +40,14 @@ pub struct Fed {
     pub dx: Vec<u8>,
 }
 
-/// Where a strip's raw rows sit on a ribbon.
+/// One strip on the older ribbon (`old`) and on this one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Placed {
-    fed: usize,
-    raw: Range<usize>,
-    at: usize,
+struct Seg {
+    old: Range<usize>,
+    new_at: usize,
+    new_len: usize,
+    /// Leader rows dropped from its front.
+    dropped: usize,
 }
 
 /// From the ribbon an older build made of the same raw (leader kept) to
@@ -58,20 +56,15 @@ struct Placed {
 pub struct RowMap {
     /// Rows of the older ribbon.
     pub old_rows: usize,
-    old: Vec<Placed>,
-    new: Vec<Placed>,
+    segs: Vec<Seg>,
 }
 
 impl RowMap {
     /// The row on this ribbon for `row` on the older one. A row in a
     /// dropped leader goes to the start of its strip.
     pub fn map(&self, row: usize) -> usize {
-        let Some(o) = self.old.iter().find(|p| row < p.at + p.raw.len()).or(self.old.last()) else {
-            return row;
-        };
-        let raw = o.raw.start + row.saturating_sub(o.at).min(o.raw.len().saturating_sub(1));
-        match self.new.iter().find(|n| n.fed == o.fed) {
-            Some(n) => n.at + raw.saturating_sub(n.raw.start).min(n.raw.len().saturating_sub(1)),
+        match self.segs.iter().find(|g| row < g.old.end).or(self.segs.last()) {
+            Some(g) => g.new_at + row.saturating_sub(g.old.start).saturating_sub(g.dropped).min(g.new_len.saturating_sub(1)),
             None => row,
         }
     }
@@ -89,21 +82,20 @@ struct StripsFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     /// Raw rows in film order (the ribbon is rebuilt from these when
-    /// `reordered`).
+    /// `repacked`).
     pub ranges: Vec<Range<usize>>,
     pub strips: Vec<StripInfo>,
     /// The DX codes put the strips in another order than they were fed.
     pub reordered: bool,
-    /// Leader before a strip's film was dropped.
-    pub trimmed: bool,
-    /// Set when trimmed: from the ribbon older builds made (leader kept).
+    /// Leader before a strip's film was dropped: from the ribbon older
+    /// builds made (leader kept) to this one.
     pub moved: Option<RowMap>,
 }
 
 impl Plan {
     /// The ribbon is not the raw's rows as they are: write it from `ranges`.
     pub fn repacked(&self) -> bool {
-        self.reordered || self.trimmed
+        self.reordered || self.moved.is_some()
     }
 }
 
@@ -125,61 +117,50 @@ pub fn plan_for_raw(raw: &Path, rows: usize, row_samples: usize) -> Option<Plan>
         eprintln!("strips.json not used: version {}, {} samples per row (the raw has {row_samples})", f.version, f.row_samples);
         return None;
     }
-    let fed: Vec<Fed> = f.strips.iter().map(|s| Fed { rows: s.start..s.end, film: s.film, dx: s.dx.clone() }).collect();
+    let fed: Vec<Fed> = f.strips.into_iter().map(|s| Fed { rows: s.start..s.end, film: s.film, dx: s.dx }).collect();
     plan(&fed, rows)
 }
 
 /// The plan from each strip as fed, in feed order. Each strip starts
-/// `LEAD_ROWS` before its film: the first one otherwise carries everything
-/// read from the motor start until the film reached the gate.
+/// [`LEAD_ROWS`] before its film: the first one of an older raw otherwise
+/// carries everything read from the motor start until the film reached the
+/// gate.
 pub fn plan(strips: &[Fed], rows: usize) -> Option<Plan> {
-    let mut out = layout(strips, rows, true)?;
-    if out.trimmed {
-        let old = layout(strips, rows, false)?;
-        let placed = |p: &Plan| -> Vec<Placed> {
-            p.ranges.iter().zip(&p.strips).map(|(r, s)| Placed { fed: s.fed, raw: r.clone(), at: s.start }).collect()
-        };
-        let old_rows = if old.reordered { old.strips.last().map_or(0, |s| s.end) } else { rows };
-        out.moved = Some(RowMap { old_rows, old: placed(&old), new: placed(&out) });
-    }
-    Some(out)
-}
-
-fn layout(strips: &[Fed], rows: usize, trim: bool) -> Option<Plan> {
-    // clamp to the ribbon; drop what is left empty
-    let mut trimmed = false;
-    let kept: Vec<(usize, Range<usize>, Vec<u8>)> = strips
+    // clamped to the ribbon, as fed (old) and from LEAD_ROWS before the
+    // film (new); a strip left empty is dropped
+    let kept: Vec<(usize, Range<usize>, Range<usize>)> = strips
         .iter()
         .enumerate()
         .map(|(i, f)| {
-            let mut start = f.rows.start;
-            if let Some(film) = f.film.filter(|_| trim) {
-                let from = film.saturating_sub(LEAD_ROWS).min(f.rows.end);
-                if from > start {
-                    start = from;
-                    trimmed = true;
-                }
-            }
-            (i, start.min(rows)..f.rows.end.min(rows), f.dx.clone())
+            let from = f.film.map_or(0, |film| film.saturating_sub(LEAD_ROWS));
+            let end = f.rows.end.min(rows);
+            (i, f.rows.start.min(rows)..end, f.rows.start.max(from).min(end)..end)
         })
-        .filter(|(_, r, _)| r.end > r.start)
+        .filter(|(_, _, r)| !r.is_empty())
         .collect();
     if kept.is_empty() {
         return None;
     }
-    let codes: Vec<Vec<u8>> = kept.iter().map(|k| k.2.clone()).collect();
+    let trimmed = kept.iter().any(|(_, old, new)| new.start > old.start);
+    let codes: Vec<Vec<u8>> = kept.iter().map(|&(i, ..)| strips[i].dx.clone()).collect();
     let (order, reordered) = dx::strip_order(&codes);
-    let mut out = Plan { ranges: Vec::new(), strips: Vec::new(), reordered, trimmed, moved: None };
-    let mut at = 0;
+    let mut out = Plan { ranges: Vec::new(), strips: Vec::new(), reordered, moved: None };
+    let (mut at, mut old_at) = (0, 0);
+    let mut segs = Vec::new();
     for &k in &order {
-        let (fed, r, _) = &kept[k];
-        // unmoved, the ribbon keeps its rows; moved or trimmed, the strips
-        // are packed
-        let start = if out.repacked() { at } else { r.start };
-        let len = r.end - r.start;
-        out.ranges.push(r.clone());
-        out.strips.push(StripInfo { start, end: start + len, fed: fed + 1 });
-        at = start + len;
+        let (i, old, new) = &kept[k];
+        // unmoved, the ribbon keeps its rows; reordered or trimmed, the
+        // strips are packed
+        let start = if reordered || trimmed { at } else { new.start };
+        let old_start = if reordered { old_at } else { old.start };
+        out.ranges.push(new.clone());
+        out.strips.push(StripInfo { start, end: start + new.len(), fed: i + 1 });
+        segs.push(Seg { old: old_start..old_start + old.len(), new_at: start, new_len: new.len(), dropped: new.start - old.start });
+        at = start + new.len();
+        old_at = old_start + old.len();
+    }
+    if trimmed {
+        out.moved = Some(RowMap { old_rows: if reordered { old_at } else { rows }, segs });
     }
     Some(out)
 }
@@ -304,7 +285,7 @@ mod tests {
     #[test]
     fn plan_drops_the_leader_before_the_film() {
         let p = plan(&[fed(0..20683, Some(7715), vec![]), fed(20683..33824, Some(20883), vec![])], 33808).unwrap();
-        assert!(p.trimmed && !p.reordered && p.repacked());
+        assert!(p.moved.is_some() && !p.reordered && p.repacked());
         assert_eq!(p.ranges, vec![7515..20683, 20683..33808]);
         assert_eq!(p.strips, vec![StripInfo { start: 0, end: 13168, fed: 1 }, StripInfo { start: 13168, end: 26293, fed: 2 }]);
         // boxes saved on the old ribbon (raw rows) move with the pictures
