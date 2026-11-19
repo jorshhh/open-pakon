@@ -115,8 +115,9 @@ fn save_crops(raw: &Path, rows: usize, centres: &[i64], widths: &[usize], edits:
 
 /// Run `work(progress)` on the blocking pool, one job at a time, streaming
 /// its progress; `done(result)` builds the final 'done' event and the
-/// usage statistics. Reports `<name>_done` or the failure.
-fn run_job<T, W, D>(app: Arc<App>, name: &'static str, page: &'static str, work: W, done: D) -> Response
+/// usage statistics. Reports `<name>_done` or the failure. A job that set
+/// the roll's `processing` flag (`owns_flag`) clears it when it ends.
+fn run_job<T, W, D>(app: Arc<App>, name: &'static str, page: &'static str, owns_flag: bool, work: W, done: D) -> Response
 where
     T: Send + 'static,
     W: FnOnce(Progress) -> Result<T, String> + Send + 'static,
@@ -134,14 +135,18 @@ where
         match result {
             Ok(value) => {
                 let (event, stats) = done(&app, value);
-                app.roll().processing = false;
+                if owns_flag {
+                    app.roll().processing = false;
+                }
                 let _ = tx.send(event);
                 let mut props = stats.as_object().cloned().unwrap_or_default();
                 props.insert("seconds".into(), json!(t0.elapsed().as_secs_f64().round() as u64));
                 app.telemetry.event(&format!("{name}_done"), page, Value::Object(props));
             }
             Err(e) => {
-                app.roll().processing = false;
+                if owns_flag {
+                    app.roll().processing = false;
+                }
                 app.telemetry.error("Error", &format!("{name}: {e}"), "", page);
                 let _ = tx.send(json!({"type": "error", "message": e}));
             }
@@ -210,12 +215,13 @@ pub async fn api_process(State(app): State<Arc<App>>, body: Bytes) -> Response {
         app,
         "process",
         "process",
+        true,
         move |progress| pakon_roll::prescan(&env, &job_raw, film_kind(&job_film), frame_format(&fmt), Some(progress)),
         move |app, meta| {
             // hand the browser everything it needs to place crops (no ribbon path)
             let all = serde_json::to_value(&meta).unwrap_or_default();
             let mut event = json!({"type": "done", "saved": load_crops(&raw, meta.rows)});
-            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order"] {
+            for key in ["rows", "cols", "pitch", "frame_w", "box_w", "preview_w", "preview_h", "scale", "film", "format", "ice", "strips", "dx_order", "adjustable"] {
                 event[key] = all[key].clone();
             }
             app.roll().prescan = Some(meta);
@@ -354,19 +360,27 @@ pub async fn api_adjust_open(State(app): State<Arc<App>>, body: Bytes) -> Respon
             return refuse("Already processing");
         }
         roll.previews = None;
-        roll.processing = true;
         (meta, roll.scan_path.clone())
     };
     let req = export_request(&app, &meta, raw.as_deref(), centres, widths, false);
     let env = app.env();
+    // Not the roll's `processing` flag: previews must not refuse a scan's
+    // processing or an auto-frame. The job lock still runs jobs one at a
+    // time, so a roll processed meanwhile waits for these; processing
+    // clears the prescan as it is asked for, and previews finished after
+    // that are of the old roll and dropped.
     run_job(
         app,
         "adjust",
         "adjust",
+        false,
         move |progress| pakon_roll::previewer(&env, &req, Some(progress)),
         move |app, p| {
             let n = p.len();
-            app.roll().previews = Some(Arc::new(p));
+            let mut roll = app.roll();
+            if roll.prescan.is_some() {
+                roll.previews = Some(Arc::new(p));
+            }
             (json!({"type": "done", "frames": n}), json!({"frames": n, "film": meta.film}))
         },
     )
@@ -427,6 +441,7 @@ pub async fn api_export_frames(State(app): State<Arc<App>>, body: Bytes) -> Resp
         app,
         "export",
         "frames",
+        true,
         move |progress| pakon_roll::export_frames(&env, &req, Some(progress)),
         move |app, frames: Vec<FrameFiles>| {
             let n = frames.len();
@@ -528,6 +543,7 @@ pub async fn api_save(State(app): State<Arc<App>>, body: Bytes) -> Response {
         app,
         "save",
         "export",
+        true,
         move |progress| save_frames(&env, &out, &frames, &job_fmt, progress),
         move |_, result: Value| {
             let stats = json!({"format": fmt, "frames": result["count"]});

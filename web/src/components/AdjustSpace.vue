@@ -27,6 +27,9 @@ const KEYS = [
   { keys: ['←', '→'], what: 'previous / next' },
 ];
 const n = computed(() => roll.crops.length);
+// Colour edits and sharpening need the OEM colour path (the scanner's
+// EEPROM archive and rpd.pf) or a slide; without them only turn and flip.
+const adjustable = computed(() => !!meta.value?.adjustable);
 const shown = computed(() => app.space === 'adjust' && !!meta.value && n.value > 0);
 
 // ── View: the whole roll, 4 or 2 at a time, or one ──────────────────────
@@ -107,12 +110,14 @@ const opened = ref('');           // the boxes the service's previews are of
 const stamp = ref(0);
 const status = ref({ busy: false, value: null as number | null, label: '', error: false });
 const preparing = ref(false);
+const prepFailed = ref(false);
 const ready = computed(() => !!opened.value && opened.value === boxKey());
 
 async function openPreviews() {
   const key = boxKey();
   if (preparing.value || key === opened.value) return;
   preparing.value = true;
+  prepFailed.value = false;
   status.value = { busy: true, value: null, label: 'Preparing the previews', error: false };
   setBusy('adjust', true);
   await postSSE('/api/adjust/open', {
@@ -121,7 +126,10 @@ async function openPreviews() {
   }, ev => {
     if (ev.type === 'progress') status.value = { busy: true, value: ev.pct, label: ev.step, error: false };
     else if (ev.type === 'done') { opened.value = key; stamp.value = Date.now(); status.value = { busy: false, value: null, label: '', error: false }; }
-    else if (ev.type === 'error') status.value = { busy: false, value: null, label: ev.message ?? 'Could not prepare the previews', error: true };
+    else if (ev.type === 'error') {
+      prepFailed.value = true;
+      status.value = { busy: false, value: null, label: ev.message ?? 'Could not prepare the previews', error: true };
+    }
   });
   preparing.value = false;
   setBusy('adjust', false);
@@ -352,7 +360,7 @@ const toolCls = 'grid size-[clamp(1.75rem,5vh,2.5rem)] shrink-0 cursor-pointer p
         <!-- for the whole roll -->
         <div class="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-2 border-ink bg-paper px-3 py-2 text-body">
           <label class="flex items-center gap-2 font-mono font-semibold">Sharpen
-            <select v-model="sharpen" aria-label="Sharpening">
+            <select v-model="sharpen" aria-label="Sharpening" :disabled="!adjustable">
               <option value="off">Off</option>
               <option value="low">Low</option>
               <option value="medium">Medium</option>
@@ -368,16 +376,21 @@ const toolCls = 'grid size-[clamp(1.75rem,5vh,2.5rem)] shrink-0 cursor-pointer p
       <aside aria-label="Adjustments" class="grid min-h-0 flex-1 content-start border-2 border-ink bg-paper p-3"
              :style="{ gridTemplateRows: 'auto repeat(6, minmax(1.25rem, 2.25rem)) auto', rowGap: 'clamp(3px, 1.2vh, 12px)' }">
         <div class="flex items-center justify-between">
-          <h3 class="font-display text-heading font-bold uppercase">{{ panelTitle }}</h3>
+          <span class="flex items-center gap-2">
+            <h3 class="font-display text-heading font-bold uppercase">{{ panelTitle }}</h3>
+            <InfoTip v-if="!adjustable" label="Why colour is off" place="below"
+                     tip="Colour and sharpening need the scanner's saved settings, which this roll has none of. Turn and flip still work." />
+          </span>
           <Btn variant="ghost" class="px-2.5! py-1! text-small!" @click="reset">Reset</Btn>
         </div>
-        <div v-for="r in rows" :key="r.k" class="grid min-h-0 grid-cols-[5.5rem_2.5rem_minmax(0,1fr)_2.5rem_2.25rem] items-stretch gap-1.5 font-mono text-small">
+        <div v-for="r in rows" :key="r.k" :aria-disabled="!adjustable"
+             :class="['grid min-h-0 grid-cols-[5.5rem_2.5rem_minmax(0,1fr)_2.5rem_2.25rem] items-stretch gap-1.5 font-mono text-small', !adjustable && 'pointer-events-none opacity-40']">
           <span class="self-center font-bold">{{ r.name }}</span>
-          <button type="button" :aria-label="r.less" :title="r.less" class="grid cursor-pointer place-items-center border-2 border-ink bg-surface hover:bg-paper active:translate-y-px" @click="step(r, -1)">
+          <button type="button" :aria-label="r.less" :title="r.less" class="grid cursor-pointer place-items-center border-2 border-ink bg-surface hover:bg-paper active:translate-y-px" :disabled="!adjustable" @click="step(r, -1)">
             <svg class="size-4" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 2.5h10L6 10.5z" :fill="r.lo ?? 'currentColor'" stroke="#141414" stroke-width="1" stroke-linejoin="round"/></svg>
           </button>
           <!-- click or drag to set, arrows to step, double-click for 0 -->
-          <div role="slider" tabindex="0" :aria-label="r.name" :aria-valuemin="-r.max" :aria-valuemax="r.max"
+          <div role="slider" :tabindex="adjustable ? 0 : -1" :aria-label="r.name" :aria-valuemin="-r.max" :aria-valuemax="r.max"
                :aria-valuenow="r.v ?? undefined" :aria-valuetext="r.text"
                class="relative cursor-pointer touch-none outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                @pointerdown="slideStart(r, $event)" @pointermove="slideMove(r, $event)" @pointerup="slideEnd" @pointercancel="slideEnd"
@@ -387,7 +400,7 @@ const toolCls = 'grid size-[clamp(1.75rem,5vh,2.5rem)] shrink-0 cursor-pointer p
               <span :class="['absolute -inset-y-1.5 -ml-1 w-2 border border-ink', r.v == null ? 'bg-muted' : 'bg-ink']" :style="{ left: r.pos + '%' }"></span>
             </div>
           </div>
-          <button type="button" :aria-label="r.more" :title="r.more" class="grid cursor-pointer place-items-center border-2 border-ink bg-surface hover:bg-paper active:translate-y-px" @click="step(r, 1)">
+          <button type="button" :aria-label="r.more" :title="r.more" class="grid cursor-pointer place-items-center border-2 border-ink bg-surface hover:bg-paper active:translate-y-px" :disabled="!adjustable" @click="step(r, 1)">
             <svg class="size-4" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5l5 8H1z" :fill="r.hi ?? 'currentColor'" stroke="#141414" stroke-width="1" stroke-linejoin="round"/></svg>
           </button>
           <span class="self-center text-right font-bold">{{ r.text }}</span>
@@ -418,6 +431,7 @@ const toolCls = 'grid size-[clamp(1.75rem,5vh,2.5rem)] shrink-0 cursor-pointer p
         <progress v-else :value="status.value" max="1" class="w-48"></progress>
       </template>
       <span :class="['truncate', status.error ? 'font-semibold text-danger' : 'text-muted']">{{ status.label }}</span>
+      <Btn v-if="prepFailed && !preparing" variant="ghost" class="shrink-0 px-2.5! py-0.5! text-small!" @click="openPreviews">Retry</Btn>
     </div>
   </Card>
 </template>

@@ -31,6 +31,7 @@ export interface RollMeta {
   saved?: { centres: number[]; widths?: number[]; edits?: Record<string, number | boolean>[] } | null;
   strips?: Strip[];      // strip mode: the strips in film order
   dx_order?: boolean;    // put in that order from their DX codes
+  adjustable?: boolean;  // colour edits and sharpening render (OEM or slide path)
 }
 // One cut strip on the ribbon: full rows [start, end), fed = its place in the feed.
 export interface Strip { start: number; end: number; fed: number }

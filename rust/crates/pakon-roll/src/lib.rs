@@ -322,6 +322,11 @@ pub struct Meta {
     /// The strips were put in film order from their DX codes.
     #[serde(default)]
     pub dx_order: bool,
+    /// The per-picture adjustments and sharpening render: the OEM colour
+    /// path or the slide path. The fallback (no EEPROM archive or rpd.pf)
+    /// has none, only the turn and flips.
+    #[serde(default)]
+    pub adjustable: bool,
 }
 
 /// The SBA parameter file for the raw's DX code, and the strip's film base
@@ -562,6 +567,7 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
         scene_dmin,
         dx_order: reorder.is_some(),
         strips: strip_list,
+        adjustable: film == FilmKind::Slide || oem.is_some(),
     })
 }
 
@@ -928,14 +934,16 @@ pub fn export_frames(env: &Env, req: &ExportRequest, progress: Option<Progress>)
 pub const PREVIEW_PX: usize = 1000;
 
 /// `a` shrunk by `f` in both directions, each pixel the mean of its f×f
-/// block (a partial block at the edges dropped).
+/// block (a partial block at the edges dropped; a side shorter than f is
+/// one block).
 fn shrink(a: ArrayView3<u16>, f: usize) -> Array3<u16> {
     let (h, w, c) = a.dim();
     if f <= 1 {
         return a.to_owned();
     }
     let (oh, ow) = ((h / f).max(1), (w / f).max(1));
-    let area = (f * f) as u32;
+    // a crop smaller than f in a direction adds up only what it has
+    let area = (f.min(h) * f.min(w)) as u32;
     let mut out = Array3::<u16>::zeros((oh, ow, c));
     {
         use rayon::prelude::*;
@@ -964,6 +972,10 @@ fn factor(dim: (usize, usize, usize), px: usize) -> usize {
 /// A crop shrunk from the ribbon for a large preview: (frame, factor, crop).
 type BigCrop = (usize, usize, std::sync::Arc<Array3<u16>>);
 
+/// How many larger crops a [`Previewer`] keeps: a 2×2 page of them and a
+/// few more for paging back and forth (~9 MB each at Base 16, factor 2).
+const BIG_KEPT: usize = 8;
+
 /// Renders of the export's frames, for adjusting them live: the crops
 /// shrunk once, the scene balance of the roll worked out once, then any
 /// frame rendered with any adjustment in milliseconds. No dust removal.
@@ -976,8 +988,8 @@ pub struct Previewer {
     cols: usize,
     /// Each crop shrunk to [`PREVIEW_PX`], and by what factor.
     small: Vec<(std::sync::Arc<Array3<u16>>, usize)>,
-    /// The last larger crop asked for.
-    big: Mutex<Option<BigCrop>>,
+    /// The larger crops asked for last, newest first.
+    big: Mutex<Vec<BigCrop>>,
     base_k: usize,
 }
 
@@ -1014,7 +1026,7 @@ pub fn previewer(env: &Env, req: &ExportRequest, progress: Option<Progress>) -> 
         cols: rgb.len_of(Axis(1)),
         rows,
         small,
-        big: Mutex::new(None),
+        big: Mutex::new(Vec::new()),
         base_k: rot_k(req.rotate),
     })
 }
@@ -1028,8 +1040,9 @@ impl Previewer {
     }
 
     /// Frame `i`'s negative with its long side at `px` or under: the kept
-    /// one when that is enough, else shrunk from the ribbon (and kept until
-    /// another is asked for).
+    /// one when that is enough, else shrunk from the ribbon (the last
+    /// [`BIG_KEPT`] of those kept). The shrinking runs outside the lock, so
+    /// frames shrink side by side.
     fn crop(&self, i: usize, px: usize) -> Result<(std::sync::Arc<Array3<u16>>, usize), String> {
         let (small, small_f) = self.small.get(i).ok_or_else(|| format!("no frame {}", i + 1))?;
         let (a, b) = self.rows[i];
@@ -1037,16 +1050,22 @@ impl Previewer {
         if f >= *small_f {
             return Ok((small.clone(), *small_f));
         }
-        let mut big = self.big.lock().unwrap();
-        if let Some((bi, bf, c)) = big.as_ref() {
-            if *bi == i && *bf == f {
-                return Ok((c.clone(), f));
+        {
+            let mut big = self.big.lock().unwrap();
+            if let Some(k) = big.iter().position(|(bi, bf, _)| *bi == i && *bf == f) {
+                let hit = big.remove(k);
+                let c = hit.2.clone();
+                big.insert(0, hit);
+                return Ok((c, f));
             }
         }
         let npy = Npy::open(&self.ribbon)?;
         let rgb = npy.view3()?;
         let c = std::sync::Arc::new(shrink(rgb.slice(s![a..b, .., ..]), f));
-        *big = Some((i, f, c.clone()));
+        let mut big = self.big.lock().unwrap();
+        big.retain(|(bi, bf, _)| !(*bi == i && *bf == f));
+        big.insert(0, (i, f, c.clone()));
+        big.truncate(BIG_KEPT);
         Ok((c, f))
     }
 
@@ -1056,7 +1075,7 @@ impl Previewer {
     /// divided by f: close to what the full frame shows, not the same.
     pub fn jpeg(&self, i: usize, adj: Option<&Adjust>, orient: Orient, px: usize) -> Result<Vec<u8>, String> {
         let (crop, f) = self.crop(i, px)?;
-        let adj = adj.map(|a| Adjust { sharpness: a.sharpness / f as i32, ..*a });
+        let adj = adj.and_then(|a| Adjust { sharpness: a.sharpness / f as i32, ..*a }.clean());
         let adj = adj.as_ref();
         let part = orient.apply(crop.view(), self.base_k).as_standard_layout().into_owned();
         let (_, rendered) = self.renderer.render(i, part.view(), adj)?;
@@ -1147,6 +1166,9 @@ mod tests {
         // (0+1+10+11)/4, (2+3+12+13)/4, (20+21+30+31)/4
         assert_eq!([s[(0, 0, 0)], s[(0, 1, 0)], s[(1, 0, 0)]], [5, 7, 25]);
         assert_eq!(shrink(a.view(), 1), a);
+        // a factor larger than a side: the mean of what is there, not darker
+        let flat = Array3::from_elem((3, 9, 1), 1000u16);
+        assert_eq!(shrink(flat.view(), 4), Array3::from_elem((1, 2, 1), 1000u16));
     }
 
     #[test]
