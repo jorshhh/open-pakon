@@ -73,6 +73,10 @@ const boxes = computed(() => roll.crops.map((cp, i) => {
   return { i, left: cp.c * pxPerRow() - w / 2, width: w };
 }));
 const active = computed(() => boxes.value[roll.cur] ?? null);
+
+// Strip mode: where each cut strip starts on the film strip.
+const strips = computed(() => meta.value?.strips ?? []);
+const stripMarks = computed(() => strips.value.map((st, i) => ({ i, fed: st.fed, left: st.start * pxPerRow() })));
 const title = computed(() => roll.crops.length ? `Confirm frames — ${roll.cur + 1} / ${roll.crops.length}` : 'Place the frames');
 
 // keep the active box in view
@@ -203,6 +207,8 @@ async function exportFrames() {
   <Card v-else ruled>
     <template #title>{{ title }}</template>
     <template #info>
+      <span v-if="strips.length > 1" class="border-2 border-ink px-2 py-0.5 font-mono text-[0.72rem] font-bold uppercase">{{ strips.length }} strips</span>
+      <span v-if="meta?.dx_order" class="border-2 border-ink bg-accent px-2 py-0.5 font-mono text-[0.72rem] font-bold uppercase">DX order</span>
       <InfoTip label="Keys" place="below" tip="Click the strip to place a box. ← → nudge · ↑ ↓ previous / next · Enter add · Delete remove." />
     </template>
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -252,6 +258,13 @@ async function exportFrames() {
           <span :class="['absolute top-0.5 left-1 border border-black px-1 font-mono text-[11px] leading-normal font-semibold',
                          b.i === roll.cur ? 'bg-danger text-white' : 'bg-accent text-black']">{{ b.i + 1 }}</span>
         </div>
+        <!-- strip mode: a line where each cut strip starts, its feed number below -->
+        <template v-if="stripMarks.length > 1">
+          <div v-for="m in stripMarks" :key="'s' + m.i" class="pointer-events-none absolute inset-y-0 z-20" :style="{ left: m.left + 'px' }">
+            <div v-if="m.i > 0" class="absolute inset-y-0 -left-0.5 w-1 bg-surface"></div>
+            <span class="absolute bottom-0.5 left-1.5 border border-black bg-surface px-1 font-mono text-[11px] leading-normal font-bold whitespace-nowrap text-ink">Strip {{ m.fed }}</span>
+          </div>
+        </template>
       </div>
     </div>
     <div class="mt-2.5"><ProgressBar :show="exp.show" :value="exp.value" :label="exp.label" class="mt-0!" /></div>

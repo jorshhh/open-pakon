@@ -187,7 +187,7 @@ unit's EEPROM archive):
 
 | Mode | What it does |
 |---|---|
-| `--scan-code [--base 4\|8\|16] [--ir on\|off] [--film c41\|bw\|bwc41\|slide] [--image OUT] [--recalibrate] [--max-mb N]` | Setup, lamp wait, light calibration (open gate: keep the film out), scan start, then prints `motor start (a0) sent -- feed the film now`. Stops on its own at end of roll; teardown stops the motor. Defaults: Base 16, IR on (off for `bw`), `c41`, `pakon_scan.raw`. `--recalibrate` forces a full calibration instead of the cached one. `--max-mb` (default 4096) is only a runaway guard: a 36-exposure roll at Base 16 with IR is up to about 2 GB. |
+| `--scan-code [--base 4\|8\|16] [--ir on\|off] [--film c41\|bw\|bwc41\|slide] [--image OUT] [--recalibrate] [--max-mb N] [--strips]` | Setup, lamp wait, light calibration (open gate: keep the film out), scan start, then prints `motor start (a0) sent -- feed the film now`. Stops on its own at end of roll; teardown stops the motor. Defaults: Base 16, IR on (off for `bw`), `c41`, `pakon_scan.raw`. `--recalibrate` forces a full calibration instead of the cached one. `--max-mb` (default 4096) is only a runaway guard: a 36-exposure roll at Base 16 with IR is up to about 2 GB. `--strips` is strip mode: cut strips fed one after another into one raw, each strip's length measured; the scan keeps running between strips (`feed strip N` is printed) and ends on Ctrl-C, after 15 strips, or 5 minutes with no new strip. |
 | `--light-cal [--base N] [--ir on\|off] [--flat-out FILE]` | Calibration only, open gate; writes the per-column tables to `DIR/flatfield.json` or `FILE` |
 | `--setup [--base N] [--teardown]` | Setup only, optionally followed by the teardown |
 | `--eject [--eject-seconds N]` | Runs the transport until the DX film sensors say the strip is out, or stalled at the exit (pull it out by hand); default limit 60 s |
@@ -207,7 +207,10 @@ Ctrl-C exits at once. With `PAKON_STOP_STDIN` set, a line starting with
 
 A code-built scan writes beside the raw: `OUT.flat.json` (the calibration's
 per-column tables and row layout) and, when the scanner read the film's DX
-code, `OUT.dx.json`. Open the raw in the app to frame and export it; there is
+code, `OUT.dx.json`. In strip mode also `OUT.strips.json`: each strip's
+raw rows (`start`, `film`, `end`; the open gate between strips is left out
+of the raw, except 200 rows in front of each strip) and the DX frame
+numbers read on it. Open the raw in the app to frame and export it; there is
 no command-line decoder.
 
 F-135+ replay (the scripts of serial 16402; the code-built modes above are
@@ -244,7 +247,7 @@ missing required field answers 422.
 |---|---|---|
 | `/api/status` | GET | Scanner state, the current raw and its size, frame count, processing state, work folder and next order, the EEPROM archive in use, whether the HEX firmware is present, a newer release |
 | `/api/firmware` | POST, stream | Loads the firmware (HEX files, else `f135.pakfw`) |
-| `/api/scan` | POST, stream | Scans into a new order folder; `film` (`c41`, `bw`, `bwc41`, `slide`), `base` (4, 8, 16), optional `order` (the folder name, e.g. a lab's order number; `-2`, `-3`, ... when taken; blank or the next ID itself = the counter) |
+| `/api/scan` | POST, stream | Scans into a new order folder; `film` (`c41`, `bw`, `bwc41`, `slide`), `base` (4, 8, 16), `strips` (true = cut strips into one roll; sends `strip` events: `strip` number, `state` scanning, done, feed, or long = longer than 6 frames, likely two strips with no gap), optional `order` (the folder name, e.g. a lab's order number; `-2`, `-3`, ... when taken; blank or the next ID itself = the counter) |
 | `/api/scan/stop` | POST | Ends a running scan as at the end of the roll (teardown still runs) |
 | `/api/eject` | POST, stream | Ejects the strip (F-135, code-built) |
 | `/api/workdir` | POST | Sets the work folder |
@@ -325,8 +328,15 @@ Inside the data folder:
   `flatfield.json` from `--light-cal` is used for raws without their own.
 
 Beside each raw: `.flat.json` (calibration tables, row layout, scan duties),
-`.dx.json` (film product code), `.film` (film type), `.format` (framing
-format), `.crops.json` (confirmed crops, written at export).
+`.dx.json` (film product code), `.strips.json` (strip mode: the strips'
+rows and DX codes), `.film` (film type), `.format` (framing format),
+`.crops.json` (confirmed crops, written at export).
+
+A strip-mode raw is framed strip by strip, so the open gate between strips
+is never boxed. When the DX codes say the strips were fed out of film order
+(sorted by the median frame number read on each; a strip without codes stays
+behind the one fed before it), the cached ribbon is written in film order
+and the frames are numbered in that order.
 
 ## Packaging
 

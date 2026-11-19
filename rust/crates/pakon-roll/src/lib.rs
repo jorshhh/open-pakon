@@ -23,6 +23,9 @@ use pakon_image::{adjust, balance, fallback, film, ice, ribbon, slide};
 use pakon_oem::{dice, sba};
 use serde::{Deserialize, Serialize};
 
+pub mod strips;
+pub use strips::StripInfo;
+
 /// Progress: (step, fraction 0..1).
 pub type Progress<'a> = &'a (dyn Fn(&str, f64) + Sync);
 
@@ -311,6 +314,13 @@ pub struct Meta {
     pub ice: bool,
     pub sba_dpi: Option<String>,
     pub scene_dmin: Option<[i64; 3]>,
+    /// Strip mode: the strips on the ribbon, in film order (empty for a
+    /// full roll).
+    #[serde(default)]
+    pub strips: Vec<StripInfo>,
+    /// The strips were put in film order from their DX codes.
+    #[serde(default)]
+    pub dx_order: bool,
 }
 
 /// The SBA parameter file for the raw's DX code, and the strip's film base
@@ -418,7 +428,26 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     let opt = ribbon::Options { layout: env.layout, eeprom_dir: env.eeprom_dir.clone(), no_flat: env.no_flat };
     let mut prog = |s: &str, p: f64| emit(progress, s, p);
     let r = ribbon::build(raw, &opt, &mut prog)?;
-    let rgb = r.rgb;
+    let plan = strips::plan_for_raw(raw, r.rgb.len_of(Axis(0)), r.info.layout.row_samples);
+    // Strips fed out of film order: the cached ribbon is written in film
+    // order, row ranges streamed into the .npy, and used from there.
+    let reorder = plan.as_ref().filter(|p| p.reordered);
+    let ribbon_npy;
+    let owned;
+    let rgb: ArrayView3<u16> = match reorder {
+        Some(p) => {
+            emit(progress, "Putting the strips in film order", 0.58);
+            strips::write_rows3(&env.ribbon_path(), r.rgb.view(), &p.ranges)?;
+            drop(r.rgb);
+            ribbon_npy = Npy::open(&env.ribbon_path())?;
+            ribbon_npy.view3()?
+        }
+        None => {
+            owned = r.rgb;
+            owned.view()
+        }
+    };
+    let strip_list: Vec<StripInfo> = plan.as_ref().map(|p| p.strips.clone()).unwrap_or_default();
     let (rows, cols, _) = rgb.dim();
     // On slide film dust removal smoothed the grain over most of the frame
     // (2026-11-02), so slides get none. Silver B&W gets none either: the
@@ -431,7 +460,7 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
 
     emit(progress, "Detecting frames", 0.68);
     let box_w: HashMap<String, usize> = Format::ALL.iter().map(|f| (f.name().to_string(), framing::geometry(cols, *f).1)).collect();
-    let (starts, mut frame_w, mut pitch) = framing::frame_grid(rgb.view(), film == FilmKind::Slide, fmt);
+    let (starts, mut frame_w, mut pitch) = strips::frame_strips(rgb.view(), &strip_list, film == FilmKind::Slide, fmt);
     let mut centres: Vec<i64> = starts.iter().map(|&s| (s + frame_w / 2) as i64).collect();
     if centres.is_empty() {
         centres = vec![(rows / 2) as i64];
@@ -442,10 +471,15 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     }
 
     emit(progress, "Caching ribbon", 0.75);
-    write_npy(&env.ribbon_path(), &rgb)?;
+    if reorder.is_none() {
+        write_npy(&env.ribbon_path(), &rgb)?;
+    }
     match &ice_plane {
         Some((ir, flat)) => {
-            write_npy(&env.ir_ribbon_path(), ir)?;
+            match reorder {
+                Some(p) => strips::write_rows2(&env.ir_ribbon_path(), ir.view(), &p.ranges)?,
+                None => write_npy(&env.ir_ribbon_path(), ir)?,
+            }
             write_npy(&env.ir_noise_path(), &ndarray::Array1::from(ice::ir_noise_factor(flat, cols)))?;
         }
         None => {
@@ -525,6 +559,8 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
         ice: ice_plane.is_some(),
         sba_dpi,
         scene_dmin,
+        dx_order: reorder.is_some(),
+        strips: strip_list,
     })
 }
 
@@ -551,10 +587,11 @@ pub struct Autoframe {
     pub format: Format,
 }
 
-pub fn autoframe(ribbon: &Path, film: FilmKind, fmt: Format) -> Result<Autoframe, String> {
+/// `strips`: the roll's strips ([`Meta::strips`]), framed one by one.
+pub fn autoframe(ribbon: &Path, film: FilmKind, fmt: Format, strips: &[StripInfo]) -> Result<Autoframe, String> {
     let npy = Npy::open(ribbon)?;
     let rgb = npy.view3()?;
-    let (starts, frame_w, pitch) = framing::frame_grid(rgb, film == FilmKind::Slide, fmt);
+    let (starts, frame_w, pitch) = strips::frame_strips(rgb, strips, film == FilmKind::Slide, fmt);
     Ok(Autoframe { centres: starts.iter().map(|&s| (s + frame_w / 2) as i64).collect(), frame_w, pitch, format: fmt })
 }
 

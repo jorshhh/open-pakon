@@ -34,6 +34,10 @@ pub const PANEL_IDLE: u16 = 0x0017;
 pub const PANEL_CALIBRATING: u16 = 0x00D4;
 /// Motor running, feed the film: right LED solid green.
 pub const PANEL_FEED: u16 = 0x0015;
+/// Strip mode, waiting for the next strip: right LED blinking green (the
+/// feed word plus the right-green blink bit 0x80), the OEM film LED's
+/// "insert film" state.
+pub const PANEL_NEXT_STRIP: u16 = PANEL_FEED | 0x0080;
 
 /// Advance speed in the F-135 film-advance capture (serial 3054): 9500,
 /// the top of the F-135 range. How the OEM derives it is not known.
@@ -549,9 +553,16 @@ pub fn scan_start(
     seq.write_reg(scn, 0xA5, &motor_speed.to_le_bytes());
     seq.command(scn, 0xA0);
     seq.write_fpga(scn, BANK_CCD, 0x0, st.reg0 | 1);
-    let [tl, th] = trigger.to_le_bytes();
-    seq.write_reg(low, 0x91, &[tl, th, 0x01]);
+    dx_start(seq, st, trigger);
     Ok(())
+}
+
+/// LOW 0x91 = trigger (OEM `FN_bDrvDxStart`): arms the DX reader and resets
+/// its position counter. Sent at scan start and, in strip mode, before
+/// every strip after the first, as the OEM does.
+pub fn dx_start(seq: &mut Seq, st: &SetupState, trigger: u16) {
+    let [tl, th] = trigger.to_le_bytes();
+    seq.write_reg(st.low, 0x91, &[tl, th, 0x01]);
 }
 
 /// Transport run without scanning (as in advance.pakscan): SCN 0xA5 = speed,

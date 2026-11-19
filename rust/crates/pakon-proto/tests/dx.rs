@@ -91,3 +91,26 @@ fn code_positions() {
          code 1 97/10 slot 1; type 5 flag 0x01 pos 0x6031; code 1A 97/10 slot 1"
     );
 }
+
+#[test]
+fn strip_order_from_dx() {
+    use pakon_proto::dx::{frame_key, strip_order};
+    // frame_raw = 2 × frame (+1 for the A half)
+    let raw = |f: u8| f * 2;
+    assert!(frame_key(126) < frame_key(0) && frame_key(124) < frame_key(126), "X, 00, 0");
+    assert!(frame_key(raw(12)) < frame_key(raw(12) + 1) && frame_key(raw(12) + 1) < frame_key(raw(13)));
+    // in order: nothing moves
+    let s = vec![vec![raw(1), raw(2)], vec![raw(5), raw(6)], vec![raw(9)]];
+    assert_eq!(strip_order(&s), (vec![0, 1, 2], false));
+    // fed 2, 1, 3 (by film position)
+    let s = vec![vec![raw(5), raw(6), raw(7)], vec![raw(1), raw(2), raw(3)], vec![raw(9), raw(10)]];
+    assert_eq!(strip_order(&s), (vec![1, 0, 2], true));
+    // a stray misread does not move a strip (median)
+    let s = vec![vec![raw(5), raw(30), raw(6), raw(7)], vec![raw(9), raw(10), raw(11)]];
+    assert_eq!(strip_order(&s).0, vec![0, 1]);
+    // a strip with no code stays behind the one fed before it
+    let s = vec![vec![raw(9)], vec![], vec![raw(1)]];
+    assert_eq!(strip_order(&s).0, vec![2, 0, 1]);
+    // no codes at all: feed order
+    assert_eq!(strip_order(&[vec![], vec![], vec![]]), (vec![0, 1, 2], false));
+}

@@ -24,6 +24,7 @@ struct Args {
     light_cal: bool,
     scan_code: bool,
     recalibrate: bool,
+    strips: bool,
     eject: bool,
     eject_s: u64,
     advance_code_s: u64,
@@ -48,7 +49,7 @@ fn usage() {
          \x20      pakon_replay --scan FILE [--image OUT] [--drain] [--autostop] [--advance]\n\
          \x20      pakon_replay --setup --eeprom-dir DIR [--base N] [--teardown]\n\
          \x20      pakon_replay --light-cal --eeprom-dir DIR [--base N] [--ir on|off] [--flat-out FILE]\n\
-         \x20      pakon_replay --scan-code --eeprom-dir DIR [--base N] [--ir on|off] [--image OUT] [--film c41|bw|bwc41|slide] [--recalibrate] [--max-mb N]\n\
+         \x20      pakon_replay --scan-code --eeprom-dir DIR [--base N] [--ir on|off] [--image OUT] [--film c41|bw|bwc41|slide] [--recalibrate] [--max-mb N] [--strips]\n\
          \x20      pakon_replay --eject [--eject-seconds N] --eeprom-dir DIR\n\
          \x20      pakon_replay --advance-code SECONDS --eeprom-dir DIR\n\
          \x20      pakon_replay --advance [--advance-seconds N]          (F-135+)\n\
@@ -139,6 +140,7 @@ fn parse() -> Result<Args, i32> {
                 i += 1;
                 a.image = v[i].clone().into();
             }
+            "--strips" => a.strips = true,
             "--max-mb" if has => {
                 i += 1;
                 a.max_mb = num(&v[i])?;
@@ -279,7 +281,7 @@ fn run() -> i32 {
     if a.scan_code {
         let Ok((e, dir)) = archive(&a) else { return 1 };
         let Ok(mut dev) = open_device() else { return 1 };
-        let opt = scan::ScanOptions { base: a.base, ir, film: a.film, recalibrate: a.recalibrate, max_bytes: a.max_mb << 20, timeout };
+        let opt = scan::ScanOptions { base: a.base, ir, film: a.film, recalibrate: a.recalibrate, max_bytes: a.max_mb << 20, strips: a.strips, timeout };
         return match scan::scan_code(&mut dev, e, &dir, &a.image, &opt, &stop, &mut out) {
             Ok(_) => 0,
             Err(_) => 1,
