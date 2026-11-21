@@ -31,11 +31,12 @@ Replace capture replay (`.pakfw`, `.pakscan`) with commands built in code from
 the EEPROM, our own calibration, and the chosen resolution. Keep the captures
 as test fixtures: generated command streams must match them byte for byte.
 
-## Related projects (in `~/Desktop/Code/pakon/`)
+## Related projects (next to this repo in `/Volumes/1TB/code/`, also `~/Desktop/code/`)
 
 - **pakon-reference** — public F-X35 reference (CC BY 4.0). Use its facts.
 - **libpakon-main** — independent C++ driver. **No licence: read, never copy.**
-- **pakon-scanning-software** — the OEM Windows install. `TLB.dll` = F-135/F-135+
+  Not on this Mac at the moment.
+- **pakon-scanning-software-master** — the OEM Windows install. `TLB.dll` = F-135/F-135+
   engine; `TLA.dll` = F-235 (do not use it for 135-line facts); `TLC.dll` = F-335.
   Decompiling is for interoperability. The OEM files the colour pipeline needs
   are committed under `oem/`; the decompiler workspace stays in `re/`.
@@ -102,9 +103,14 @@ Windows build has not been run on a scanner yet.
 
 ## Hardware and workflow
 
-- Test unit here: base F-135, serial 3054 (EEPROM type 1350), connected to the
-  Mac directly; macOS needs no sudo (Linux needs root or the udev rule
+- Test units here: a base F-135, serial 3054 (EEPROM type 1350), and an
+  F-135+ demo unit, serial 138; either may be the one connected to the Mac.
+  macOS needs no sudo (Linux needs root or the udev rule
   `packaging/linux/60-pakon.rules`).
+- Only one process can own the scanner. Before starting anything that opens
+  it (`pakon_app`, `pakon_web`, `pakon_replay`, `pakon_probe`), check that no
+  Pakon app is running (`pgrep -fl -i pakon`) and ask: a second instance
+  kills a scan in progress.
 - EEPROM archive: the app reads it when a warm scanner connects and writes
   `<data folder>/eeprom/F135-<serial>-<date>/` (`backups/eeprom/` from a
   checkout); there is no standalone backup tool.
@@ -130,5 +136,6 @@ Windows build has not been run on a scanner yet.
   captures, `tools/analyze_capture.py` for USB captures, both to `.pakscan`)
   were removed with the Python code; they are at git tag `python-final`.
 - Captures and scripts live in `resources/`; large scan outputs (`*.raw`) live
-  outside the repo (e.g. `/Volumes/Video/`).
-- Commit only when asked; end commit messages with the Co-Authored-By trailer.
+  outside the repo (the app saves them in `/Volumes/1TB/Pakon/NNNNNN/`).
+- Commit only when asked. No Claude attribution in commits or PRs: no
+  Co-Authored-By trailer, no "Generated with Claude Code" footer.
