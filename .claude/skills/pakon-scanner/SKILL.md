@@ -96,8 +96,9 @@ The macOS window is WKWebView: no `prompt()`/`alert()`/`confirm()`.
 git tag `python-final`): `--read-params`, `--params-out`, `--calib-probe`,
 `--film-sense`, `--trace-status`, advance scripts (`--steps`, `--limit`).
 Packages: `packaging/macos/build.sh`, `packaging/windows/build.sh`,
-`packaging/linux/build-deb.sh` (one native binary each). The Windows and
-Linux builds have not been run on a scanner yet.
+`packaging/linux/build-deb.sh` (one native binary each). The Linux build
+has run on a scanner on Ubuntu and Linux Mint, amd64 and arm64; the
+Windows build has not been run on a scanner yet.
 
 ## Hardware and workflow
 

@@ -72,7 +72,7 @@ teardown stops the motor (serial 138).
 |---|---|---|
 | macOS 13+ (Apple silicon; universal build for Intel) | `Pakon.app` + dmg, ad hoc signed | Yes, F-135 (serial 3054) and F-135+ (serial 138), Rust app and CLI |
 | Windows 10 / 11 (64-bit) | `Pakon-Setup.exe`, installs WinUSB; unsigned | No. The app installs and opens on Windows 11 (a VM, no scanner); the service processes and exports with Digital ICE under Wine. |
-| Linux (Debian/Ubuntu, amd64 and arm64) | `.deb` with a udev rule | No, not with the Rust code. The app installs and opens on Linux Mint 22 (no scanner); the package processes and exports with Digital ICE in a clean Ubuntu 22.04. (Replay scans ran on Linux with the earlier C driver.) |
+| Linux (Debian/Ubuntu, amd64 and arm64) | `.deb` with a udev rule | Yes, on Ubuntu and Linux Mint, amd64 and arm64: udev access, firmware load, EEPROM archive, full scans at Base 16, 8 and 4 with IR on and off, stop, eject, teardown and replug |
 
 ## Open work
 
@@ -88,10 +88,9 @@ film-sensor eject (#16), from the CLI and the app. Left:
 
 ### Platforms and releases
 
-- The USB path on Windows and Linux, on a scanner (nothing below has run
-  there with the Rust code):
-  - the WinUSB driver install on a clean Windows (`pakon_driver.exe`), and
-    the udev rule giving the logged-in user access on Linux;
+- The USB path on Windows, on a scanner (nothing below has run there with
+  the Rust code; all of it is done on Linux):
+  - the WinUSB driver install on a clean Windows (`pakon_driver.exe`);
   - firmware load on the cold device (`0f05:f235`), then the device coming
     back as `0f05:f135` (on Windows, nusb claims interface 0 of the cold
     device; in a VM both IDs must be passed through);
