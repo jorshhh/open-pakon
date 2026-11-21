@@ -416,7 +416,7 @@ trilinearly, so the output keeps 16-bit precision even though each node is
 | `c41` colour negative | 1 | IR on, colour-negative densities | LUT → NegMatrix → `rpd.pf` |
 | `bw` silver B&W | 4 | IR off, "other" densities | as `c41`, then grey |
 | `bwc41` chromogenic B&W | 8 | IR on, B&W C-41 densities | as `bw` |
-| `slide` (E-6) | 2 | IR on (ignored), slide densities | LUT → PosMatrix → `ColRevLut1.pf` → `romm.pf` |
+| `slide` (E-6) | 2 | IR on (dust removal), slide densities | LUT → PosMatrix → `ColRevLut1.pf` → `romm.pf` |
 
 `FUN_1000d880` treats types 1, 4 and 8 alike; type 2 is the positive path.
 
@@ -746,10 +746,12 @@ real frame, DICE left 766 of 8586 defect pixels (native 1084); on a clean
 roll DICE changed 0.00–0.01% of pixels where the native port changed
 0.13–0.25%, softening foliage.
 
-**Slides get no dust removal**: on slide film both DICE and the native port
-smoothed the grain over most of the frame, and DICE's negative flag
-(dynamic `+0x14`) changed nothing. The investigation so far, and what is
-left to do, is in [SLIDE_ICE.md](SLIDE_ICE.md).
+**Slides** get dust removal as colour negative does, with DICE's negative
+flag (dynamic `+0x14`) off as `TLB.dll` sets it for film type 2. On five
+E-6 rolls (four on the base F-135, one on the F-135+) it rebuilds 0.1–1% of
+each frame, the dust. One base F-135 roll rebuilds 9–22%: its blown
+highlights, where the IR plane falls ~7%, lose their grain. The cause is
+open; the measurements are in [SLIDE_ICE.md](SLIDE_ICE.md).
 
 ### Native port [C]
 
@@ -786,7 +788,7 @@ grain replaced by grain. The cause of the line-start dark tail is unknown.
 `pakon-roll` `export_frames`, frames in parallel:
 
 1. Crop the cached ribbon at the box (full sensor width).
-2. Dust removal on the raw crop (OEM DICE, else native; not for slides).
+2. Dust removal on the raw crop (OEM DICE, else native; not for silver B&W).
 3. Rotate by the requested multiple of 90° (the app sends 90°), then by
    the frame's own turn and flips from Adjust.
 4. Render: slide path, OEM path (with SBA shifts or the roll balance, and

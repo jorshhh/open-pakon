@@ -123,6 +123,9 @@ If a strip stays inside the scanner, press **Advance film** on the Scan page.
 - For B&W film developed in colour chemistry (Ilford XP2, Kodak BW400CN),
   pick **B&W C41** as the film type. Dust removal works on it, as it does
   on colour negative.
+- Dust removal works on slides (E-6) too. On a slide with large blown-out
+  highlights it can smooth the grain in them; turn it off in Adjust for
+  that roll.
 - If the scanner stops responding, switch it off and on, then load the
   firmware again.
 - If something goes wrong, please

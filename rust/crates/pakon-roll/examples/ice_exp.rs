@@ -2,8 +2,7 @@
 //! OUT/work (the ribbon, IR plane, TIFFs and JPEGs), outside the app's own
 //! cache. For dust-removal experiments (docs/SLIDE_ICE.md): stderr gives the
 //! share of each frame that was rebuilt. Dust removal runs only where the
-//! prescan keeps the IR plane: for slides, first change `ice_plane` in
-//! `prescan` (lib.rs) to keep it for `FilmKind::Slide`.
+//! prescan keeps the IR plane (every film but silver B&W).
 //!
 //!   cargo run --release -p pakon-roll --example ice_exp -- RAW OUT FILM [1|0]
 //!
@@ -28,7 +27,7 @@ fn main() {
         ribbon: PathBuf::from(&meta.ribbon), base: f(meta.base), centres: meta.centres.clone(), widths: None,
         rotate: 90, frame_w: meta.frame_w, rpd_balance: meta.rpd_balance.map(|b| b.map(f)),
         roll_centres: Some(meta.centres.clone()), film, flare: meta.flare.map(f), dx_film: None, ice,
-        sba_dpi: meta.sba_dpi.clone(), scene_dmin: meta.scene_dmin, adjustments: None,
+        sba_dpi: meta.sba_dpi.clone(), scene_dmin: meta.scene_dmin, adjustments: None, orient: None,
     };
     for fr in export_frames(&env, &req, None).unwrap() { println!("{}", fr.jpg.display()); }
 }

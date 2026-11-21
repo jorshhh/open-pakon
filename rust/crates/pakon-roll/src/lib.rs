@@ -464,12 +464,12 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     };
     let strip_list: Vec<StripInfo> = plan.as_ref().map(|p| p.strips.clone()).unwrap_or_default();
     let (rows, cols, _) = rgb.dim();
-    // On slide film dust removal smoothed the grain over most of the frame
-    // (2026-11-02), so slides get none (docs/SLIDE_ICE.md). Silver B&W gets
-    // none either: the silver image blocks infrared as dust does, so a B&W
-    // raw scanned with the IR channel (or processed as B&W afterwards) came
-    // out wrecked.
-    let ice_plane = if matches!(film, FilmKind::Slide | FilmKind::Bw) { None } else { r.ir.zip(r.flat) };
+    // Silver B&W gets no dust removal: the silver image blocks infrared as
+    // dust does, so a B&W raw scanned with the IR channel (or processed as
+    // B&W afterwards) came out wrecked. Slides get it as colour negative
+    // does; one known roll over-cleans its blown highlights
+    // (docs/SLIDE_ICE.md).
+    let ice_plane = if film == FilmKind::Bw { None } else { r.ir.zip(r.flat) };
 
     emit(progress, "Measuring film base", 0.62);
     let base = balance::dmin(rgb.view());

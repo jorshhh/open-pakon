@@ -258,16 +258,13 @@ function onKey(e: KeyboardEvent) {
 // ── Export: dust removal, then every box at full resolution ─────────────
 // Dust removal needs the scan's infrared channel, and older raws may lack
 // the calibration's IR table. Silver B&W gets none (silver blocks IR as dust
-// does) and slides none (it softens their grain): the prescan leaves
-// meta.ice off for both. On by default wherever it can run; turning it
-// off is remembered in this browser.
+// does): the prescan leaves meta.ice off for it. On by default wherever it
+// can run; turning it off is remembered in this browser.
 const iceOk = computed(() => !!meta.value?.ice);
 const iceTip = computed(() => iceOk.value
   ? 'Digital ICE: rebuilds dust and scratches from the infrared channel. Slower export.'
   : meta.value?.film === 'bw'
   ? 'Off for silver B&W: the silver blocks infrared just as dust does.'
-  : meta.value?.film === 'slide'
-  ? 'Off for slides: it softens slide grain.'
   : 'This scan has no infrared channel to find dust with.');
 const ice = ref(store.get('pakon-ice') !== '0');
 watch(ice, v => store.set('pakon-ice', v ? '1' : '0'));
