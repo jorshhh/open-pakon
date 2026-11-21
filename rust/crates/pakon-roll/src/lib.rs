@@ -464,11 +464,12 @@ pub fn prescan(env: &Env, raw: &Path, film: FilmKind, fmt: Format, progress: Opt
     };
     let strip_list: Vec<StripInfo> = plan.as_ref().map(|p| p.strips.clone()).unwrap_or_default();
     let (rows, cols, _) = rgb.dim();
-    // On slide film dust removal smoothed the grain over most of the frame
-    // (2026-11-02), so slides get none. Silver B&W gets none either: the
-    // silver image blocks infrared as dust does, so a B&W raw scanned with
-    // the IR channel (or processed as B&W afterwards) came out wrecked.
-    let ice_plane = if matches!(film, FilmKind::Slide | FilmKind::Bw) { None } else { r.ir.zip(r.flat) };
+    // Silver B&W gets no dust removal: the silver image blocks infrared as
+    // dust does, so a B&W raw scanned with the IR channel (or processed as
+    // B&W afterwards) came out wrecked. Slides get it as colour negative
+    // does; one known roll over-cleans its blown highlights
+    // (docs/SLIDE_ICE.md).
+    let ice_plane = if film == FilmKind::Bw { None } else { r.ir.zip(r.flat) };
 
     emit(progress, "Measuring film base", 0.62);
     let base = balance::dmin(rgb.view());
@@ -883,7 +884,7 @@ pub fn export_frames(env: &Env, req: &ExportRequest, progress: Option<Progress>)
         let (a, b) = crop_rows(rows, req.centres[i], fw);
         let ir = ir_rib.slice(s![a..b, ..]);
         let (out, mask) = if use_dice {
-            dice::with_thread_dice(&env.dice_dll, |d| dice::clean_frame(d, part, ir, true))?
+            dice::with_thread_dice(&env.dice_dll, |d| dice::clean_frame(d, part, ir, req.film != FilmKind::Slide))?
         } else {
             ice::clean_frame(part, ir, &ir_noise, dpi)
         };
