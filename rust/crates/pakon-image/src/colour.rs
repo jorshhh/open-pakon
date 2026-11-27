@@ -211,11 +211,14 @@ fn rpd_adjusted(px: &[u16], m: &Matrix, lut: &[f32], contrast: f32, bal: Option<
     let d: [f32; 3] = std::array::from_fn(|c| density_lut(px[c] as f32, lut));
     std::array::from_fn(|c| {
         let mut o = poly(&m[c], d[0], d[1], d[2]).clamp(0.0, 4095.0);
-        if contrast != 0.0 {
-            o = ((o - CONTRAST_PIVOT) * contrast / 1000.0 + CONTRAST_PIVOT).clamp(0.0, 4095.0);
-        }
         if let Some(b) = bal {
             o = (o * b.gain[c] + b.offset[c]).clamp(0.0, 4095.0);
+        }
+        // after the balance: a neutral has equal RPD in the three channels only once the scene balance is
+        // in, so a slope about one fixed pivot leaves greys grey. Before it, lowering contrast tinted warm
+        // and raising it cool (the balance shifts differ per channel by up to ~170 RPD).
+        if contrast != 0.0 {
+            o = ((o - CONTRAST_PIVOT) * contrast / 1000.0 + CONTRAST_PIVOT).clamp(0.0, 4095.0);
         }
         if let Some(a) = off {
             o = (o + a[c]).clamp(0.0, 4095.0);
@@ -312,4 +315,43 @@ pub fn to_grey(rgb: ArrayView3<u16>) -> Array2<u16> {
         *o = (y + 0.5).clamp(0.0, 65535.0) as u16;
     });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A matrix whose output is the constant `base + 100 * c` per channel, whatever the pixel.
+    fn flat_matrix(base: f32) -> Matrix {
+        let mut m: Matrix = [[0.0; 10]; 3];
+        for c in 0..3 {
+            m[c][9] = base + 100.0 * c as f32;
+        }
+        m
+    }
+
+    /// A grey the scene balance has put at the pivot stays there under any contrast, whatever each
+    /// channel's RPD was before the balance (contrast used to run first and tinted such a grey). A grey
+    /// off the pivot stays grey and moves by the slope, so the test cannot pass with contrast a no-op.
+    #[test]
+    fn contrast_leaves_a_balanced_neutral_alone() {
+        let lut = c41_lut();
+        let bal = Balance { gain: [1.0; 3], offset: [550.0, 450.0, 350.0] };
+        for slider in [-1000, -500, 500, 1000] {
+            let slope = Adjust { contrast: slider, ..Default::default() }.contrast_slope();
+            assert!((500.0..=1500.0).contains(&slope) && slope != 1000.0, "slider {slider}: slope {slope}");
+            // balanced neutral exactly at the pivot
+            let o = rpd_adjusted(&[8000; 3], &flat_matrix(1000.0), &lut, slope, Some(&bal), None);
+            for c in 0..3 {
+                assert!((o[c] - CONTRAST_PIVOT).abs() < 1e-3, "slider {slider} channel {c}: {}", o[c]);
+            }
+            // balanced neutral 200 above the pivot: equal in all channels, scaled about the pivot
+            let o = rpd_adjusted(&[8000; 3], &flat_matrix(1200.0), &lut, slope, Some(&bal), None);
+            let want = CONTRAST_PIVOT + 200.0 * slope / 1000.0;
+            for c in 0..3 {
+                assert!((o[c] - want).abs() < 1e-2, "slider {slider} channel {c}: {} want {want}", o[c]);
+                assert!((o[c] - o[0]).abs() < 1e-3, "slider {slider}: channels differ {o:?}");
+            }
+        }
+    }
 }

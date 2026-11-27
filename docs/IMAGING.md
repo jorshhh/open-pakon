@@ -398,7 +398,7 @@ skews and oversaturates the colour.
 
 ```
 raw16 → x = clamp((raw16 − 300)/4, 1, 16383) → LUT → NegMatrix (all ten terms) → RPD 0…4095
-      → [contrast] → [balance: RPD·gain + offset] → [colour offsets] → [unsharp mask]
+      → [balance: RPD·gain + offset] → [contrast] → [colour offsets] → [unsharp mask]
       → [B&W: mean of R, G, B] → rpd.pf table at RPD/4095 → 16-bit sRGB
 ```
 
@@ -656,7 +656,7 @@ no values, so OEM output carries no per-film offsets; its comment gives the
 click units above.
 
 Ours (`colour.rs` `Adjust`, `adjust.rs`): the same arithmetic in the order
-contrast → scene-balance shift → offsets → unsharp mask. The automatic
+scene-balance shift → contrast → offsets → unsharp mask. The automatic
 halves are taken as 0 (where `TLB.dll` fills them is not traced). Values are
 clamped to ±1000 (saturation ±5). Saturation and tone are applied as a
 correction to the `rpd.pf` table (`adjusted_table`): our own float
