@@ -211,11 +211,14 @@ fn rpd_adjusted(px: &[u16], m: &Matrix, lut: &[f32], contrast: f32, bal: Option<
     let d: [f32; 3] = std::array::from_fn(|c| density_lut(px[c] as f32, lut));
     std::array::from_fn(|c| {
         let mut o = poly(&m[c], d[0], d[1], d[2]).clamp(0.0, 4095.0);
-        if contrast != 0.0 {
-            o = ((o - CONTRAST_PIVOT) * contrast / 1000.0 + CONTRAST_PIVOT).clamp(0.0, 4095.0);
-        }
         if let Some(b) = bal {
             o = (o * b.gain[c] + b.offset[c]).clamp(0.0, 4095.0);
+        }
+        // after the balance: a neutral has equal RPD in the three channels only once the scene balance is
+        // in, so a slope about one fixed pivot leaves greys grey. Before it, lowering contrast tinted warm
+        // and raising it cool (the balance shifts differ per channel by up to ~170 RPD).
+        if contrast != 0.0 {
+            o = ((o - CONTRAST_PIVOT) * contrast / 1000.0 + CONTRAST_PIVOT).clamp(0.0, 4095.0);
         }
         if let Some(a) = off {
             o = (o + a[c]).clamp(0.0, 4095.0);
@@ -312,4 +315,27 @@ pub fn to_grey(rgb: ArrayView3<u16>) -> Array2<u16> {
         *o = (y + 0.5).clamp(0.0, 65535.0) as u16;
     });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A grey the scene balance has put at the pivot stays there under any contrast, whatever each
+    /// channel's RPD was before the balance (contrast used to run first and tinted such a grey).
+    #[test]
+    fn contrast_leaves_a_balanced_neutral_alone() {
+        let mut m: Matrix = [[0.0; 10]; 3];
+        for c in 0..3 {
+            m[c][9] = 1000.0 + 100.0 * c as f32;
+        }
+        let lut = c41_lut();
+        let bal = Balance { gain: [1.0; 3], offset: [550.0, 450.0, 350.0] };
+        for contrast in [-1000.0f32, -500.0, 500.0, 1000.0] {
+            let o = rpd_adjusted(&[8000, 8000, 8000], &m, &lut, contrast, Some(&bal), None);
+            for c in 0..3 {
+                assert!((o[c] - CONTRAST_PIVOT).abs() < 1e-3, "contrast {contrast} channel {c}: {}", o[c]);
+            }
+        }
+    }
 }
