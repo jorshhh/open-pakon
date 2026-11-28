@@ -20,7 +20,7 @@ use pakon_image::film::{Film, ProdTable};
 use pakon_image::framing::{self, Format};
 use pakon_image::output::{self, Picture16};
 use pakon_image::{adjust, balance, fallback, film, ice, ribbon, slide};
-use pakon_oem::{dice, sba};
+use pakon_oem::{dice, kcdfs, sba};
 use serde::{Deserialize, Serialize};
 
 pub mod strips;
@@ -49,6 +49,39 @@ pub enum FilmKind {
 impl FilmKind {
     pub fn grey(self) -> bool {
         matches!(self, FilmKind::Bw | FilmKind::Bwc41)
+    }
+}
+
+/// Colour rendering engine: PSI 3.x (Kodak Ansel + PSI 3 rpd.pf) or PSI 2.4
+/// (KCDFS SBA tuning + PSI 2.4 `PdenX1000_kpt1-gs1_3.pf`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorEngine {
+    #[default]
+    Psi3,
+    Psi24,
+}
+
+impl ColorEngine {
+    pub fn rpd_profile_name(self) -> &'static str {
+        match self {
+            ColorEngine::Psi3 => "rpd.pf",
+            ColorEngine::Psi24 => "rpd_24.pf",
+        }
+    }
+
+    pub fn rpd_table_bytes(self) -> &'static [u8] {
+        match self {
+            ColorEngine::Psi3 => pakon_image::RPD_TABLE_U8,
+            ColorEngine::Psi24 => pakon_image::RPD24_TABLE_U8,
+        }
+    }
+
+    pub fn sba_dpi_override(self) -> Option<&'static str> {
+        match self {
+            ColorEngine::Psi3 => None,
+            ColorEngine::Psi24 => Some("sba-CN-psi24.dpi"),
+        }
     }
 }
 
@@ -197,24 +230,50 @@ impl Env {
         self.sba && sba::default_dll(&self.repo).is_file() && sba::sba_dir(&self.repo).is_dir()
     }
 
+    /// PSI 2.4 KCDFS scene balance can run: SBA on, and `oem/psi24/` exists.
+    pub fn kcdfs_on(&self) -> bool {
+        self.sba && kcdfs::default_dll(&self.repo).is_file() && kcdfs::kcdfs_dir(&self.repo).is_dir()
+    }
+
     /// The OEM Digital ICE can run.
     pub fn dice_on(&self) -> bool {
         self.dice && self.dice_dll.is_file()
     }
 
     /// (NegMatrix, LUT, rpd.pf table) for the OEM colour path, or None
-    /// without an EEPROM archive or rpd.pf (`_oem_path`).
+    /// without an EEPROM archive or rpd profile (`_oem_path`).
     pub fn oem_path(&self) -> Option<Oem> {
-        let dir = self.eeprom_dir.as_ref()?;
-        if !self.rpd_profile().is_file() {
+        self.oem_path_for(ColorEngine::Psi3)
+    }
+
+    /// Like [`oem_path`](Self::oem_path), selecting the RPD profile and table
+    /// for `engine` (PSI 3.x or PSI 2.4). When no EEPROM archive is present,
+    /// PSI 2.4 falls back to its generic `_ClientColNegMat.txt` linear matrix
+    /// so offline `.raw` rolls still render through `rpd_24.pf`.
+    pub fn oem_path_for(&self, engine: ColorEngine) -> Option<Oem> {
+        if !self.profiles().join(engine.rpd_profile_name()).is_file() {
             return None;
         }
-        let copies = pakon_proto::eeprom::load_dir(dir);
-        let e = pakon_proto::eeprom::decode(pakon_proto::eeprom::as_refs(&copies));
-        if !e.decodable {
-            return None;
-        }
-        Some(Oem { negmat: e.neg_matrix, lut: colour::c41_lut(), table: Table::from_u8(52, pakon_image::RPD_TABLE_U8).ok()? })
+        let negmat = match &self.eeprom_dir {
+            Some(dir) => {
+                let copies = pakon_proto::eeprom::load_dir(dir);
+                let e = pakon_proto::eeprom::decode(pakon_proto::eeprom::as_refs(&copies));
+                if !e.decodable {
+                    return None;
+                }
+                e.neg_matrix
+            }
+            // PSI 3.x has no generic stand-in (as on main): without the unit's archive it has no OEM path.
+            None if engine == ColorEngine::Psi3 => return None,
+            None => {
+                // The generic matrix has different G/B cross terms from a real F135+ and moves
+                // blue-sky frames by 20-40 levels. Say so, once.
+                static WARN: std::sync::Once = std::sync::Once::new();
+                WARN.call_once(|| eprintln!("WARNING: no scanner EEPROM archive (backups/eeprom or PAKON_EEPROM_DIR): using the generic _ClientColNegMat.txt matrix; colours will differ from the unit's own"));
+                colour::psi24_neg_matrix_default()
+            }
+        };
+        Some(Oem { negmat, lut: colour::c41_lut(), table: Table::from_u8(52, engine.rpd_table_bytes()).ok()? })
     }
 
     /// The slide path: the unit's PosMatrix when its archive decodes, else
@@ -375,6 +434,34 @@ fn sba_shifts(env: &Env, crops: &[ArrayView3<u16>], oem: Option<&Oem>, roll: Opt
         Ok(s) => Some(s),
         Err(e) => {
             eprintln!("OEM SBA failed, using the roll balance: {e}");
+            None
+        }
+    }
+}
+
+/// PSI 2.4 KCDFS per-frame RPD shifts and roll SCP LUTs; None when `oem/psi24/`
+/// is absent or fails (caller falls back to Ansel `sba-CN-psi24.dpi`).
+fn kcdfs_balance(
+    env: &Env,
+    crops: &[ArrayView3<u16>],
+    oem: Option<&Oem>,
+    roll: Option<&[ArrayView3<u16>]>,
+    dmin: Option<[i64; 3]>,
+) -> Option<kcdfs::KcdfsRollResult> {
+    let oem = oem?;
+    if crops.is_empty() || !env.kcdfs_on() {
+        return None;
+    }
+    let analysis = |c: &ArrayView3<u16>| sba::analysis_image_sized(c.view(), &oem.negmat, &oem.lut, sba::KCDFS_H, sba::KCDFS_W);
+    let run = || -> Result<kcdfs::KcdfsRollResult, String> {
+        let imgs: Vec<Array3<i16>> = crops.iter().map(analysis).collect();
+        let roll: Option<Vec<Array3<i16>>> = roll.map(|r| r.iter().map(analysis).collect());
+        kcdfs::roll_balance_against(&kcdfs::default_dll(&env.repo), &kcdfs::kcdfs_dir(&env.repo), &imgs, roll.as_deref(), dmin, true)
+    };
+    match run() {
+        Ok(res) => Some(res),
+        Err(e) => {
+            eprintln!("OEM KCDFS failed, falling back to Ansel SBA: {e}");
             None
         }
     }
@@ -673,6 +760,8 @@ pub struct ExportRequest {
     pub adjustments: Option<Vec<Option<Adjust>>>,
     /// Per-frame turn and flip (none: as scanned).
     pub orient: Option<Vec<Orient>>,
+    /// Colour engine (PSI 3.x Ansel or PSI 2.4 KCDFS).
+    pub color_engine: ColorEngine,
 }
 
 /// The files written for one frame.
@@ -736,18 +825,25 @@ impl Orient {
 /// the scene balance of the roll and the per-picture tables. Shared by the
 /// export and the Adjust previews, so both render the same.
 struct Renderer {
+    engine: ColorEngine,
     grey: bool,
     base: [f32; 3],
     flare: Option<[f32; 3]>,
     rpd_balance: Option<[[f32; 3]; 2]>,
     profiles: PathBuf,
+    rpd_profile_name: &'static str,
     slide: Option<slide::SlidePath>,
     oem: Option<Oem>,
     lut: Vec<f32>,
     rpd_jpeg: Option<Table>,
     shifts: Option<Vec<[f32; 3]>>,
+    scp_luts: Option<Box<[[u16; 4096]; 3]>>,
+    /// The same LUTs with their integer rounding removed, for the 16-bit PSI 2.4 render.
+    scp_smooth: Option<Box<[[f32; 4096]; 3]>>,
     /// Saturation / tone tables, built once per (saturation, tone).
     tables: Mutex<HashMap<(i32, Tone), std::sync::Arc<Table>>>,
+    /// PSI 2.4 saturation / tone as an sRGB -> sRGB correction after EBP, built once per (saturation, tone).
+    srgb_tables: Mutex<HashMap<(i32, Tone), std::sync::Arc<Table>>>,
 }
 
 impl Renderer {
@@ -760,28 +856,64 @@ impl Renderer {
         roll: Option<&[ArrayView3<u16>]>,
         progress: Option<Progress>,
     ) -> Result<Renderer, String> {
+        let engine = req.color_engine;
+        let rpd_profile_name = engine.rpd_profile_name();
         let slide = if req.film == FilmKind::Slide { Some(env.slide_path()?) } else { None };
-        let oem = env.oem_path();
+        let oem = env.oem_path_for(engine);
         let mut shifts = None;
+        let mut scp_luts = None;
         if slide.is_none() {
-            if oem.is_some() && env.sba_on() {
+            if oem.is_some() && (env.sba_on() || (engine == ColorEngine::Psi24 && env.kcdfs_on())) {
                 emit(progress, "OEM scene balance", 0.0);
             }
-            shifts = sba_shifts(env, crops, oem.as_ref(), roll, req.sba_dpi.as_deref(), req.scene_dmin);
+            if engine == ColorEngine::Psi24 {
+                if let Some(res) = kcdfs_balance(env, crops, oem.as_ref(), roll, req.scene_dmin) {
+                    shifts = Some(res.shifts);
+                    scp_luts = res.scp_luts;
+                }
+            }
+            if shifts.is_none() {
+                let dpi = engine.sba_dpi_override().or(req.sba_dpi.as_deref());
+                shifts = sba_shifts(env, crops, oem.as_ref(), roll, dpi, req.scene_dmin);
+            }
+        }
+        let mut rpd_balance = req.rpd_balance;
+        if slide.is_none() && shifts.is_none() && rpd_balance.is_none() {
+            if let (Some(o), Some(first)) = (&oem, crops.first()) {
+                let small = first.slice(s![..;4, ..;4, ..]);
+                let bal = balance::roll_balance(small, &o.negmat, &o.lut, balance::OEM_BALANCE);
+                rpd_balance = Some([bal.gain, bal.offset]);
+            }
         }
         Ok(Renderer {
+            engine,
             grey: req.film.grey(),
             base: req.base,
             flare: req.flare,
-            rpd_balance: req.rpd_balance,
+            rpd_balance,
             profiles: env.profiles(),
+            rpd_profile_name,
             slide,
             oem,
             lut: colour::c41_lut(),
-            rpd_jpeg: env.rpd_profile().is_file().then(|| Table::from_u8(52, pakon_image::RPD_TABLE_U8).ok()).flatten(),
+            rpd_jpeg: env.profiles().join(rpd_profile_name).is_file().then(|| Table::from_u8(52, engine.rpd_table_bytes()).ok()).flatten(),
             shifts,
+            scp_smooth: scp_luts.as_deref().map(|l| colour::smooth_scp(l, 9)),
+            scp_luts,
             tables: Mutex::new(HashMap::new()),
+            srgb_tables: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// The saturation / tone chain on finished sRGB (PSI 2.4 float render).
+    fn srgb_table_for(&self, a: &Adjust) -> Result<std::sync::Arc<Table>, String> {
+        let key = (a.saturation, a.tone);
+        if let Some(t) = self.srgb_tables.lock().unwrap().get(&key) {
+            return Ok(t.clone());
+        }
+        let t = std::sync::Arc::new(adjust::srgb_adjust_table(&self.profiles, a.saturation, a.tone, 33)?);
+        self.srgb_tables.lock().unwrap().insert(key, t.clone());
+        Ok(t)
     }
 
     fn table_for(&self, base: &Table, profile: &Path, a: &Adjust) -> Result<std::sync::Arc<Table>, String> {
@@ -797,6 +929,40 @@ impl Renderer {
     /// Frame `i`'s negative `part` (turned) -> the 16-bit positive and its
     /// 8-bit rendering.
     fn render(&self, i: usize, part: ArrayView3<u16>, adj: Option<&Adjust>) -> Result<(Picture16Owned, Array3<u8>), String> {
+        self.render_with(i, part, adj, None)
+    }
+
+    /// The PSI 2.4 RPD field of `part` when this render goes through the CMM and EBP (not grey, no
+    /// saturation / tone table), else None.
+    /// Whether a render goes through the PSI 2.4 float chain with EBP (the only render that has decisions
+    /// to share): needs the OEM data, no grey, no slide. Saturation and tone are applied after it.
+    fn uses_psi24_ebp(&self, _adj: Option<&Adjust>) -> bool {
+        self.oem.is_some() && self.engine == ColorEngine::Psi24 && !self.grey && self.slide.is_none()
+    }
+
+    fn psi24_field(&self, i: usize, part: ArrayView3<u16>, adj: Option<&Adjust>) -> Option<Vec<Vec<f32>>> {
+        if !self.uses_psi24_ebp(adj) {
+            return None;
+        }
+        let o = self.oem.as_ref()?;
+        let bal = match &self.shifts {
+            Some(s) => Some(Balance { gain: [1.0; 3], offset: s[i] }),
+            None => self.rpd_balance.map(|b| Balance { gain: b[0], offset: b[1] }),
+        };
+        // contrast on PSI 2.4 is applied after EBP (psi24::apply_contrast), not on the RPD field
+        let adj = adj.map(|a| Adjust { contrast: 0, ..*a });
+        Some(colour::rpd_field(part, &o.negmat, &o.lut, self.scp_smooth.as_deref(), bal.as_ref(), adj.as_ref()))
+    }
+
+    /// The EBP decisions of frame `i`'s full-resolution `part` (None when this render has no EBP), for
+    /// previews of the same frame ([`Renderer::render_with`]).
+    fn psi24_decisions(&self, i: usize, part: ArrayView3<u16>, adj: Option<&Adjust>) -> Option<pakon_image::ebp::HqParams> {
+        let field = self.psi24_field(i, part, adj)?;
+        Some(pakon_image::psi24::hq_decisions(&field, pakon_image::ebp::Gamma::Auto { cap: pakon_image::psi24::GAMMA_CAP }))
+    }
+
+    /// [`Renderer::render`], with the EBP decisions taken from `decisions` when given (and the render has EBP).
+    fn render_with(&self, i: usize, part: ArrayView3<u16>, adj: Option<&Adjust>, decisions: Option<&pakon_image::ebp::HqParams>) -> Result<(Picture16Owned, Array3<u8>), String> {
         let grey = self.grey;
         if let Some(sp) = &self.slide {
             let p = match adj {
@@ -815,14 +981,40 @@ impl Renderer {
                 Some(s) => Some(Balance { gain: [1.0; 3], offset: s[i] }),
                 None => self.rpd_balance.map(|b| Balance { gain: b[0], offset: b[1] }),
             };
+            let ebp = self.engine == ColorEngine::Psi24 && !grey;
+            // the table path (rpd.pf + saturation / tone links on the RPD table) is for everything but PSI 2.4
             let t = match adj {
-                Some(a) if a.saturation != 0 || a.tone != Tone::None => Some(self.table_for(&o.table, &self.profiles.join("rpd.pf"), a)?),
+                Some(a) if (a.saturation != 0 || a.tone != Tone::None) && !ebp => Some(self.table_for(&o.table, &self.profiles.join(self.rpd_profile_name), a)?),
                 _ => None,
             };
-            let out = colour::render_oem(part, &o.negmat, &o.lut, t.as_deref().unwrap_or(&o.table), bal.as_ref(), adj, grey);
+            // PSI 2.4 colour: the Kodak CMM (a sampled 65^3 RPD -> sRGB table) then the
+            // EBP stages on float planes (`render_hq`), so the 16-bit output has no banding.
+            // Saturation / tone then act on the finished sRGB (the Lab chain as an sRGB table), so EBP stays.
+            let out = if ebp {
+                // PSI 2.4: contrast acts after EBP (Gain & Offset would absorb it on the RPD field)
+                let adj_rpd = adj.map(|a| Adjust { contrast: 0, ..*a });
+                let field = colour::rpd_field(part, &o.negmat, &o.lut, self.scp_smooth.as_deref(), bal.as_ref(), adj_rpd.as_ref());
+                let mut img = match decisions {
+                    Some(d) => pakon_image::psi24::render_hq_given(&field, d),
+                    None => pakon_image::psi24::render_hq(&field, pakon_image::ebp::Gamma::Auto { cap: pakon_image::psi24::GAMMA_CAP }).0,
+                };
+                pakon_image::psi24::apply_contrast(&mut img, adj.map_or(0, |a| a.contrast));
+                if let Some(a) = adj.filter(|a| a.saturation != 0 || a.tone != Tone::None) {
+                    let t = self.srgb_table_for(a)?;
+                    adjust::apply_srgb_table(&mut img, t.as_ref());
+                }
+                img
+            } else {
+                colour::render_oem_scp(part, &o.negmat, &o.lut, t.as_deref().unwrap_or(&o.table), self.scp_luts.as_deref(), bal.as_ref(), adj, grey)
+            };
             let keep_colour = adj.is_some_and(|a| a.tone != Tone::None);
             let pos = if grey && !keep_colour { Picture16Owned::Grey(colour::to_grey(out.view())) } else { Picture16Owned::Rgb(out) };
-            let r = output::to_u8(&pos.picture());
+            // the PSI 2.4 float render is `round(f * 257)`: round back with `(v + 128) / 257` (`>> 8` would
+            // shift up to half a level); the other engines' 16-bit values are scaled differently
+            let r = match (&pos, ebp) {
+                (Picture16Owned::Rgb(a), true) => a.mapv(|v| ((v as u32 + 128) / 257) as u8),
+                _ => output::to_u8(&pos.picture()),
+            };
             return Ok((pos, r));
         }
         let p = fallback::invert_c41(part, self.base, &self.lut);
@@ -1004,6 +1196,10 @@ pub struct Previewer {
     /// The larger crops asked for last, newest first.
     big: Mutex<Vec<BigCrop>>,
     base_k: usize,
+    /// PSI 2.4: the EBP decisions of each frame's full-resolution render, per adjustment (lazily, once):
+    /// a preview shrunk f times has no grain, so estimating on it gives other gamma / noise decisions
+    /// than the export.
+    decisions: Mutex<HashMap<(usize, Adjust), Option<pakon_image::ebp::HqParams>>>,
 }
 
 /// The previews of `req`'s frames.
@@ -1041,6 +1237,7 @@ pub fn previewer(env: &Env, req: &ExportRequest, progress: Option<Progress>) -> 
         small,
         big: Mutex::new(Vec::new()),
         base_k: rot_k(req.rotate),
+        decisions: Mutex::new(HashMap::new()),
     })
 }
 
@@ -1082,16 +1279,42 @@ impl Previewer {
         Ok((c, f))
     }
 
+    /// The EBP decisions of frame `i`'s full-resolution render with `adj` (sharpness left out: it hardly
+    /// moves them), computed once per (frame, adjustment).
+    fn decisions_for(&self, i: usize, adj: Option<&Adjust>) -> Result<Option<pakon_image::ebp::HqParams>, String> {
+        if !self.renderer.uses_psi24_ebp(adj) {
+            return Ok(None);
+        }
+        let key = (i, adj.copied().unwrap_or_default());
+        if let Some(d) = self.decisions.lock().unwrap().get(&key) {
+            return Ok(*d);
+        }
+        let (a, b) = self.rows[i];
+        let npy = Npy::open(&self.ribbon)?;
+        let rgb = npy.view3()?;
+        let full = rgb.slice(s![a..b, .., ..]);
+        let part = Orient::default().apply(full, self.base_k).as_standard_layout().into_owned();
+        let d = self.renderer.psi24_decisions(i, part.view(), adj);
+        let mut m = self.decisions.lock().unwrap();
+        if m.len() > 64 {
+            m.clear();
+        }
+        m.insert(key, d);
+        Ok(d)
+    }
+
     /// Frame `i` (0-based) rendered with `adj` and `orient`, its long side
     /// at `px` or under, as a JPEG. The 3×3 sharpening mask on a picture
     /// shrunk f times reaches f times further across it, so its amount is
     /// divided by f: close to what the full frame shows, not the same.
     pub fn jpeg(&self, i: usize, adj: Option<&Adjust>, orient: Orient, px: usize) -> Result<Vec<u8>, String> {
         let (crop, f) = self.crop(i, px)?;
+        let adj_full = adj.and_then(|a| Adjust { sharpness: 0, contrast: 0, saturation: 0, tone: Tone::None, ..*a }.clean());
         let adj = adj.and_then(|a| Adjust { sharpness: a.sharpness / f as i32, ..*a }.clean());
         let adj = adj.as_ref();
         let part = orient.apply(crop.view(), self.base_k).as_standard_layout().into_owned();
-        let (_, rendered) = self.renderer.render(i, part.view(), adj)?;
+        let decisions = if f > 1 { self.decisions_for(i, adj_full.as_ref())? } else { None };
+        let (_, rendered) = self.renderer.render_with(i, part.view(), adj, decisions.as_ref())?;
         output::jpeg_bytes(rendered.view(), 88, None)
     }
 }

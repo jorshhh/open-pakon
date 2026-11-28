@@ -9,7 +9,7 @@ import { postSSE, store } from '../api';
 import { app, remembered, setBusy, showSpace } from '../state/app';
 import { edited, editJSON, noEdit, type Edit, type Slider } from '../state/edits';
 import { loadFrames, resetExport } from '../state/exported';
-import { roll } from '../state/roll';
+import { COLOR_ENGINES, roll, type ColorEngine } from '../state/roll';
 import Btn from '../ui/Btn.vue';
 import Card from '../ui/Card.vue';
 import EmptyCard from '../ui/EmptyCard.vue';
@@ -29,7 +29,9 @@ const KEYS = [
 const n = computed(() => roll.crops.length);
 // Colour edits and sharpening need the OEM colour path (the scanner's
 // EEPROM archive and rpd.pf) or a slide; without them only turn and flip.
-const adjustable = computed(() => !!meta.value?.adjustable);
+const adjustable = computed(() => !!meta.value?.adjustable || colorEngine.value === 'psi24');
+const isSlide = computed(() => meta.value?.film === 'slide');
+const colorEngine = computed<ColorEngine>(() => (isSlide.value ? 'psi3' : roll.colorEngine));
 const shown = computed(() => app.space === 'adjust' && !!meta.value && n.value > 0);
 
 // ── View: the whole roll, 4 or 2 at a time, or one ──────────────────────
@@ -106,15 +108,19 @@ const px = computed(() => {
 // ── Previews: the service renders the boxes small once, then any frame
 // with any edit on request ────────────────────────────────────────────────
 const boxKey = () => JSON.stringify(roll.crops.map(c => [Math.round(c.c), Math.round(c.w)]));
-const opened = ref('');           // the boxes the service's previews are of
+const prepKey = () => JSON.stringify({
+  b: roll.crops.map(c => [Math.round(c.c), Math.round(c.w)]),
+  e: colorEngine.value,
+});
+const opened = ref('');           // the boxes + colour engine the service's previews are of
 const stamp = ref(0);
 const status = ref({ busy: false, value: null as number | null, label: '', error: false });
 const preparing = ref(false);
 const prepFailed = ref(false);
-const ready = computed(() => !!opened.value && opened.value === boxKey());
+const ready = computed(() => !!opened.value && opened.value === prepKey());
 
 async function openPreviews() {
-  const key = boxKey();
+  const key = prepKey();
   if (preparing.value || key === opened.value) return;
   preparing.value = true;
   prepFailed.value = false;
@@ -123,6 +129,7 @@ async function openPreviews() {
   await postSSE('/api/adjust/open', {
     centres: roll.crops.map(c => Math.round(c.c)),
     widths: roll.crops.map(c => Math.round(c.w)),
+    color_engine: colorEngine.value,
   }, ev => {
     if (ev.type === 'progress') status.value = { busy: true, value: ev.pct, label: ev.step, error: false };
     else if (ev.type === 'done') { opened.value = key; stamp.value = Date.now(); status.value = { busy: false, value: null, label: '', error: false }; }
@@ -133,11 +140,11 @@ async function openPreviews() {
   });
   preparing.value = false;
   setBusy('adjust', false);
-  // the boxes changed while these were made
-  if (shown.value && !status.value.error && boxKey() !== opened.value) openPreviews();
+  // the boxes or colour engine changed while these were made
+  if (shown.value && !status.value.error && prepKey() !== opened.value) openPreviews();
 }
 watch(meta, () => { opened.value = ''; });                 // a new roll
-watch(() => (shown.value ? boxKey() : null), k => { if (k) openPreviews(); }, { immediate: true });
+watch(() => (shown.value ? prepKey() : null), k => { if (k) openPreviews(); }, { immediate: true });
 
 function src(i: number, size: number, colour = true) {
   const q = new URLSearchParams(Object.entries(editJSON(roll.crops[i]?.e, colour)).map(([k, v]) => [k, String(v)]));
@@ -274,6 +281,8 @@ const SHARPEN = ['off', 'low', 'medium', 'high'] as const;
 const sharpen = ref(remembered('pakon-sharpen', 'off', SHARPEN));
 watch(sharpen, v => store.set('pakon-sharpen', v));
 
+function engineChanged() { store.set('pakon-color-engine', roll.colorEngine); }
+
 const exporting = ref(false);
 async function exportFrames() {
   exporting.value = true;
@@ -286,6 +295,7 @@ async function exportFrames() {
     edits: roll.crops.map(c => editJSON(c.e)),
     ice: ice.value && iceOk.value,
     sharpen: sharpen.value,
+    color_engine: colorEngine.value,
   }, ev => {
     if (ev.type === 'progress') status.value = { busy: true, value: ev.pct, label: ev.step, error: false };
     else if (ev.type === 'done') {
@@ -371,6 +381,15 @@ const toolCls = 'grid size-[clamp(1.75rem,5vh,2.5rem)] shrink-0 cursor-pointer p
                      @change="ice = ($event.target as HTMLInputElement).checked"> Remove dust</label>
             <InfoTip :tip="iceTip" label="About dust removal" place="left" />
           </span>
+          <label v-if="!isSlide" class="flex w-full items-center justify-between gap-2 font-mono font-semibold">
+            <span class="flex items-center gap-1.5">Colour
+              <InfoTip tip="PSI 3: Kodak Ansel (default). PSI 2.4: classic Pakon KCDFS colour and scene balance." label="About colour engine" place="left" />
+            </span>
+            <select v-model="roll.colorEngine" aria-label="Colour engine" :disabled="exporting || preparing"
+                    @change="engineChanged">
+              <option v-for="e in COLOR_ENGINES" :key="e.id" :value="e.id">{{ e.name }}</option>
+            </select>
+          </label>
         </div>
       <aside aria-label="Adjustments" class="grid min-h-0 flex-1 content-start border-2 border-ink bg-paper p-3"
              :style="{ gridTemplateRows: 'auto repeat(6, minmax(1.25rem, 2.25rem)) auto', rowGap: 'clamp(3px, 1.2vh, 12px)' }">

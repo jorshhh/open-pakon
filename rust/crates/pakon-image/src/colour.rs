@@ -38,6 +38,18 @@ pub fn pos_matrix_default() -> Matrix {
     m
 }
 
+/// PSI 2.4's generic 3x4 linear negative matrix (`_ClientColNegMat.txt`,
+/// scaled by 1/4 from 14-bit to 12-bit RPD density space, with the standard
+/// F-135 RPD baseline intercepts so `sba-CN-psi24.dpi` balances cleanly when
+/// no per-unit EEPROM archive is present).
+pub fn psi24_neg_matrix_default() -> Matrix {
+    [
+        [1.11882 / 4.0, -0.10130 / 4.0, -0.01161 / 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 164.0],
+        [-0.20096 / 4.0, 1.10082 / 4.0, 0.11698 / 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 435.0],
+        [-0.11657 / 4.0, 0.04834 / 4.0, 1.08274 / 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 645.0],
+    ]
+}
+
 /// `m0 R + m1 G + m2 B + m3 R² + m4 G² + m5 B² + m6 RG + m7 BR + m8 GB + m9`
 /// in numpy's order.
 #[inline]
@@ -94,6 +106,14 @@ impl Table {
         Ok(Table { n, data: bytes.iter().map(|&b| b as f32 / 255.0f32).collect() })
     }
 
+    /// From a 16-bit little-endian grid (R-major, `n`^3 x 3 samples), /65535.
+    pub fn from_u16_le(n: usize, bytes: &[u8]) -> Result<Table, String> {
+        if bytes.len() != n * n * n * 3 * 2 {
+            return Err(format!("table: {} bytes, want {}", bytes.len(), n * n * n * 6));
+        }
+        Ok(Table { n, data: bytes.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]]) as f32 / 65535.0f32).collect() })
+    }
+
     /// Trilinear lookup of one value in [0, 1] (`_interp3`): weights in f64,
     /// as numpy promotes `f32 - int32`; the result rounds to f32.
     #[inline]
@@ -121,6 +141,49 @@ impl Table {
                     }
                 }
             }
+        }
+        acc.map(|a| a as f32)
+    }
+
+    /// Tetrahedral lookup (the cube cell is split into 6 tetrahedra along the main diagonal): follows a
+    /// clipped surface better than trilinear because only 4 corners contribute.
+    #[inline]
+    pub fn lookup_tetra(&self, x01: [f32; 3]) -> [f32; 3] {
+        let n = self.n;
+        let mut i = [0usize; 3];
+        let mut fr = [0f64; 3];
+        for c in 0..3 {
+            let f = x01[c].clamp(0.0, 1.0) * (n - 1) as f32;
+            let k = (f as i32).min(n as i32 - 2);
+            i[c] = k as usize;
+            fr[c] = f as f64 - k as f64;
+        }
+        let at = |d: [usize; 3]| 3 * (((i[0] + d[0]) * n + i[1] + d[1]) * n + i[2] + d[2]);
+        let mut ord = [0usize, 1, 2];
+        // sort the three fractions descending with compare-and-swaps (no NaN panic, no slice sort per pixel)
+        if !(fr[ord[0]] >= fr[ord[1]]) {
+            ord.swap(0, 1);
+        }
+        if !(fr[ord[1]] >= fr[ord[2]]) {
+            ord.swap(1, 2);
+        }
+        if !(fr[ord[0]] >= fr[ord[1]]) {
+            ord.swap(0, 1);
+        }
+        let mut d = [0usize; 3];
+        let mut e = at(d);
+        let mut acc = [0f64; 3];
+        for c in 0..3 {
+            acc[c] = self.data[e + c] as f64;
+        }
+        for &ax in &ord {
+            d[ax] = 1;
+            let e2 = at(d);
+            let wgt = fr[ax];
+            for c in 0..3 {
+                acc[c] += wgt * (self.data[e2 + c] as f64 - self.data[e + c] as f64);
+            }
+            e = e2;
         }
         acc.map(|a| a as f32)
     }
@@ -205,12 +268,60 @@ pub struct Balance {
     pub offset: [f32; 3],
 }
 
+/// The SCP LUTs as floats with their integer rounding removed, for the high-bit-depth path. Each entry
+/// is an integer-rounded sample of a smooth curve, so the unrounded value lies within half a code of it:
+/// a centred moving average of `width` entries (odd), clamped to +-0.5 of the stored value (the same
+/// recipe as Frontier's `smooth_tables`). Ends use the available neighbours.
+pub fn smooth_scp(luts: &[[u16; 4096]; 3], width: usize) -> Box<[[f32; 4096]; 3]> {
+    let r = width / 2;
+    let mut out = Box::new([[0f32; 4096]; 3]);
+    for c in 0..3 {
+        for i in 0usize..4096 {
+            let (lo, hi) = (i.saturating_sub(r), (i + r).min(4095));
+            let avg = (lo..=hi).map(|j| luts[c][j] as f64).sum::<f64>() / (hi - lo + 1) as f64;
+            let v = luts[c][i] as f64;
+            out[c][i] = avg.clamp(v - 0.5, v + 0.5) as f32;
+        }
+    }
+    out
+}
+
+/// An SCP LUT set: stored integers (the DLL's) or the smoothed floats of [`smooth_scp`].
+pub trait ScpTable: Sync {
+    fn at(&self, c: usize, i: usize) -> f32;
+}
+impl ScpTable for [[u16; 4096]; 3] {
+    #[inline]
+    fn at(&self, c: usize, i: usize) -> f32 {
+        self[c][i] as f32
+    }
+}
+impl ScpTable for [[f32; 4096]; 3] {
+    #[inline]
+    fn at(&self, c: usize, i: usize) -> f32 {
+        self[c][i]
+    }
+}
+
 /// RPD plus the 12-bit adjustments, all but the unsharp mask (C `rpd_pixel`).
 #[inline]
-fn rpd_adjusted(px: &[u16], m: &Matrix, lut: &[f32], contrast: f32, bal: Option<&Balance>, off: Option<&[f32; 3]>) -> [f32; 3] {
+fn rpd_adjusted<S: ScpTable + ?Sized>(
+    px: &[u16],
+    m: &Matrix,
+    lut: &[f32],
+    contrast: f32,
+    scp_luts: Option<&S>,
+    bal: Option<&Balance>,
+    off: Option<&[f32; 3]>,
+) -> [f32; 3] {
     let d: [f32; 3] = std::array::from_fn(|c| density_lut(px[c] as f32, lut));
     std::array::from_fn(|c| {
         let mut o = poly(&m[c], d[0], d[1], d[2]).clamp(0.0, 4095.0);
+        if let Some(scp) = scp_luts {
+            let i0 = (o as usize).min(4094);
+            let frac = o - i0 as f32;
+            o = (scp.at(c, i0) + frac * (scp.at(c, i0 + 1) - scp.at(c, i0))).clamp(0.0, 4095.0);
+        }
         if contrast != 0.0 {
             o = ((o - CONTRAST_PIVOT) * contrast / 1000.0 + CONTRAST_PIVOT).clamp(0.0, 4095.0);
         }
@@ -242,6 +353,22 @@ pub fn render_oem(
     adj: Option<&Adjust>,
     grey: bool,
 ) -> Array3<u16> {
+    render_oem_scp(rgb, m, lut, table, None, bal, adj, grey)
+}
+
+/// Like [`render_oem`], applying optional KCDFS per-channel 12-bit SCP LUTs
+/// in RPD space before the scene-balance offset.
+#[allow(clippy::too_many_arguments)]
+pub fn render_oem_scp(
+    rgb: ArrayView3<u16>,
+    m: &Matrix,
+    lut: &[f32],
+    table: &Table,
+    scp_luts: Option<&[[u16; 4096]; 3]>,
+    bal: Option<&Balance>,
+    adj: Option<&Adjust>,
+    grey: bool,
+) -> Array3<u16> {
     let (h, w, _) = rgb.dim();
     let contrast = adj.map_or(0.0, |a| a.contrast_slope());
     let off = adj.map(|a| a.offsets());
@@ -258,7 +385,7 @@ pub fn render_oem(
         let mut v = Vec::with_capacity(3 * w);
         for x in 0..w {
             let p = row.index_axis(Axis(0), x);
-            v.extend(rpd_adjusted(p.as_slice().unwrap(), m, lut, contrast, bal, off.as_ref()));
+            v.extend(rpd_adjusted(p.as_slice().unwrap(), m, lut, contrast, scp_luts, bal, off.as_ref()));
         }
         v
     };
@@ -268,22 +395,7 @@ pub fn render_oem(
         let v = &rpd[y];
         let sharpened;
         let v: &[f32] = if sharp != 0.0 {
-            // _unsharp: x + amount * (x - blur), blur the separable
-            // [1/4, 1/2, 1/4] kernel (rows first), edges repeated.
-            let up = &rpd[y.saturating_sub(1)];
-            let dn = &rpd[(y + 1).min(h - 1)];
-            let rows: Vec<f32> = (0..3 * w).map(|k| 0.25f32 * up[k] + 0.5f32 * v[k] + 0.25f32 * dn[k]).collect();
-            sharpened = (0..w)
-                .flat_map(|x| {
-                    let (xl, xr) = (x.saturating_sub(1), (x + 1).min(w - 1));
-                    let rows = &rows;
-                    (0..3).map(move |c| {
-                        let blur = 0.25f32 * rows[3 * xl + c] + 0.5f32 * rows[3 * x + c] + 0.25f32 * rows[3 * xr + c];
-                        let s = v[3 * x + c];
-                        (s + sharp * (s - blur)).clamp(0.0, 4095.0)
-                    })
-                })
-                .collect::<Vec<f32>>();
+            sharpened = unsharp_row(&rpd, y, sharp);
             &sharpened
         } else {
             v
@@ -301,6 +413,62 @@ pub fn render_oem(
         }
     });
     out
+}
+
+/// Row `y` of the RPD field with the unsharp mask (`_unsharp`: x + amount *
+/// (x - blur), blur the separable [1/4, 1/2, 1/4] kernel (rows first), edges
+/// repeated), clamped to 12 bits.
+fn unsharp_row(rpd: &[Vec<f32>], y: usize, sharp: f32) -> Vec<f32> {
+    let h = rpd.len();
+    let w = rpd[0].len() / 3;
+    let v = &rpd[y];
+    let up = &rpd[y.saturating_sub(1)];
+    let dn = &rpd[(y + 1).min(h - 1)];
+    let rows: Vec<f32> = (0..3 * w).map(|k| 0.25f32 * up[k] + 0.5f32 * v[k] + 0.25f32 * dn[k]).collect();
+    (0..w)
+        .flat_map(|x| {
+            let (xl, xr) = (x.saturating_sub(1), (x + 1).min(w - 1));
+            let rows = &rows;
+            (0..3).map(move |c| {
+                let blur = 0.25f32 * rows[3 * xl + c] + 0.5f32 * rows[3 * x + c] + 0.25f32 * rows[3 * xr + c];
+                let s = v[3 * x + c];
+                (s + sharp * (s - blur)).clamp(0.0, 4095.0)
+            })
+        })
+        .collect()
+}
+
+/// The 12-bit RPD field of a negative (H, W, 3) -> interleaved f32 rows
+/// `[R G B R G B ...]`: SCP LUT, contrast, scene-balance shifts, offsets and
+/// the unsharp mask, everything [`render_oem_scp`] does before the colour
+/// table.
+pub fn rpd_field<S: ScpTable + ?Sized>(
+    rgb: ArrayView3<u16>,
+    m: &Matrix,
+    lut: &[f32],
+    scp_luts: Option<&S>,
+    bal: Option<&Balance>,
+    adj: Option<&Adjust>,
+) -> Vec<Vec<f32>> {
+    let (h, w, _) = rgb.dim();
+    let contrast = adj.map_or(0.0, |a| a.contrast_slope());
+    let off = adj.map(|a| a.offsets());
+    let sharp = adj.map_or(0.0, |a| a.sharp());
+    let rgb = rgb.as_standard_layout();
+    let rpd_of = |y: usize| -> Vec<f32> {
+        let row = rgb.index_axis(Axis(0), y);
+        let mut v = Vec::with_capacity(3 * w);
+        for x in 0..w {
+            let p = row.index_axis(Axis(0), x);
+            v.extend(rpd_adjusted(p.as_slice().unwrap(), m, lut, contrast, scp_luts, bal, off.as_ref()));
+        }
+        v
+    };
+    let rpd: Vec<Vec<f32>> = (0..h).into_par_iter().map(rpd_of).collect();
+    if sharp == 0.0 {
+        return rpd;
+    }
+    (0..h).into_par_iter().map(|y| unsharp_row(&rpd, y, sharp)).collect()
 }
 
 /// (H, W, 3) 16-bit sRGB → (H, W) 16-bit grey, Rec. 709 luma.

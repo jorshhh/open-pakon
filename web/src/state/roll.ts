@@ -2,7 +2,7 @@
 // and the ways in (a scan, a raw opened, the work folder).
 import { reactive } from 'vue';
 import { postJSON, postSSE } from '../api';
-import { app, browse, msg, setBusy, showSpace, splitPath, useWorkDir } from './app';
+import { app, browse, msg, remembered, setBusy, showSpace, splitPath, useWorkDir } from './app';
 import { editFrom, type Edit } from './edits';
 import { resetExport } from './exported';
 
@@ -14,6 +14,12 @@ export const FILMS: readonly { id: Film; name: string }[] = [
   { id: 'bwc41', name: 'B&W C41' },
   { id: 'slide', name: 'Slide (E-6)' },
 ];
+export type ColorEngine = 'psi3' | 'psi24';
+export const COLOR_ENGINES: readonly { id: ColorEngine; name: string }[] = [
+  { id: 'psi3', name: 'PSI 3' },
+  { id: 'psi24', name: 'PSI 2.4' },
+];
+const COLOR_ENGINE_IDS = ['psi3', 'psi24'] as const;
 export interface Dx { name?: string; iso: number }
 
 // The prescan's `done` event: the long preview and what framing needs.
@@ -28,7 +34,7 @@ export interface RollMeta {
   format?: string;
   film?: Film;
   ice?: boolean;
-  saved?: { centres: number[]; widths?: number[]; edits?: Record<string, number | boolean>[] } | null;
+  saved?: { centres: number[]; widths?: number[]; edits?: Record<string, number | boolean>[]; color_engine?: ColorEngine } | null;
   strips?: Strip[];      // strip mode: the strips in film order
   dx_order?: boolean;    // put in that order from their DX codes
   first_frame?: number | null;  // row where the first picture found starts
@@ -43,6 +49,7 @@ export const roll = reactive({
   path: '',
   dx: null as Dx | null,
   film: 'c41' as Film,
+  colorEngine: remembered('pakon-color-engine', 'psi3', COLOR_ENGINE_IDS) as ColorEngine,
   processing: false,
   pct: 0,
   step: '',
@@ -107,6 +114,11 @@ export async function processRaw() {
 function openRoll(m: RollMeta) {
   const saved = m.saved;
   roll.crops = saved ? saved.centres.map((c, i) => ({ c, w: saved.widths?.[i] || m.frame_w, e: editFrom(saved.edits?.[i]) })) : [];
+  roll.colorEngine = m.film === 'slide'
+    ? 'psi3'
+    : saved
+      ? (saved.color_engine === 'psi24' ? 'psi24' : 'psi3')
+      : remembered('pakon-color-engine', 'psi3', COLOR_ENGINE_IDS);
   roll.cur = 0;
   roll.previewStamp = Date.now();
   roll.meta = m;

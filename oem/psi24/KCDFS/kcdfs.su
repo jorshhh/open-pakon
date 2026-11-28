@@ -1,0 +1,23 @@
+dmin:   0       0       0
+ fpo:   -620    -290    -80
+ fpa:   0       0       0
+ neo:   1000    1000    1000
+ neu:   1000    1000    1000
+pcls:   0
+pcwf:   700
+ix_pcwf:        250
+nonFlashAdj:    250
+ fmt:   350
+ cmm:   1000
+ fog:   2150
+ blk:   -1300
+ fxr:   750
+ bxr:   750
+ ll1:   4500
+ ll2:   4600
+satlim: 140
+sat_def: C:/KCDFS/kcdfs.satdef 50 83
+  b_lut1a_file: C:/KCDFS/eq2_linearlut
+  b_lut1b_file: C:/KCDFS/lut1b.00
+prod_mat1_file: C:/KCDFS/eq2_mat1p
+   b_lut2_file: C:/KCDFS/lut2p.00

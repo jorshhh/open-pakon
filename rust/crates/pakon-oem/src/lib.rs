@@ -6,5 +6,6 @@
 
 pub mod dice;
 mod emu;
+pub mod kcdfs;
 pub mod pe;
 pub mod sba;
