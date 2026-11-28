@@ -33,6 +33,24 @@ fn sba_loads() {
         return;
     }
     sba::Sba::new(&dll, &sba::sba_dir(&repo()), "sba-CN-default.dpi").unwrap();
+    sba::Sba::new(&dll, &sba::sba_dir(&repo()), "sba-CN-psi24.dpi").unwrap();
+    // Compare default vs psi24 shifts on a realistic midtone C-41 analysis image
+    let mut img = Array3::<i16>::zeros((sba::ANALYSIS_H, sba::ANALYSIS_W, 3));
+    for y in 0..sba::ANALYSIS_H {
+        for x in 0..sba::ANALYSIS_W {
+            let delta = ((x as i16) - 24) * 12 + ((y as i16) - 16) * 8;
+            img[(y, x, 0)] = (600 + delta).clamp(200, 3800);
+            img[(y, x, 1)] = (1050 + delta).clamp(200, 3800);
+            img[(y, x, 2)] = (1300 + delta).clamp(200, 3800);
+        }
+    }
+    let dir = sba::sba_dir(&repo());
+    let s_def = sba::roll_shifts(&dll, &dir, std::slice::from_ref(&img), "sba-CN-default.dpi", None, None).unwrap();
+    let s_24 = sba::roll_shifts(&dll, &dir, std::slice::from_ref(&img), "sba-CN-psi24.dpi", None, None).unwrap();
+    for ch in 0..3 {
+        let diff = (s_24[0][ch] - s_def[0][ch]).abs();
+        assert!(diff < 150.0, "psi24 shift channel {ch} diverged from default: def={:?} psi24={:?}", s_def[0], s_24[0]);
+    }
 }
 
 #[test]

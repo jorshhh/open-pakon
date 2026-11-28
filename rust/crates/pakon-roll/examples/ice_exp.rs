@@ -28,6 +28,7 @@ fn main() {
         rotate: 90, frame_w: meta.frame_w, rpd_balance: meta.rpd_balance.map(|b| b.map(f)),
         roll_centres: Some(meta.centres.clone()), film, flare: meta.flare.map(f), dx_film: None, ice,
         sba_dpi: meta.sba_dpi.clone(), scene_dmin: meta.scene_dmin, adjustments: None, orient: None,
+        ..Default::default()
     };
     for fr in export_frames(&env, &req, None).unwrap() { println!("{}", fr.jpg.display()); }
 }

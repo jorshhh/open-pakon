@@ -16,7 +16,8 @@ use axum::Json;
 use pakon_image::colour::Adjust;
 use pakon_image::film::Film;
 use pakon_image::framing::Format;
-use pakon_roll::{ExportRequest, FilmKind, FrameFiles, Orient, Progress};
+use pakon_roll::{ColorEngine, ExportRequest, FilmKind, FrameFiles, Orient, Progress};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::files::reveal_label;
@@ -98,6 +99,16 @@ fn saved_crops(raw: &Path, rows: usize, moved: Option<&pakon_roll::strips::RowMa
     if s["centres"].as_array().is_none_or(|c| c.is_empty()) {
         return None;
     }
+    if let Some(ce) = s.get("color_engine").cloned() {
+        let engine: ColorEngine = serde_json::from_value(ce).unwrap_or_default();
+        if engine == ColorEngine::Psi3 {
+            if let Some(obj) = s.as_object_mut() {
+                obj.remove("color_engine");
+            }
+        } else {
+            s["color_engine"] = json!(engine);
+        }
+    }
     // another decode of the raw (layout override, new ribbon code) can
     // change the ribbon length; the positions would no longer line up,
     // unless the change is a strip leader dropped (moved)
@@ -112,11 +123,15 @@ fn saved_crops(raw: &Path, rows: usize, moved: Option<&pakon_roll::strips::RowMa
     Some(s)
 }
 
-/// The boxes and, per box, Adjust's edits (`{}` for none) beside the raw.
-fn save_crops(raw: &Path, rows: usize, centres: &[i64], widths: &[usize], edits: &[Value]) {
+/// The boxes and, per box, Adjust's edits (`{}` for none) beside the raw,
+/// plus the roll's colour engine when non-default.
+fn save_crops(raw: &Path, rows: usize, centres: &[i64], widths: &[usize], edits: &[Value], color_engine: ColorEngine) {
     let mut v = json!({"rows": rows, "centres": centres, "widths": widths});
     if edits.iter().any(|e| e.as_object().is_some_and(|o| !o.is_empty())) {
         v["edits"] = json!(edits);
+    }
+    if color_engine != ColorEngine::Psi3 {
+        v["color_engine"] = json!(color_engine);
     }
     let text = serde_json::to_string_pretty(&v).unwrap_or_default();
     if let Err(e) = std::fs::write(beside(raw, ".crops.json"), text) {
@@ -336,8 +351,29 @@ fn boxes(f: &serde_json::Map<String, Value>) -> Option<(Vec<i64>, Option<Vec<usi
     Some((centres, widths))
 }
 
+#[derive(Deserialize, Default)]
+struct ColorEngineField {
+    #[serde(default)]
+    color_engine: ColorEngine,
+}
+
+fn color_engine_from(body: &Bytes, film: FilmKind) -> ColorEngine {
+    if film == FilmKind::Slide {
+        return ColorEngine::Psi3;
+    }
+    serde_json::from_slice::<ColorEngineField>(body).map(|b| b.color_engine).unwrap_or_default()
+}
+
 /// The export (or preview) of `centres` on the processed roll.
-fn export_request(app: &App, meta: &pakon_roll::Meta, raw: Option<&Path>, centres: Vec<i64>, widths: Option<Vec<usize>>, ice: bool) -> ExportRequest {
+fn export_request(
+    app: &App,
+    meta: &pakon_roll::Meta,
+    raw: Option<&Path>,
+    centres: Vec<i64>,
+    widths: Option<Vec<usize>>,
+    ice: bool,
+    color_engine: ColorEngine,
+) -> ExportRequest {
     let f32s = |v: [f64; 3]| v.map(|x| x as f32);
     ExportRequest {
         ribbon: PathBuf::from(&meta.ribbon),
@@ -356,6 +392,7 @@ fn export_request(app: &App, meta: &pakon_roll::Meta, raw: Option<&Path>, centre
         scene_dmin: meta.scene_dmin,
         adjustments: None,
         orient: None,
+        color_engine,
     }
 }
 
@@ -375,7 +412,8 @@ pub async fn api_adjust_open(State(app): State<Arc<App>>, body: Bytes) -> Respon
         roll.previews = None;
         (meta, roll.scan_path.clone())
     };
-    let req = export_request(&app, &meta, raw.as_deref(), centres, widths, false);
+    let color_engine = color_engine_from(&body, meta.film);
+    let req = export_request(&app, &meta, raw.as_deref(), centres, widths, false, color_engine);
     let env = app.env();
     // Not the roll's `processing` flag: previews must not refuse a scan's
     // processing or an auto-frame. The job lock still runs jobs one at a
@@ -394,7 +432,7 @@ pub async fn api_adjust_open(State(app): State<Arc<App>>, body: Bytes) -> Respon
             if roll.prescan.is_some() {
                 roll.previews = Some(Arc::new(p));
             }
-            (json!({"type": "done", "frames": n}), json!({"frames": n, "film": meta.film}))
+            (json!({"type": "done", "frames": n}), json!({"frames": n, "film": meta.film, "color_engine": color_engine}))
         },
     )
 }
@@ -441,8 +479,9 @@ pub async fn api_export_frames(State(app): State<Arc<App>>, body: Bytes) -> Resp
         roll.processing = true;
         (meta, roll.scan_path.clone())
     };
+    let color_engine = color_engine_from(&body, meta.film);
     let ice = ice && meta.ice;
-    let mut req = export_request(&app, &meta, raw.as_deref(), centres.clone(), widths.clone(), ice);
+    let mut req = export_request(&app, &meta, raw.as_deref(), centres.clone(), widths.clone(), ice, color_engine);
     let (adjustments, orient): (Vec<Option<Adjust>>, Vec<Orient>) = edits.iter().map(frame_edit).unzip();
     let edited = adjustments.iter().filter(|a| a.is_some()).count();
     let adjustments: Vec<Option<Adjust>> = adjustments.into_iter().map(|a| with_sharpen(a, sharpen)).collect();
@@ -461,9 +500,9 @@ pub async fn api_export_frames(State(app): State<Arc<App>>, body: Bytes) -> Resp
             app.roll().frames = frames;
             if let Some(raw) = &raw {
                 let widths = widths.unwrap_or_else(|| vec![meta.frame_w; centres.len()]);
-                save_crops(raw, meta.rows, &centres, &widths, &edits);
+                save_crops(raw, meta.rows, &centres, &widths, &edits, color_engine);
             }
-            (json!({"type": "done", "count": n}), json!({"frames": n, "film": meta.film, "ice": ice, "sharpen": sharpen, "adjusted": edited, "turned": turned}))
+            (json!({"type": "done", "count": n}), json!({"frames": n, "film": meta.film, "color_engine": color_engine, "ice": ice, "sharpen": sharpen, "adjusted": edited, "turned": turned}))
         },
     )
 }
@@ -604,15 +643,15 @@ mod tests {
         assert_eq!(raw_format(&raw), "pano");
         assert_eq!(frame_format("half"), Format::Half);
         assert_eq!(load_crops(&raw, 100, None), Value::Null);
-        save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({})]);
+        save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({})], ColorEngine::Psi3);
         assert_eq!(load_crops(&raw, 100, None), json!({"rows": 100, "centres": [10, 60], "widths": [40, 40]}));
         assert_eq!(load_crops(&raw, 101, None), Value::Null, "another ribbon length");
-        save_crops(&raw, 100, &[], &[], &[]);
+        save_crops(&raw, 100, &[], &[], &[], ColorEngine::Psi3);
         assert_eq!(load_crops(&raw, 100, None), Value::Null, "no boxes");
         // saved before the strip leader was dropped: moved with the pictures
         use pakon_roll::strips::{plan, Fed};
         let moved = plan(&[Fed { rows: 0..300, film: Some(250), dx: vec![] }, Fed { rows: 300..400, film: None, dx: vec![] }], 400).unwrap().moved;
-        save_crops(&raw, 400, &[260, 350], &[40, 40], &[json!({}), json!({})]);
+        save_crops(&raw, 400, &[260, 350], &[40, 40], &[json!({}), json!({})], ColorEngine::Psi3);
         assert_eq!(load_crops(&raw, 350, moved.as_ref()), json!({"rows": 350, "centres": [210, 300], "widths": [40, 40]}));
         assert_eq!(load_crops(&raw, 350, None), Value::Null, "not moved: another ribbon");
         let _ = std::fs::remove_dir_all(&d);
@@ -645,11 +684,26 @@ mod tests {
     fn edits_saved_with_the_boxes() {
         let d = temp("edits");
         let raw = d.join("scan.raw");
-        save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({"red": 25})]);
+        save_crops(&raw, 100, &[10, 60], &[40, 40], &[json!({}), json!({"red": 25})], ColorEngine::Psi3);
         assert_eq!(load_crops(&raw, 100, None)["edits"], json!([{}, {"red": 25}]));
-        save_crops(&raw, 100, &[10], &[40], &[json!({})]);
-        assert!(load_crops(&raw, 100, None).get("edits").is_none(), "no edits, no key");
+        assert!(load_crops(&raw, 100, None).get("color_engine").is_none(), "psi3 omitted like empty edits");
+        save_crops(&raw, 100, &[10], &[40], &[json!({})], ColorEngine::Psi24);
+        let loaded = load_crops(&raw, 100, None);
+        assert!(loaded.get("edits").is_none(), "no edits, no key");
+        assert_eq!(loaded["color_engine"], json!("psi24"));
+        // explicit psi3 in an older/edited file normalizes cleanly
+        std::fs::write(beside(&raw, ".crops.json"), r#"{"rows":100,"centres":[10],"widths":[40],"color_engine":"psi3"}"#).unwrap();
+        assert!(load_crops(&raw, 100, None).get("color_engine").is_none());
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn color_engine_payload_defaults_and_wires() {
+        assert_eq!(color_engine_from(&Bytes::from_static(br#"{"centres":[10]}"#), FilmKind::C41), ColorEngine::Psi3);
+        assert_eq!(color_engine_from(&Bytes::from_static(br#"{"centres":[10],"color_engine":"psi3"}"#), FilmKind::C41), ColorEngine::Psi3);
+        assert_eq!(color_engine_from(&Bytes::from_static(br#"{"centres":[10],"color_engine":"psi24"}"#), FilmKind::C41), ColorEngine::Psi24);
+        assert_eq!(color_engine_from(&Bytes::from_static(br#"{"centres":[10],"color_engine":"psi24"}"#), FilmKind::Slide), ColorEngine::Psi3);
+        assert_eq!(color_engine_from(&Bytes::from_static(br#"{"centres":[10],"color_engine":"unknown"}"#), FilmKind::C41), ColorEngine::Psi3);
     }
 
     #[test]

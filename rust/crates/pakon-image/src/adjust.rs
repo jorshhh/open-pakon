@@ -99,6 +99,64 @@ pub fn saturation_profile(saturation: i32) -> Option<String> {
     (saturation != 0).then(|| format!("sat{}{:02}.pf", if saturation > 0 { "plus" } else { "minus" }, 3 * saturation.abs()))
 }
 
+/// sRGB [0, 1] -> mft2-encoded Lab (D50, Bradford): the inverse of [`lab_to_srgb`] for in-gamut colours.
+pub fn srgb_to_lab(x: [f32; 3]) -> [f32; 3] {
+    const M: [[f64; 3]; 3] =
+        [[3.1338561, -1.6168667, -0.4906146], [-0.9787684, 1.9161415, 0.0334540], [0.0719453, -0.2289914, 1.4052427]];
+    // XYZ(D50, in units of the white) from linear sRGB: the inverse of M
+    let det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0])
+        + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+    let inv = |r: usize, c: usize| {
+        let (r1, r2, c1, c2) = ((r + 1) % 3, (r + 2) % 3, (c + 1) % 3, (c + 2) % 3);
+        // cofactor of (c, r) -> transpose
+        (M[c1][r1] * M[c2][r2] - M[c1][r2] * M[c2][r1]) / det
+    };
+    let lin: [f64; 3] = std::array::from_fn(|c| {
+        let v = x[c].clamp(0.0, 1.0) as f64;
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    });
+    let xyz: [f64; 3] = std::array::from_fn(|r| inv(r, 0) * lin[0] + inv(r, 1) * lin[1] + inv(r, 2) * lin[2]);
+    let f = |t: f64| if t > (6.0f64 / 29.0).powi(3) { t.cbrt() } else { t / (3.0 * (6.0f64 / 29.0).powi(2)) + 4.0 / 29.0 };
+    let (fx, fy, fz) = (f(xyz[0] / 0.9642), f(xyz[1]), f(xyz[2] / 0.8249));
+    let (l, a, b) = (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz));
+    [(l / 100.0 * 65280.0 / 65535.0) as f32, ((a + 128.0) * 256.0 / 65535.0) as f32, ((b + 128.0) * 256.0 / 65535.0) as f32]
+}
+
+/// The saturation / tone chain as a correction on finished sRGB (PSI 2.4, whose EBP stages need the
+/// float chain intact): an `n`^3 table, sRGB -> Lab -> the chain's links -> sRGB, stored as
+/// `x + (chain - no chain)` like [`adjusted_table`]. `folder` holds the `sat*.pf` / tone profiles.
+pub fn srgb_adjust_table(folder: &Path, saturation: i32, tone: Tone, n: usize) -> Result<Table, String> {
+    let steps: Vec<String> = saturation_profile(saturation).into_iter().chain(tone.profile().map(String::from)).collect();
+    let links: Vec<Link> = steps.iter().map(|s| Link::read(folder.join(s))).collect::<Result<_, _>>()?;
+    let node = |i: usize| i as f32 / (n - 1) as f32;
+    let data: Vec<f32> = (0..n * n * n)
+        .into_par_iter()
+        .flat_map_iter(|k| {
+            let x = [node(k / (n * n)), node(k / n % n), node(k % n)];
+            let lab = srgb_to_lab(x);
+            let out = links.iter().fold(lab, |v, l| l.apply(v));
+            let (a, b) = (lab_to_srgb(out), lab_to_srgb(lab));
+            (0..3).map(move |c| (x[c] + (a[c] - b[c])).clamp(0.0, 1.0)).collect::<Vec<f32>>()
+        })
+        .collect();
+    Ok(Table { n, data })
+}
+
+/// [`srgb_adjust_table`] on a 16-bit render (`v / 65535`), tetrahedral.
+pub fn apply_srgb_table(img: &mut Array3<u16>, t: &Table) {
+    let (h, w, _) = img.dim();
+    let s = img.as_slice_mut().expect("contiguous");
+    s.par_chunks_mut(3 * w.max(1)).for_each(|row| {
+        for p in row.chunks_exact_mut(3) {
+            let o = t.lookup_tetra([p[0] as f32 / 65535.0, p[1] as f32 / 65535.0, p[2] as f32 / 65535.0]);
+            for c in 0..3 {
+                p[c] = (o[c] * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+            }
+        }
+    });
+    let _ = h;
+}
+
 /// `base` (the input profile's table, n³ nodes on [0, 1]) with the OEM's
 /// saturation and tone profiles from `input`'s folder.
 pub fn adjusted_table(base: &Table, input: &Path, saturation: i32, tone: Tone) -> Result<Table, String> {
@@ -164,5 +222,46 @@ pub fn adjust_12bit(v: &mut Array3<f32>, adj: &Adjust) {
     });
     if adj.sharpness != 0 {
         unsharp(v, (adj.sharpness as f64 * 0.01) as f32);
+    }
+}
+
+#[cfg(test)]
+mod srgb_chain_tests {
+    use super::*;
+
+    #[test]
+    fn srgb_lab_round_trips() {
+        for r in [0.0f32, 0.05, 0.3, 0.6, 1.0] {
+            for g in [0.0f32, 0.1, 0.5, 0.9, 1.0] {
+                for b in [0.0f32, 0.2, 0.7, 1.0] {
+                    let o = lab_to_srgb(srgb_to_lab([r, g, b]));
+                    for (x, y) in [r, g, b].iter().zip(o) {
+                        assert!((x - y).abs() < 2e-4, "{r} {g} {b} -> {o:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The repo's profiles: neutrals stay neutral through every saturation step, chroma follows the sign.
+    #[test]
+    fn saturation_chain_on_srgb() {
+        let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../profiles");
+        if !folder.join("satplus03.pf").exists() {
+            return;
+        }
+        let chroma = |p: [f32; 3]| p.iter().cloned().fold(f32::MIN, f32::max) - p.iter().cloned().fold(f32::MAX, f32::min);
+        let probe = [0.62f32, 0.45, 0.36];
+        let mut last = -1.0;
+        for sat in -5..=5 {
+            let t = if sat == 0 { Table { n: 2, data: (0..24).map(|i| ((i / 3) >> (2 - i % 3) & 1) as f32).collect() } } else { srgb_adjust_table(&folder, sat, Tone::None, 17).unwrap() };
+            for v in [0.1f32, 0.4, 0.8] {
+                let o = t.lookup_tetra([v, v, v]);
+                assert!(chroma(o) < 0.01, "sat {sat} neutral {v} -> {o:?}");
+            }
+            let c = chroma(t.lookup_tetra(probe));
+            assert!(c > last - 1e-4, "sat {sat}: chroma {c} after {last}");
+            last = c;
+        }
     }
 }

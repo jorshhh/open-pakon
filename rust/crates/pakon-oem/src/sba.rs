@@ -779,6 +779,17 @@ pub fn film_base_rpd(base: [f64; 3], negmat: &Matrix, lut: &[f32]) -> [i64; 3] {
 /// A frame crop (raw 16-bit RGB) -> the SBA analysis image: landscape,
 /// area-averaged to ANALYSIS_H x ANALYSIS_W in raw space, then 12-bit RPD.
 pub fn analysis_image(raw: ArrayView3<u16>, negmat: &Matrix, lut: &[f32]) -> Array3<i16> {
+    analysis_image_sized(raw, negmat, lut, ANALYSIS_H, ANALYSIS_W)
+}
+
+/// PSI 2.4 KCDFS thumbnail geometry: the OEM's lo-res rect is 250 x 375 (portrait; landscape here).
+/// 250/24 and 375/36 divide to 10 inside createAlgData, so it samples 92 % of the frame, against
+/// 81 % with 128 x 192.
+pub const KCDFS_H: usize = 250;
+pub const KCDFS_W: usize = 375;
+
+/// [`analysis_image`] at an explicit landscape size `h x w`.
+pub fn analysis_image_sized(raw: ArrayView3<u16>, negmat: &Matrix, lut: &[f32], h: usize, w: usize) -> Array3<i16> {
     // np.rot90: out[i, j] = a[j, W - 1 - i]
     let a = if raw.len_of(Axis(0)) > raw.len_of(Axis(1)) {
         let mut v = raw;
@@ -788,7 +799,6 @@ pub fn analysis_image(raw: ArrayView3<u16>, negmat: &Matrix, lut: &[f32]) -> Arr
     } else {
         raw
     };
-    let (h, w) = (ANALYSIS_H, ANALYSIS_W);
     let (sy, sx) = (a.len_of(Axis(0)) / h, a.len_of(Axis(1)) / w);
     let (y0, x0) = ((a.len_of(Axis(0)) - sy * h) / 2, (a.len_of(Axis(1)) - sx * w) / 2);
     let count = (sy * sx) as f32;
